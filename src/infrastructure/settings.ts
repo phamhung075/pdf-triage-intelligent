@@ -74,6 +74,12 @@ export const CONFIG = {
   OLLAMA_EMBED_MODEL: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
 
   PORT: parseInt(process.env.PORT || '3971', 10),
+  // Security default: bind to localhost only. This server has no authentication — binding to
+  // 0.0.0.0 (Express's own default when no host is given to app.listen()) would expose the
+  // full API, including document contents and destructive actions (clear registry, delete),
+  // to anyone on the same network. Only override this if you specifically want LAN access and
+  // understand there is no auth layer protecting it.
+  HOST: process.env.PDF_TRIAGE_HOST || '127.0.0.1',
 
   PERSONAL_NAME_DENYLIST: sanitizePersonalNameDenylist(customSettings.personal_name_denylist),
 };

@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { pathToFileURL } from 'url';
@@ -16,7 +15,7 @@ import { repairRegistry } from '../../application/repair-registry.js';
 import { runTriageScan } from '../../application/triage-scan.js';
 import { relocalizeFileIfNeeded, findActualFileOnDisk, reclassifyAndRelocalizeDocument, ensureCategoryAndSubcategoryExist, deleteDocumentAndMoveToTrash } from '../../application/relocalize-document.js';
 import { getPDFsRecursively } from '../pdf-scanner.js';
-import { isForbiddenSubcategory } from '../../domain/taxonomy.js';
+import { isForbiddenSubcategory, isPathInsideDir } from '../../domain/taxonomy.js';
 import { logger, getRecentLogs, getGroupedSessionLogs, logEmitter } from '../logger.js';
 import { UpdateDocumentSchema, SystemSettingsSchema, CategoriesConfigSchema } from '../../domain/document.schema.js';
 import { readActiveLockHolder, acquireProcessLock } from '../pid-lock.js';
@@ -28,7 +27,10 @@ import { processChatQuery } from '../../application/ai-chat-assistant.js';
 export function createWebServer(): express.Express {
   const app = express();
 
-  app.use(cors());
+  // No CORS middleware: the frontend is served from this same Express instance (same-origin),
+  // so it never needs it. This server has no authentication layer — Access-Control-Allow-Origin:
+  // '*' (the previous `cors()` default) would let any webpage the user has open in another tab
+  // read this entire API cross-origin (documents, summaries, raw text) via fetch().
   app.use(express.json());
 
   setTaskBroadcaster((evt) => {
@@ -144,20 +146,17 @@ export function createWebServer(): express.Express {
           }
         }
 
-        // Exec command: start "" "chromeExe" "normalizedFilePath"
-        // Title is "", executable is quoted chromeExe, file path is quoted Windows path.
-        // Chrome IPC appends a NEW TAB to your existing open Chrome window session.
-        const command = `start "" "${chromeExe}" "${normalized}"`;
-
-        exec(command, (error, stdout, stderr) => {
-          console.log('stdout: ' + stdout);
-          console.log('stderr: ' + stderr);
-          if (error !== null) {
-            console.log('exec error: ' + error);
-            return res.status(500).json({ error: `exec error: ${error.message}` });
-          }
-          res.json({ success: true, message: 'Opened document in Chrome tab', path: normalized });
-        });
+        // Launch Chrome directly with the file path as an argv entry — Chrome's own
+        // single-instance IPC forwards this to the existing window as a new tab, so the old
+        // `start "" "..." "..."` shell wrapper wasn't needed for that behavior in the first
+        // place. Security: normalized is attacker-controllable request-body input (only
+        // constrained by z.string().min(1)), and Windows filenames can legally contain shell
+        // metacharacters (&, %, (, ), ^) that survive this app's own filename sanitization —
+        // spawn() with an argument array never invokes a shell, so none of that can matter here.
+        // Fire-and-forget, matching every other GUI-helper spawn() in this file (open-location
+        // below) — none of them wait for a spawn/error event before responding.
+        spawn(chromeExe, [normalized], { detached: true, stdio: 'ignore' }).unref();
+        res.json({ success: true, message: 'Opened document in Chrome tab', path: normalized });
       } else {
         res.status(404).json({ error: `File path does not exist: ${normalized}` });
       }
@@ -835,12 +834,16 @@ export function createWebServer(): express.Express {
         return res.status(404).json({ error: 'Document file not found on disk' });
       }
 
+      // spawn() with an argument array, not exec() with an interpolated string — fileOnDisk
+      // traces back to AI-classified document metadata (title/entity extracted from a PDF's
+      // own text), which is not guaranteed free of shell metacharacters even after this app's
+      // own filename sanitization (e.g. & and % both survive it).
       if (process.platform === 'win32') {
-        exec(`explorer.exe /select,"${fileOnDisk}"`);
+        spawn('explorer.exe', ['/select,', fileOnDisk], { detached: true, stdio: 'ignore' }).unref();
       } else if (process.platform === 'darwin') {
-        exec(`open -R "${fileOnDisk}"`);
+        spawn('open', ['-R', fileOnDisk], { detached: true, stdio: 'ignore' }).unref();
       } else {
-        exec(`xdg-open "${path.dirname(fileOnDisk)}"`);
+        spawn('xdg-open', [path.dirname(fileOnDisk)], { detached: true, stdio: 'ignore' }).unref();
       }
 
       res.json({ message: 'Opened folder in OS file manager', filePath: fileOnDisk });
@@ -894,11 +897,23 @@ export function createWebServer(): express.Express {
   app.get('/api/documents/file-by-path', (req, res) => {
     try {
       const targetPath = req.query.path as string;
-      if (!targetPath || !fs.existsSync(targetPath)) {
+      if (!targetPath) {
         return res.status(404).json({ error: 'PDF file missing on disk' });
       }
 
+      // Security: this endpoint previously served ANY file the Node process could read (e.g.
+      // package.json, or worse — SSH keys, other apps' .env files) with only an existsSync
+      // check and no boundary validation. Every legitimate file this endpoint is meant to serve
+      // lives inside INPUT_DIR or OUTPUT_ROOT_DIR — reject anything else before even touching fs.
       const absPath = path.resolve(targetPath);
+      if (!isPathInsideDir(absPath, CONFIG.INPUT_DIR) && !isPathInsideDir(absPath, CONFIG.OUTPUT_ROOT_DIR)) {
+        return res.status(403).json({ error: 'Path is outside the managed input/output directories — not allowed.' });
+      }
+
+      if (!fs.existsSync(absPath)) {
+        return res.status(404).json({ error: 'PDF file missing on disk' });
+      }
+
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'inline');
       res.sendFile(absPath);
@@ -1281,8 +1296,8 @@ function acquireSingleInstanceLock(): void {
 export function startWebServer(port: number = CONFIG.PORT): void {
   acquireSingleInstanceLock();
   const app = createWebServer();
-  const server = app.listen(port, () => {
-    console.log(`Web Dashboard is running at http://localhost:${port} [Hot Reload Active 🔥]`);
+  const server = app.listen(port, CONFIG.HOST, () => {
+    console.log(`Web Dashboard is running at http://${CONFIG.HOST}:${port} [Hot Reload Active 🔥]`);
   });
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {

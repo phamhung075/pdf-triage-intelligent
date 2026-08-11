@@ -106,6 +106,18 @@ vi.mock('../logger.js', async () => {
   };
 });
 
+// Real child_process would launch actual OS processes (Explorer, Chrome) during tests. Mocked
+// spawn returns a fake ChildProcess-shaped object so `.unref()` (called on every real spawn
+// site in web-server.ts) doesn't throw.
+const { execMock, spawnMock } = vi.hoisted(() => ({
+  execMock: vi.fn((_cmd: string, ...rest: any[]) => {
+    const cb = rest.find(a => typeof a === 'function');
+    if (cb) cb(null, '', '');
+  }),
+  spawnMock: vi.fn((_cmd: string, _args?: string[], _opts?: any) => ({ unref: vi.fn(), on: vi.fn() })),
+}));
+vi.mock('child_process', () => ({ exec: execMock, spawn: spawnMock }));
+
 // domain/taxonomy.js and domain/document.schema.js are left un-mocked: both are pure,
 // I/O-free modules (Zod schemas / string helpers), so exercising the real implementations
 // through the route handlers is both safe and more representative than re-stubbing them.
@@ -212,6 +224,8 @@ beforeEach(() => {
   reclassifyAndRelocalizeDocumentMock.mockReset();
   ensureCategoryAndSubcategoryExistMock.mockReset();
   getPDFsRecursivelyMock.mockReset().mockReturnValue([]);
+  execMock.mockClear();
+  spawnMock.mockClear().mockReturnValue({ unref: vi.fn(), on: vi.fn() });
 
   // Golden Rule #17: the 10s auto-watcher must never fire on its own inside these tests —
   // faking only setInterval/clearInterval (not setTimeout/setImmediate/Date) keeps every other
@@ -229,6 +243,18 @@ afterEach(() => {
   for (const server of openServers) {
     try { server.close(); } catch {}
   }
+});
+
+describe('CORS', () => {
+  it('does not send a wide-open Access-Control-Allow-Origin header (regression guard: this server has no auth, so open CORS lets any webpage the user has open read the whole API cross-origin)', async () => {
+    getAllDocumentsMock.mockResolvedValue([]);
+
+    const res = await request(app)
+      .get('/api/documents')
+      .set('Origin', 'https://evil.example.com');
+
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
 });
 
 describe('GET /api/documents', () => {
@@ -718,11 +744,49 @@ describe('POST /api/open-chrome', () => {
     expect(res.body.error).toContain('File path does not exist');
   });
 
+  it('launches Chrome via spawn() with an argument array, never a shell-interpreted exec() string (regression guard: targetPath is attacker-controllable request-body input, and Windows filenames can legally contain shell metacharacters like & and %)', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+
+    await request(app)
+      .post('/api/open-chrome')
+      .send({ targetPath: 'C:/pdf-triage-test/__archive/facture & cie.pdf' })
+      .expect(200);
+
+    expect(execMock).not.toHaveBeenCalled();
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const spawnArgs = spawnMock.mock.calls[0]?.[1] ?? [];
+    expect(spawnArgs.some((a: string) => a.includes('facture & cie.pdf'))).toBe(true);
+  });
+
   it('returns 400 if targetPath is missing', async () => {
     await request(app)
       .post('/api/open-chrome')
       .send({})
       .expect(400);
+  });
+});
+
+describe('POST /api/documents/:id/open-folder', () => {
+  it('opens Explorer via spawn() with an argument array, never a shell-interpreted exec() string (same regression class as /api/open-chrome — the file path comes from AI-classified document metadata, not free of shell metacharacters)', async () => {
+    getDocumentByIdMock.mockResolvedValue(sampleDoc());
+    findActualFileOnDiskMock.mockReturnValue('C:/pdf-triage-test/__archive/facture & cie.pdf');
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+
+    await request(app)
+      .post('/api/documents/1/open-folder')
+      .expect(200);
+
+    expect(execMock).not.toHaveBeenCalled();
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 404 when the document file is missing on disk', async () => {
+    getDocumentByIdMock.mockResolvedValue(sampleDoc());
+    findActualFileOnDiskMock.mockReturnValue(null);
+
+    await request(app)
+      .post('/api/documents/1/open-folder')
+      .expect(404);
   });
 });
 
@@ -739,9 +803,29 @@ describe('GET /api/documents/:id/file & GET /api/documents/file-by-path', () => 
     vi.mocked(fs.existsSync).mockReturnValue(false);
 
     const res = await request(app)
-      .get('/api/documents/file-by-path?path=C:/nonexistent.pdf')
+      .get('/api/documents/file-by-path?path=C:/pdf-triage-test/__archive/nonexistent.pdf')
       .expect(404);
 
     expect(res.body.error).toContain('missing on disk');
+  });
+
+  it('rejects a path outside INPUT_DIR/OUTPUT_ROOT_DIR instead of serving arbitrary files (regression guard: this endpoint previously served package.json when pointed at it)', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true); // the file genuinely exists — just not somewhere we manage
+
+    const res = await request(app)
+      .get('/api/documents/file-by-path?path=C:/pdf-triage-test/package.json')
+      .expect(403);
+
+    expect(res.body.error).toMatch(/outside|not allowed|forbidden/i);
+  });
+
+  it('rejects a traversal attempt that only escapes OUTPUT_ROOT_DIR via ".." after normalization', async () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+
+    const res = await request(app)
+      .get('/api/documents/file-by-path?' + new URLSearchParams({ path: 'C:/pdf-triage-test/__archive/../../Windows/System32/drivers/etc/hosts' }).toString())
+      .expect(403);
+
+    expect(res.body.error).toMatch(/outside|not allowed|forbidden/i);
   });
 });
