@@ -8,7 +8,7 @@
     "dev": "tsx watch --exclude \"*.db\" --exclude \"*.db-journal\" --exclude \"*.db-shm\" --exclude \"*.db-wal\" --exclude \"registry.json\" --exclude \"categories.json\" --exclude \"settings.json\" --exclude \"logs/**\" --exclude \".server.lock\" --exclude \".scan.lock\" src/index.ts",
     "start": "tsx watch --exclude \"*.db\" --exclude \"*.db-journal\" --exclude \"*.db-shm\" --exclude \"*.db-wal\" --exclude \"registry.json\" --exclude \"categories.json\" --exclude \"settings.json\" --exclude \"logs/**\" --exclude \".server.lock\" --exclude \".scan.lock\" src/index.ts",
     "desktop": "electron desktop/main.cjs",
-    "dist:exe": "npx tsx -e \"import fs from 'fs'; import { execSync } from 'child_process'; try { execSync('taskkill /F /IM \\\"Smart PDF Triage.exe\\\" /T'); } catch {} try { execSync('taskkill /F /IM electron.exe /T'); } catch {} try { fs.rmSync('dist-installer', { recursive: true, force: true }); } catch {}\" && electron-builder --win",
+    "dist:exe": "node scripts/build-exe.mjs",
     "scan": "tsx src/index.ts scan",
     "mcp": "tsx src/index.ts mcp",
     "build": "npm run build:css && tsc && tsc -p tsconfig.frontend.json",
