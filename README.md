@@ -182,8 +182,8 @@ ollama pull qwen3.5:9b
 
 #### Step 2: Clone Repository & Install Node Dependencies
 ```bash
-git clone https://github.com/phamhung075/smart-pdf-triage.git
-cd smart-pdf-triage
+git clone https://github.com/phamhung075/smart-pdf-triage-local-ai.git
+cd smart-pdf-triage-local-ai
 npm install
 ```
 
@@ -228,7 +228,7 @@ Customize `input_dir` (where incoming PDFs arrive) and `output_root_dir` (where 
 ## 🧪 Testing & Code Quality
 
 ```bash
-# Run all 272 unit tests
+# Run the full unit test suite
 npm test
 
 # Run TypeScript type check & frontend build

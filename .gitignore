@@ -62,3 +62,6 @@ Thumbs.db
 
 # Throwaway one-off debug/probe scripts (not part of the app)
 scratch/
+
+# Social media drafts/posts about the project (personal, not project source)
+social/

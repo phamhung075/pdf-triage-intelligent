@@ -55,7 +55,7 @@ The plugin also ships `.claude/plugins/superpowers/docs/` — Superpowers' own d
 - **Never** run `npm run dev` yourself — always instruct the user to run/restart it in their terminal.
 - **Never** scan outside `CONFIG.INPUT_DIR` (`__raws`).
 - **Every mutation** broadcasts SSE.
-- **Every category/subcategory** is auto-created in `categories.json` **before** moving the file.
+- **Every category/subcategory** is auto-created (in `.categories.private.json`, never in the committed `categories.json`) **before** moving the file — see `categories-store.ts`.
 - **Never** accept `general`/`other`/`divers`/year as a final subcategory — BLOCK and keep in `__raws`.
 - **Only** Qwen 3.5 (`qwen3.5:9b`).
 - **Toast** for all UI feedback, never `alert()`.
@@ -67,11 +67,16 @@ pdf_triage/
 ├── CLAUDE.md                  # this file
 ├── AGENTS.md                  # user-authored directives (legacy summary)
 ├── AGENT_REQUIREMENTS.md      # user-authored full spec (referenced by golden-rules.md)
-├── categories.json            # taxonomy source of truth
-├── settings.json              # runtime config (input_dir, output_root_dir, ollama_*)
-├── pdf_triage.db              # SQLite (runtime)
-├── registry.json              # JSON mirror (runtime)
-├── package.json               # tsx dev + build scripts
+├── LICENSE                    # MIT
+├── categories.json            # PUBLIC, generic starter taxonomy (committed) — top-level categories only
+├── .categories.private.json   # PRIVATE taxonomy overlay (gitignored) — real auto-created subcategories; merged with categories.json at runtime by categories-store.ts
+├── entity_dictionary.json     # curated generic entity reference (banks, telecoms, etc.) — safe to commit, not personal
+├── settings.json               # runtime config (gitignored — contains real folder paths); see settings.json.example for the template
+├── settings.json.example      # committed template for settings.json
+├── .env.example                # committed template for .env (gitignored) — BASE_DIR override, ports, Ollama host, etc.
+├── pdf_triage.db               # SQLite (runtime, gitignored)
+├── registry.json               # JSON mirror (runtime, gitignored)
+├── package.json                # tsx dev + build scripts
 ├── docs/                      # → knowledge, workflows, agent playbooks (LAZY-LOADED)
 │   ├── README.md
 │   ├── overview.md
@@ -90,32 +95,43 @@ pdf_triage/
 │   ├── index.ts                       # composition root: dispatch default web, `scan`, `mcp`
 │   ├── domain/                        # pure logic, zero I/O
 │   │   ├── document.schema.ts         # Zod schemas
-│   │   ├── classification.ts          # ruleBasedClassify, cleanAndParseJSON, entity matching
-│   │   ├── prompt.ts                  # Qwen prompt building
-│   │   ├── classification-resolution.ts  # refine/resolve category & subcategory
+│   │   ├── classification.ts          # ruleBasedClassify, cleanAndParseJSON, entity matching, normalizeSlug
+│   │   ├── prompt.ts                  # Qwen prompt building (Step A/C/D)
+│   │   ├── classification-resolution.ts  # refine/resolve category & subcategory, entity-priority override
 │   │   ├── taxonomy.ts                # isForbiddenSubcategory, computeCanonicalPath
-│   │   └── pdf-text.ts                # cleanExtractedText
+│   │   ├── pdf-text.ts                # cleanExtractedText
+│   │   ├── model/                     # ⚠️ NOT WIRED IN — orphaned DDD entities from an incomplete refactor,
+│   │   │                              #   never imported by index.ts/web-server.ts. Dead code, not the real architecture.
+│   │   └── repositories/              # ⚠️ NOT WIRED IN — same orphaned refactor (interface definitions only)
 │   ├── application/                   # orchestration / use-cases
-│   │   ├── classify-document.ts       # classifyPDFText orchestrator
-│   │   ├── triage-scan.ts             # runTriageScan
+│   │   ├── classify-document.ts       # classifyPDFText orchestrator (Step A entity + Step C markdown + Step D classify)
+│   │   ├── triage-scan.ts             # runTriageScan — the real, live-wired scan pipeline
+│   │   ├── ai-chat-assistant.ts       # local chat assistant grounded in the document registry (via MCP prepare_dossier)
 │   │   ├── repair-registry.ts
 │   │   ├── relocalize-document.ts
 │   │   ├── clear-registry.ts
-│   │   └── scan-lock.ts
+│   │   ├── scan-lock.ts
+│   │   └── use-cases/                 # ⚠️ NOT WIRED IN — orphaned DDD use-cases, same incomplete refactor as domain/model
 │   └── infrastructure/                # I/O adapters
-│       ├── settings.ts                # CONFIG, settings.json
+│       ├── settings.ts                # CONFIG, BASE_DIR (defaults to process.cwd(), overridable via PDF_TRIAGE_BASE_DIR)
 │       ├── logger.ts
-│       ├── categories-store.ts        # categories.json read/write
+│       ├── categories-store.ts        # merges categories.json (public) + .categories.private.json (private) on read; diffs writes to the private file only
 │       ├── entity-dictionary-store.ts # entity_dictionary.json read
+│       ├── manual-decisions-store.ts  # manual_decisions.json read/write (user feedback log, gitignored)
+│       ├── zip-builder.ts             # pure-TS ZIP archive builder (no native deps) — PDF package export + bulk Markdown export
 │       ├── ollama-client.ts
 │       ├── pdf-extractor.ts
 │       ├── pdf-scanner.ts
 │       ├── pid-lock.ts
 │       ├── db/database.ts
 │       ├── json-registry.ts
-│       ├── http/web-server.ts
+│       ├── http/web-server.ts         # all real REST/SSE routes live here
+│       ├── http/controllers/          # ⚠️ NOT WIRED IN — orphaned DDD controller, same incomplete refactor
+│       ├── adapters/                  # ⚠️ NOT WIRED IN — orphaned DDD adapters, same incomplete refactor
+│       ├── di/container.ts            # ⚠️ NOT WIRED IN — orphaned DI container, only imported by the orphaned DocumentController
 │       └── mcp/mcp-server.ts
-├── public/                    # UI (HTML, CSS, JS)
+├── public/                    # UI — public/ts/ (source) compiled to public/js/ (served), public/scss/ (source) compiled to public/style.css (served), public/js/vendor/ (marked.js, vendored not CDN)
+├── social/                    # gitignored — LinkedIn/marketing drafts, not project source
 └── logs/triage_debug.log
 ```
 
@@ -124,6 +140,13 @@ pdf_triage/
 - `npm run dev` / `npm start` — dev server (web + SSE + 10s auto-watcher). **User runs this, not Claude.**
 - `npm run scan` — one-shot triage scan.
 - `npm run mcp` — MCP stdio server.
-- `npm run build` — `tsc`.
+- `npm run build` — `build:css` + `tsc` (backend) + `tsc -p tsconfig.frontend.json` (frontend).
+- `npm run build:css` — compile `public/scss/style.scss` → `public/style.css`.
+- `npm run watch:css` — `sass --watch` for local SCSS development.
+- `npm run build:frontend` — `build:css` + compile `public/ts/*.ts` → `public/js/*.js`. Run this after editing any `public/ts/*.ts` file — nothing recompiles it automatically.
+- `npm run watch:frontend` — `tsc -p tsconfig.frontend.json -w` for local frontend development.
+- `npm run typecheck` — `tsc -p tsconfig.test.json` + `tsc -p tsconfig.frontend.json`, no emit.
+- `npm run desktop` — Electron desktop shell.
+- `npm run dist:exe` — build the portable Windows installer.
 - `npm test` — run the Vitest unit test suite (pure classification/path/schema logic; see `docs/superpowers/specs/2026-07-31-test-harness-design.md`).
 - `npm run test:watch` — Vitest in watch mode for local development.
