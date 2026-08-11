@@ -161,13 +161,13 @@ class ModalsManager {
                     ${sess.logsCount} event${sess.logsCount === 1 ? '' : 's'} • ${new Date(sess.updatedAt).toLocaleTimeString()}
                   </div>
                   <div style="white-space: nowrap;">${statusBadge}</div>
-                  <button class="btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" id="btnToggleSess_${idx}">
-                    <span id="btnIconSess_${idx}">🔽 Dropdown</span>
+                  <button class="btn-secondary log-session-toggle-btn" id="btnToggleSess_${idx}">
+                    <span id="btnIconSess_${idx}">🔽</span>
                   </button>
                 </div>
                 <div id="sessDetails_${idx}" class="log-session-dropdown" style="display: none;">
                   ${reasonInfo}
-                  <div style="margin-top: 0.4rem; font-size: 0.8rem;">${logLines}</div>
+                  <div class="log-session-lines">${logLines}</div>
                 </div>
               </div>
             `;
@@ -183,10 +183,10 @@ class ModalsManager {
     if (el) {
       if (el.style.display === 'none') {
         el.style.display = 'block';
-        if (btnIcon) btnIcon.textContent = '🔼 Hide Details';
+        if (btnIcon) btnIcon.style.transform = 'rotate(180deg)';
       } else {
         el.style.display = 'none';
-        if (btnIcon) btnIcon.textContent = '🔽 Dropdown';
+        if (btnIcon) btnIcon.style.transform = 'rotate(0deg)';
       }
     }
   }

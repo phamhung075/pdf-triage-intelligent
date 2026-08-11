@@ -925,6 +925,81 @@ h1 {
   padding-bottom: 1rem;
 }
 
+/* Logs Modal — Group by Document Session cards. Previously had ZERO dedicated CSS (only the
+   inline styles set piecemeal in ModalsManager.ts's template), so the list rendered as bare
+   unstyled divs — easy to mistake for "nothing loaded" even when it had. */
+.log-session-row-wrapper {
+  background: var(--panel-bg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.15s ease;
+}
+.log-session-row-wrapper:hover {
+  border-color: rgba(56, 189, 248, 0.3);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(56, 189, 248, 0.08);
+}
+
+.log-session-row-header {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.85rem 1.1rem;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.log-session-row-header:hover {
+  background: rgba(56, 189, 248, 0.06);
+}
+.log-session-row-header:active {
+  transform: scale(0.997);
+}
+
+.log-session-dropdown {
+  padding: 0.9rem 1.1rem 1.1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(3, 7, 18, 0.4);
+  animation: logSessionExpand 0.18s ease;
+}
+
+.log-session-toggle-btn {
+  padding: 0.3rem 0.55rem !important;
+  font-size: 0.85rem !important;
+  line-height: 1;
+}
+.log-session-toggle-btn span {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.log-session-lines {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  max-height: 340px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.log-session-lines > div {
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+}
+.log-session-lines > div:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+@keyframes logSessionExpand {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 /* Toast Container */
 .toast-container {
   position: fixed;
