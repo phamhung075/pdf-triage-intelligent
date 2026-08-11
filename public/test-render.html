@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Render Diagnostic</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; background: #1e293b; color: #f8fafc; }
+  button { display: block; margin: 0.5rem 0; padding: 0.7rem 1.2rem; font-size: 1rem; cursor: pointer; }
+  #log { white-space: pre-wrap; background: #0f172a; color: #4ade80; padding: 1rem; margin-top: 1rem; border-radius: 8px; font-family: monospace; max-height: 300px; overflow-y: auto; }
+  /* Mirrors the real app's .modal-backdrop / .modal-backdrop.open exactly —
+     display lives ENTIRELY in these classes, nothing inline, so there's no
+     specificity conflict. */
+  .test-modal-backdrop {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(220, 38, 38, 0.92);
+    z-index: 1000;
+    align-items: center; justify-content: center;
+    font-size: 2rem; color: white; text-align: center;
+    display: none;
+  }
+  .test-modal-backdrop.open { display: flex; }
+</style>
+</head>
+<body>
+<h1>Render Diagnostic — click each step in order</h1>
+<p>After each click, look at your screen and tell me: did you see the described change?</p>
+
+<button onclick="step0()">Step 0: alert() — baseline (already know this works)</button>
+<button onclick="step1()">Step 1: turn THIS button's own background red</button>
+<button onclick="step2()">Step 2: append a small red box (normal flow, top of page)</button>
+<button onclick="step3()">Step 3: append a small red box (position: fixed, center of screen)</button>
+<button onclick="step4()">Step 4: append a FULL-SCREEN dark box (position: fixed, covers everything)</button>
+<button onclick="step5()">Step 5: reveal a PRE-EXISTING full-screen box (was display:none since page load) via class toggle — this matches the real app's exact bug scenario</button>
+<button onclick="step6start()">Step 6a: start background activity (3 live SSE connections + 10s polling timer, matching the real dashboard) — click this FIRST</button>
+<button onclick="step6reveal()">Step 6b: THEN reveal the same pre-existing box WHILE that background activity is running</button>
+<button onclick="clearAll()">Clear all test boxes</button>
+
+<div id="log"></div>
+
+<!-- Pre-existing, hidden since page load — for Step 5, matching .modal-backdrop's real setup.
+     No inline style at all now — display is controlled purely by the .open class. -->
+<div id="preexistingBox" class="test-modal-backdrop">
+  STEP 5: PRE-EXISTING BOX NOW VISIBLE
+</div>
+
+<script>
+function log(msg) {
+  document.getElementById('log').textContent += msg + '\n';
+}
+
+function step0() {
+  log('Step 0: calling alert()...');
+  alert('Step 0: if you see this dialog, click OK.');
+  log('Step 0: alert dismissed.');
+}
+
+function step1(e) {
+  const btn = event.target;
+  btn.style.backgroundColor = 'red';
+  btn.style.color = 'white';
+  log('Step 1: set this button\'s own background to red via inline style.');
+}
+
+function step2() {
+  const box = document.createElement('div');
+  box.id = 'step2box';
+  box.textContent = 'STEP 2 BOX';
+  box.style.cssText = 'width:200px;height:80px;background:red;color:white;display:flex;align-items:center;justify-content:center;margin-top:1rem;';
+  document.body.appendChild(box);
+  log('Step 2: appended a 200x80 red box in normal document flow.');
+}
+
+function step3() {
+  const box = document.createElement('div');
+  box.id = 'step3box';
+  box.textContent = 'STEP 3 BOX (fixed, centered)';
+  box.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:250px;height:100px;background:orange;color:black;display:flex;align-items:center;justify-content:center;z-index:999;font-weight:bold;';
+  document.body.appendChild(box);
+  log('Step 3: appended a 250x100 orange box, position:fixed, centered on screen.');
+}
+
+function step4() {
+  const box = document.createElement('div');
+  box.id = 'step4box';
+  box.textContent = 'STEP 4: FULL-SCREEN BOX';
+  box.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(37,99,235,0.92);color:white;display:flex;align-items:center;justify-content:center;z-index:1000;font-size:2rem;';
+  document.body.appendChild(box);
+  log('Step 4: appended a FULL-SCREEN blue box, position:fixed, covering top:0/left:0/right:0/bottom:0, z-index:1000.');
+}
+
+function step5() {
+  const box = document.getElementById('preexistingBox');
+  box.classList.add('open');
+  log('Step 5: added .open class to the pre-existing full-screen box (was display:none, purely via CSS class, since page load) — this is EXACTLY the real app\'s modal mechanism.');
+}
+
+let step6Sources = [];
+function step6start() {
+  document.getElementById('preexistingBox').classList.remove('open');
+  step6Sources.forEach(s => s.close());
+  step6Sources = [];
+  ['/api/triage/events', '/api/dev/livereload', '/api/logs/stream'].forEach(url => {
+    try {
+      const es = new EventSource(url);
+      es.onmessage = () => {};
+      step6Sources.push(es);
+      log('Step 6a: opened EventSource to ' + url);
+    } catch (e) {
+      log('Step 6a: FAILED to open ' + url + ': ' + e.message);
+    }
+  });
+  window._step6Interval = setInterval(() => fetch('/api/ollama/status').catch(() => {}), 10000);
+  log('Step 6a: background activity started (3 SSE connections + 10s polling), matching the real dashboard. Now click Step 6b.');
+}
+
+function step6reveal() {
+  const box = document.getElementById('preexistingBox');
+  box.textContent = 'STEP 6b: BOX REVEALED WHILE BACKGROUND ACTIVITY RUNNING';
+  box.classList.add('open');
+  log('Step 6b: revealed the pre-existing box while ' + step6Sources.length + ' SSE connections + polling timer are active.');
+}
+
+function clearAll() {
+  step6Sources.forEach(s => s.close());
+  step6Sources = [];
+  if (window._step6Interval) clearInterval(window._step6Interval);
+  ['step2box','step3box','step4box'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  });
+  document.getElementById('preexistingBox').classList.remove('open');
+  log('--- cleared ---');
+}
+</script>
+</body>
+</html>

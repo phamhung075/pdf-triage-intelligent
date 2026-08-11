@@ -1,0 +1,5234 @@
+{
+  "banks": [
+    {
+      "slug": "credit_agricole",
+      "name": "Crédit Agricole",
+      "aliases": ["credit agricole"]
+    },
+    {
+      "slug": "caisse_epargne",
+      "name": "Caisse d'Épargne",
+      "aliases": ["caisse d'epargne", "caisse epargne", "bpce"]
+    },
+    {
+      "slug": "fortuneo",
+      "name": "Fortuneo",
+      "aliases": ["fortuneo"]
+    },
+    {
+      "slug": "hello_bank",
+      "name": "Hello bank!",
+      "aliases": ["hello bank", "hellobank"]
+    },
+    {
+      "slug": "monabanq",
+      "name": "Monabanq",
+      "aliases": ["monabanq"]
+    },
+    {
+      "slug": "n26",
+      "name": "N26",
+      "aliases": ["n26"]
+    },
+    {
+      "slug": "revolut",
+      "name": "Revolut",
+      "aliases": ["revolut"]
+    },
+    {
+      "slug": "credit_mutuel",
+      "name": "Crédit Mutuel",
+      "aliases": ["credit mutuel", "ccm", "creditmutuel"]
+    },
+    {
+      "slug": "societe_generale",
+      "name": "Société Générale",
+      "aliases": ["societe generale", "sg"]
+    },
+    {
+      "slug": "bnp_paribas",
+      "name": "BNP Paribas",
+      "aliases": ["bnp", "bnp paribas"]
+    },
+    {
+      "slug": "boursobank",
+      "name": "BoursoBank",
+      "aliases": ["boursorama", "boursobank"]
+    },
+    {
+      "slug": "lcl",
+      "name": "LCL",
+      "aliases": ["lcl", "credit lyonnais"]
+    },
+    {
+      "slug": "la_banque_postale",
+      "name": "La Banque Postale",
+      "aliases": ["banque postale", "la banque postale"]
+    },
+    {
+      "slug": "banque_populaire",
+      "name": "Banque Populaire",
+      "aliases": ["banque populaire", "bp"]
+    },
+    {
+      "slug": "cic",
+      "name": "CIC",
+      "aliases": ["cic", "credit industriel et commercial"]
+    },
+    {
+      "slug": "hsbc_continental_europe",
+      "name": "HSBC Continental Europe",
+      "aliases": ["hsbc", "hsbc france"]
+    },
+    {
+      "slug": "ccf",
+      "name": "CCF (Crédit Commercial de France)",
+      "aliases": ["ccf", "credit commercial de france"]
+    },
+    {
+      "slug": "banque_palatine",
+      "name": "Banque Palatine",
+      "aliases": ["banque palatine", "palatine"]
+    },
+    {
+      "slug": "neuflize_obc",
+      "name": "Neuflize OBC",
+      "aliases": ["neuflize obc", "neuflize"]
+    },
+    {
+      "slug": "banque_transatlantique",
+      "name": "Banque Transatlantique",
+      "aliases": ["banque transatlantique"]
+    },
+    {
+      "slug": "milleis_banque",
+      "name": "Milleis Banque",
+      "aliases": ["milleis", "milleis banque"]
+    },
+    {
+      "slug": "axa_banque",
+      "name": "AXA Banque",
+      "aliases": ["axa banque"]
+    },
+    {
+      "slug": "groupama_banque",
+      "name": "Groupama Banque",
+      "aliases": ["groupama banque"]
+    },
+    {
+      "slug": "orange_bank",
+      "name": "Orange Bank",
+      "aliases": ["orange bank"]
+    },
+    {
+      "slug": "ma_french_bank",
+      "name": "Ma French Bank",
+      "aliases": ["ma french bank"]
+    },
+    {
+      "slug": "qonto",
+      "name": "Qonto",
+      "aliases": ["qonto"]
+    },
+    {
+      "slug": "lydia",
+      "name": "Lydia",
+      "aliases": ["lydia"]
+    },
+    {
+      "slug": "nickel",
+      "name": "Nickel",
+      "aliases": ["compte nickel", "nickel"]
+    },
+    {
+      "slug": "pixpay",
+      "name": "Pixpay",
+      "aliases": ["pixpay"]
+    },
+    {
+      "slug": "xaalys",
+      "name": "Xaalys",
+      "aliases": ["xaalys"]
+    },
+    {
+      "slug": "carrefour_banque",
+      "name": "Carrefour Banque",
+      "aliases": ["carrefour banque"]
+    },
+    {
+      "slug": "cofidis",
+      "name": "Cofidis",
+      "aliases": ["cofidis"]
+    },
+    {
+      "slug": "cetelem",
+      "name": "Cetelem",
+      "aliases": ["cetelem", "bnp paribas personal finance"]
+    },
+    {
+      "slug": "sofinco",
+      "name": "Sofinco",
+      "aliases": ["sofinco"]
+    },
+    {
+      "slug": "franfinance",
+      "name": "Franfinance",
+      "aliases": ["franfinance"]
+    },
+    {
+      "slug": "floa_bank",
+      "name": "Floa Bank",
+      "aliases": ["floa bank", "floa"]
+    },
+    {
+      "slug": "younited",
+      "name": "Younited",
+      "aliases": ["younited", "younited credit"]
+    },
+    {
+      "slug": "bpifrance",
+      "name": "Bpifrance",
+      "aliases": ["bpifrance", "bpi france"]
+    },
+    {
+      "slug": "caisse_des_depots",
+      "name": "Caisse des Dépôts",
+      "aliases": ["caisse des depots", "cdc"]
+    },
+    {
+      "slug": "banque_de_france",
+      "name": "Banque de France",
+      "aliases": ["banque de france"]
+    },
+    {
+      "slug": "credit_du_nord",
+      "name": "Crédit du Nord",
+      "aliases": ["credit du nord"]
+    },
+    {
+      "slug": "october",
+      "name": "October",
+      "aliases": ["october", "lendix"]
+    },
+    {
+      "slug": "oney_bank",
+      "name": "Oney Bank",
+      "aliases": ["oney bank", "oney", "banque accord"]
+    },
+    {
+      "slug": "banque_edel",
+      "name": "Banque Edel",
+      "aliases": ["banque edel"]
+    },
+    {
+      "slug": "banque_casino",
+      "name": "Banque Casino",
+      "aliases": ["banque casino"]
+    },
+    {
+      "slug": "my_money_bank",
+      "name": "My Money Bank",
+      "aliases": ["my money bank"]
+    },
+    {
+      "slug": "credit_cooperatif",
+      "name": "Crédit Coopératif",
+      "aliases": ["credit cooperatif", "crédit coopératif"]
+    },
+    {
+      "slug": "banque_bcp",
+      "name": "Banque BCP",
+      "aliases": ["banque bcp"]
+    },
+    {
+      "slug": "banque_delubac",
+      "name": "Delubac & Cie",
+      "aliases": ["delubac", "banque delubac"]
+    },
+    {
+      "slug": "edmond_de_rothschild",
+      "name": "Edmond de Rothschild France",
+      "aliases": ["edmond de rothschild"]
+    },
+    {
+      "slug": "indosuez_wealth_management",
+      "name": "Indosuez Wealth Management",
+      "aliases": ["indosuez wealth management", "ca indosuez"]
+    },
+    {
+      "slug": "banque_hottinguer",
+      "name": "Banque Hottinguer",
+      "aliases": ["banque hottinguer", "hottinguer"]
+    },
+    {
+      "slug": "credit_municipal_paris",
+      "name": "Crédit Municipal de Paris",
+      "aliases": ["credit municipal de paris", "crédit municipal de paris"]
+    },
+    {
+      "slug": "arkea_banque_entreprises",
+      "name": "Arkéa Banque Entreprises et Institutionnels",
+      "aliases": ["arkea banque entreprises", "arkéa banque"]
+    },
+    {
+      "slug": "banque_courtois",
+      "name": "Banque Courtois",
+      "aliases": ["banque courtois"]
+    },
+    {
+      "slug": "banque_tarneaud",
+      "name": "Banque Tarneaud",
+      "aliases": ["banque tarneaud"]
+    },
+    {
+      "slug": "credit_agricole_alpes_provence",
+      "name": "Crédit Agricole Alpes Provence",
+      "aliases": ["credit agricole alpes provence"]
+    },
+    {
+      "slug": "credit_agricole_alsace_vosges",
+      "name": "Crédit Agricole Alsace Vosges",
+      "aliases": ["credit agricole alsace vosges"]
+    },
+    {
+      "slug": "credit_agricole_anjou_maine",
+      "name": "Crédit Agricole de l'Anjou et du Maine",
+      "aliases": ["credit agricole anjou et maine", "ca anjou maine"]
+    },
+    {
+      "slug": "credit_agricole_aquitaine",
+      "name": "Crédit Agricole d'Aquitaine",
+      "aliases": ["credit agricole aquitaine"]
+    },
+    {
+      "slug": "credit_agricole_atlantique_vendee",
+      "name": "Crédit Agricole Atlantique Vendée",
+      "aliases": ["credit agricole atlantique vendee"]
+    },
+    {
+      "slug": "credit_agricole_brie_picardie",
+      "name": "Crédit Agricole Brie Picardie",
+      "aliases": ["credit agricole brie picardie"]
+    },
+    {
+      "slug": "credit_agricole_centre_france",
+      "name": "Crédit Agricole Centre France",
+      "aliases": ["credit agricole centre france"]
+    },
+    {
+      "slug": "credit_agricole_centre_loire",
+      "name": "Crédit Agricole Centre Loire",
+      "aliases": ["credit agricole centre loire"]
+    },
+    {
+      "slug": "credit_agricole_centre_ouest",
+      "name": "Crédit Agricole Centre Ouest",
+      "aliases": ["credit agricole centre ouest"]
+    },
+    {
+      "slug": "credit_agricole_centre_est",
+      "name": "Crédit Agricole Centre-Est",
+      "aliases": ["credit agricole centre est"]
+    },
+    {
+      "slug": "credit_agricole_champagne_bourgogne",
+      "name": "Crédit Agricole Champagne-Bourgogne",
+      "aliases": ["credit agricole champagne bourgogne"]
+    },
+    {
+      "slug": "credit_agricole_charente_maritime_deux_sevres",
+      "name": "Crédit Agricole de Charente-Maritime Deux-Sèvres",
+      "aliases": ["credit agricole charente maritime deux sevres"]
+    },
+    {
+      "slug": "credit_agricole_charente_perigord",
+      "name": "Crédit Agricole Charente-Périgord",
+      "aliases": ["credit agricole charente perigord"]
+    },
+    {
+      "slug": "credit_agricole_corse",
+      "name": "Crédit Agricole de la Corse",
+      "aliases": ["credit agricole corse"]
+    },
+    {
+      "slug": "credit_agricole_cotes_darmor",
+      "name": "Crédit Agricole des Côtes d'Armor",
+      "aliases": ["credit agricole cotes d'armor", "credit agricole cotes darmor"]
+    },
+    {
+      "slug": "credit_agricole_des_savoie",
+      "name": "Crédit Agricole des Savoie",
+      "aliases": ["credit agricole des savoie"]
+    },
+    {
+      "slug": "credit_agricole_finistere",
+      "name": "Crédit Agricole du Finistère",
+      "aliases": ["credit agricole finistere"]
+    },
+    {
+      "slug": "credit_agricole_franche_comte",
+      "name": "Crédit Agricole Franche-Comté",
+      "aliases": ["credit agricole franche comte"]
+    },
+    {
+      "slug": "credit_agricole_guadeloupe",
+      "name": "Crédit Agricole de Guadeloupe",
+      "aliases": ["credit agricole guadeloupe"]
+    },
+    {
+      "slug": "credit_agricole_ile_de_france",
+      "name": "Crédit Agricole d'Ile-de-France",
+      "aliases": ["credit agricole ile de france"]
+    },
+    {
+      "slug": "credit_agricole_ille_et_vilaine",
+      "name": "Crédit Agricole d'Ille-et-Vilaine",
+      "aliases": ["credit agricole ille et vilaine"]
+    },
+    {
+      "slug": "credit_agricole_reunion_mayotte",
+      "name": "Crédit Agricole de La Réunion – Mayotte",
+      "aliases": ["credit agricole reunion mayotte"]
+    },
+    {
+      "slug": "credit_agricole_languedoc",
+      "name": "Crédit Agricole du Languedoc",
+      "aliases": ["credit agricole languedoc"]
+    },
+    {
+      "slug": "credit_agricole_loire_haute_loire",
+      "name": "Crédit Agricole de Loire Haute-Loire",
+      "aliases": ["credit agricole loire haute loire"]
+    },
+    {
+      "slug": "credit_agricole_lorraine",
+      "name": "Crédit Agricole de Lorraine",
+      "aliases": ["credit agricole lorraine"]
+    },
+    {
+      "slug": "credit_agricole_martinique_guyane",
+      "name": "Crédit Agricole de Martinique-Guyane",
+      "aliases": ["credit agricole martinique guyane"]
+    },
+    {
+      "slug": "credit_agricole_morbihan",
+      "name": "Crédit Agricole du Morbihan",
+      "aliases": ["credit agricole morbihan"]
+    },
+    {
+      "slug": "credit_agricole_nord_de_france",
+      "name": "Crédit Agricole Nord de France",
+      "aliases": ["credit agricole nord de france"]
+    },
+    {
+      "slug": "credit_agricole_nord_est",
+      "name": "Crédit Agricole Nord Est",
+      "aliases": ["credit agricole nord est"]
+    },
+    {
+      "slug": "credit_agricole_nord_midi_pyrenees",
+      "name": "Crédit Agricole Nord Midi-Pyrénées",
+      "aliases": ["credit agricole nord midi pyrenees"]
+    },
+    {
+      "slug": "credit_agricole_normandie",
+      "name": "Crédit Agricole Normandie",
+      "aliases": ["credit agricole normandie"]
+    },
+    {
+      "slug": "credit_agricole_normandie_seine",
+      "name": "Crédit Agricole Normandie-Seine",
+      "aliases": ["credit agricole normandie seine"]
+    },
+    {
+      "slug": "credit_agricole_provence_cote_dazur",
+      "name": "Crédit Agricole Provence Côte d'Azur",
+      "aliases": ["credit agricole provence cote d'azur", "credit agricole provence cote dazur"]
+    },
+    {
+      "slug": "credit_agricole_pyrenees_gascogne",
+      "name": "Crédit Agricole de Pyrénées Gascogne",
+      "aliases": ["credit agricole pyrenees gascogne"]
+    },
+    {
+      "slug": "credit_agricole_sud_rhone_alpes",
+      "name": "Crédit Agricole Sud Rhône Alpes",
+      "aliases": ["credit agricole sud rhone alpes"]
+    },
+    {
+      "slug": "credit_agricole_sud_mediterranee",
+      "name": "Crédit Agricole Sud Méditerranée",
+      "aliases": ["credit agricole sud mediterranee"]
+    },
+    {
+      "slug": "credit_agricole_toulouse_31",
+      "name": "Crédit Agricole Toulouse 31",
+      "aliases": ["credit agricole toulouse 31"]
+    },
+    {
+      "slug": "credit_agricole_touraine_poitou",
+      "name": "Crédit Agricole de Touraine Poitou",
+      "aliases": ["credit agricole touraine poitou"]
+    },
+    {
+      "slug": "credit_agricole_val_de_france",
+      "name": "Crédit Agricole de Val de France",
+      "aliases": ["credit agricole val de france"]
+    },
+    {
+      "slug": "banque_populaire_alsace_lorraine_champagne",
+      "name": "Banque Populaire Alsace Lorraine Champagne",
+      "aliases": ["banque populaire alsace lorraine champagne"]
+    },
+    {
+      "slug": "banque_populaire_aquitaine_centre_atlantique",
+      "name": "Banque Populaire Aquitaine Centre Atlantique",
+      "aliases": ["banque populaire aquitaine centre atlantique"]
+    },
+    {
+      "slug": "banque_populaire_auvergne_rhone_alpes",
+      "name": "Banque Populaire Auvergne Rhône-Alpes",
+      "aliases": ["banque populaire auvergne rhone alpes"]
+    },
+    {
+      "slug": "banque_populaire_bourgogne_franche_comte",
+      "name": "Banque Populaire Bourgogne Franche-Comté",
+      "aliases": ["banque populaire bourgogne franche comte"]
+    },
+    {
+      "slug": "bred_banque_populaire",
+      "name": "BRED Banque Populaire",
+      "aliases": ["bred", "bred banque populaire"]
+    },
+    {
+      "slug": "banque_populaire_grand_ouest",
+      "name": "Banque Populaire Grand Ouest",
+      "aliases": ["banque populaire grand ouest"]
+    },
+    {
+      "slug": "banque_populaire_mediterranee",
+      "name": "Banque Populaire Méditerranée",
+      "aliases": ["banque populaire mediterranee"]
+    },
+    {
+      "slug": "banque_populaire_du_nord",
+      "name": "Banque Populaire du Nord",
+      "aliases": ["banque populaire du nord"]
+    },
+    {
+      "slug": "banque_populaire_occitane",
+      "name": "Banque Populaire Occitane",
+      "aliases": ["banque populaire occitane"]
+    },
+    {
+      "slug": "banque_populaire_rives_de_paris",
+      "name": "Banque Populaire Rives de Paris",
+      "aliases": ["banque populaire rives de paris"]
+    },
+    {
+      "slug": "banque_populaire_du_sud",
+      "name": "Banque Populaire du Sud",
+      "aliases": ["banque populaire du sud"]
+    },
+    {
+      "slug": "banque_populaire_val_de_france",
+      "name": "Banque Populaire Val de France",
+      "aliases": ["banque populaire val de france"]
+    },
+    {
+      "slug": "casden_banque_populaire",
+      "name": "CASDEN Banque Populaire",
+      "aliases": ["casden", "casden banque populaire"]
+    },
+    {
+      "slug": "caisse_epargne_aquitaine_poitou_charentes",
+      "name": "Caisse d'Épargne Aquitaine Poitou-Charentes",
+      "aliases": ["caisse d'epargne aquitaine poitou charentes"]
+    },
+    {
+      "slug": "caisse_epargne_auvergne_limousin",
+      "name": "Caisse d'Épargne Auvergne et Limousin",
+      "aliases": ["caisse d'epargne auvergne et limousin"]
+    },
+    {
+      "slug": "caisse_epargne_bourgogne_franche_comte",
+      "name": "Caisse d'Épargne Bourgogne Franche-Comté",
+      "aliases": ["caisse d'epargne bourgogne franche comte"]
+    },
+    {
+      "slug": "caisse_epargne_bretagne_pays_de_loire",
+      "name": "Caisse d'Épargne Bretagne Pays de Loire",
+      "aliases": ["caisse d'epargne bretagne pays de loire"]
+    },
+    {
+      "slug": "caisse_epargne_cepac",
+      "name": "Caisse d'Épargne CEPAC",
+      "aliases": ["caisse d'epargne cepac", "cepac"]
+    },
+    {
+      "slug": "caisse_epargne_cote_dazur",
+      "name": "Caisse d'Épargne Côte d'Azur",
+      "aliases": ["caisse d'epargne cote d'azur", "caisse d'epargne cote dazur"]
+    },
+    {
+      "slug": "caisse_epargne_grand_est_europe",
+      "name": "Caisse d'Épargne Grand Est Europe",
+      "aliases": ["caisse d'epargne grand est europe"]
+    },
+    {
+      "slug": "caisse_epargne_hauts_de_france",
+      "name": "Caisse d'Épargne Hauts de France",
+      "aliases": ["caisse d'epargne hauts de france"]
+    },
+    {
+      "slug": "caisse_epargne_ile_de_france",
+      "name": "Caisse d'Épargne Ile-de-France",
+      "aliases": ["caisse d'epargne ile de france"]
+    },
+    {
+      "slug": "caisse_epargne_languedoc_roussillon",
+      "name": "Caisse d'Épargne Languedoc-Roussillon",
+      "aliases": ["caisse d'epargne languedoc roussillon"]
+    },
+    {
+      "slug": "caisse_epargne_loire_centre",
+      "name": "Caisse d'Épargne Loire-Centre",
+      "aliases": ["caisse d'epargne loire centre"]
+    },
+    {
+      "slug": "caisse_epargne_loire_drome_ardeche",
+      "name": "Caisse d'Épargne Loire Drôme Ardèche",
+      "aliases": ["caisse d'epargne loire drome ardeche"]
+    },
+    {
+      "slug": "caisse_epargne_midi_pyrenees",
+      "name": "Caisse d'Épargne Midi-Pyrénées",
+      "aliases": ["caisse d'epargne midi pyrenees"]
+    },
+    {
+      "slug": "caisse_epargne_normandie",
+      "name": "Caisse d'Épargne Normandie",
+      "aliases": ["caisse d'epargne normandie"]
+    },
+    {
+      "slug": "caisse_epargne_rhone_alpes",
+      "name": "Caisse d'Épargne Rhône Alpes",
+      "aliases": ["caisse d'epargne rhone alpes"]
+    },
+    {
+      "slug": "credit_mutuel_centre_est_europe",
+      "name": "Crédit Mutuel Centre Est Europe",
+      "aliases": ["credit mutuel centre est europe"]
+    },
+    {
+      "slug": "credit_mutuel_sud_est",
+      "name": "Crédit Mutuel Sud-Est",
+      "aliases": ["credit mutuel sud est"]
+    },
+    {
+      "slug": "credit_mutuel_savoie_mont_blanc",
+      "name": "Crédit Mutuel Savoie-Mont Blanc",
+      "aliases": ["credit mutuel savoie mont blanc"]
+    },
+    {
+      "slug": "credit_mutuel_ile_de_france",
+      "name": "Crédit Mutuel Île-de-France",
+      "aliases": ["credit mutuel ile de france"]
+    },
+    {
+      "slug": "credit_mutuel_midi_atlantique",
+      "name": "Crédit Mutuel Midi-Atlantique",
+      "aliases": ["credit mutuel midi atlantique"]
+    },
+    {
+      "slug": "credit_mutuel_centre",
+      "name": "Crédit Mutuel Centre",
+      "aliases": ["credit mutuel centre"]
+    },
+    {
+      "slug": "credit_mutuel_loire_atlantique_centre_ouest",
+      "name": "Crédit Mutuel Loire-Atlantique Centre-Ouest",
+      "aliases": ["credit mutuel loire atlantique centre ouest"]
+    },
+    {
+      "slug": "credit_mutuel_normandie",
+      "name": "Crédit Mutuel Normandie",
+      "aliases": ["credit mutuel normandie"]
+    },
+    {
+      "slug": "credit_mutuel_mediterraneen",
+      "name": "Crédit Mutuel Méditerranéen",
+      "aliases": ["credit mutuel mediterraneen"]
+    },
+    {
+      "slug": "credit_mutuel_dauphine_vivarais",
+      "name": "Crédit Mutuel Dauphiné-Vivarais",
+      "aliases": ["credit mutuel dauphine vivarais"]
+    },
+    {
+      "slug": "credit_mutuel_anjou",
+      "name": "Crédit Mutuel Anjou",
+      "aliases": ["credit mutuel anjou"]
+    },
+    {
+      "slug": "credit_mutuel_massif_central",
+      "name": "Crédit Mutuel Massif Central",
+      "aliases": ["credit mutuel massif central"]
+    },
+    {
+      "slug": "credit_mutuel_antilles_guyane",
+      "name": "Crédit Mutuel Antilles-Guyane",
+      "aliases": ["credit mutuel antilles guyane"]
+    },
+    {
+      "slug": "credit_mutuel_nord_europe",
+      "name": "Crédit Mutuel Nord Europe",
+      "aliases": ["credit mutuel nord europe"]
+    },
+    {
+      "slug": "credit_mutuel_bretagne",
+      "name": "Crédit Mutuel de Bretagne",
+      "aliases": ["credit mutuel bretagne"]
+    },
+    {
+      "slug": "credit_mutuel_sud_ouest",
+      "name": "Crédit Mutuel du Sud-Ouest",
+      "aliases": ["credit mutuel sud ouest"]
+    },
+    {
+      "slug": "credit_mutuel_arkea",
+      "name": "Crédit Mutuel Arkéa",
+      "aliases": ["credit mutuel arkea", "arkea"]
+    },
+    {
+      "slug": "credit_mutuel_maine_anjou_basse_normandie",
+      "name": "Crédit Mutuel Maine-Anjou, Basse-Normandie",
+      "aliases": ["credit mutuel maine anjou basse normandie"]
+    },
+    {
+      "slug": "credit_mutuel_ocean",
+      "name": "Crédit Mutuel Océan",
+      "aliases": ["credit mutuel ocean"]
+    },
+    {
+      "slug": "credit_mutuel_alliance_federale",
+      "name": "Crédit Mutuel Alliance Fédérale",
+      "aliases": ["credit mutuel alliance federale"]
+    },
+    {
+      "slug": "cic_est",
+      "name": "CIC Est",
+      "aliases": ["cic est"]
+    },
+    {
+      "slug": "cic_lyonnaise_de_banque",
+      "name": "CIC Lyonnaise de Banque",
+      "aliases": ["cic lyonnaise de banque", "lyonnaise de banque"]
+    },
+    {
+      "slug": "cic_nord_ouest",
+      "name": "CIC Nord Ouest",
+      "aliases": ["cic nord ouest"]
+    },
+    {
+      "slug": "cic_ouest",
+      "name": "CIC Ouest",
+      "aliases": ["cic ouest"]
+    },
+    {
+      "slug": "cic_sud_ouest",
+      "name": "CIC Sud Ouest",
+      "aliases": ["cic sud ouest"]
+    },
+    {
+      "slug": "cic_ile_de_france",
+      "name": "CIC Île-de-France",
+      "aliases": ["cic ile de france"]
+    },
+    {
+      "slug": "cic_banque_cial",
+      "name": "CIC Banque CIAL",
+      "aliases": ["credit industriel d'alsace et de lorraine", "cial"]
+    },
+    {
+      "slug": "banque_kolb",
+      "name": "Banque Kolb",
+      "aliases": ["banque kolb"]
+    },
+    {
+      "slug": "banque_laydernier",
+      "name": "Banque Laydernier",
+      "aliases": ["banque laydernier"]
+    },
+    {
+      "slug": "banque_nuger",
+      "name": "Banque Nuger",
+      "aliases": ["banque nuger"]
+    },
+    {
+      "slug": "banque_rhone_alpes",
+      "name": "Banque Rhône-Alpes",
+      "aliases": ["banque rhone alpes"]
+    },
+    {
+      "slug": "societe_marseillaise_de_credit",
+      "name": "Société Marseillaise de Crédit",
+      "aliases": ["societe marseillaise de credit", "smc"]
+    },
+    {
+      "slug": "oddo_bhf",
+      "name": "Oddo BHF",
+      "aliases": ["oddo bhf", "oddo"]
+    },
+    {
+      "slug": "banque_privee_saint_germain",
+      "name": "Banque Privée Saint Germain",
+      "aliases": ["banque privee saint germain"]
+    },
+    {
+      "slug": "lazard_freres_banque",
+      "name": "Lazard Frères Banque",
+      "aliases": ["lazard freres banque", "lazard"]
+    },
+    {
+      "slug": "louvre_banque_privee",
+      "name": "Louvre Banque Privée",
+      "aliases": ["louvre banque privee"]
+    },
+    {
+      "slug": "banque_richelieu_france",
+      "name": "Banque Richelieu France",
+      "aliases": ["banque richelieu france", "banque richelieu"]
+    },
+    {
+      "slug": "banque_michel_inchauspe",
+      "name": "Banque Michel Inchauspé",
+      "aliases": ["banque michel inchauspe", "bmi"]
+    },
+    {
+      "slug": "gresham_banque",
+      "name": "Gresham Banque",
+      "aliases": ["gresham banque"]
+    },
+    {
+      "slug": "banque_wormser_freres",
+      "name": "Banque Wormser Frères",
+      "aliases": ["banque wormser freres"]
+    },
+    {
+      "slug": "swiss_life_banque_privee",
+      "name": "Swiss Life Banque Privée",
+      "aliases": ["swiss life banque privee"]
+    },
+    {
+      "slug": "rothschild_martin_maurel",
+      "name": "Rothschild Martin Maurel",
+      "aliases": ["rothschild martin maurel", "martin maurel"]
+    },
+    {
+      "slug": "banque_des_antilles_francaises",
+      "name": "Banque des Antilles Françaises",
+      "aliases": ["banque des antilles francaises", "bdaf"]
+    },
+    {
+      "slug": "banque_de_nouvelle_caledonie",
+      "name": "Banque de Nouvelle-Calédonie",
+      "aliases": ["banque de nouvelle caledonie", "bnc"]
+    },
+    {
+      "slug": "banque_de_la_reunion",
+      "name": "Banque de la Réunion",
+      "aliases": ["banque de la reunion"]
+    },
+    {
+      "slug": "banque_de_tahiti",
+      "name": "Banque de Tahiti",
+      "aliases": ["banque de tahiti", "bdt"]
+    },
+    {
+      "slug": "banque_caledonienne_dinvestissement",
+      "name": "Banque Calédonienne d'Investissement",
+      "aliases": ["banque caledonienne d'investissement", "bci"]
+    },
+    {
+      "slug": "societe_generale_caledonienne_de_banque",
+      "name": "Société Générale Calédonienne de Banque",
+      "aliases": ["societe generale caledonienne de banque", "sgcb"]
+    },
+    {
+      "slug": "banque_socredo",
+      "name": "Banque SOCREDO",
+      "aliases": ["banque socredo", "socredo"]
+    },
+    {
+      "slug": "banque_francaise_commerciale_ocean_indien",
+      "name": "Banque Française Commerciale Océan Indien",
+      "aliases": ["banque francaise commerciale ocean indien", "bfcoi"]
+    },
+    {
+      "slug": "societe_generale_de_banque_aux_antilles",
+      "name": "Société Générale de Banque aux Antilles",
+      "aliases": ["societe generale de banque aux antilles", "sgba"]
+    },
+    {
+      "slug": "banque_de_saint_pierre_et_miquelon",
+      "name": "Banque de Saint-Pierre-et-Miquelon",
+      "aliases": ["banque de saint pierre et miquelon"]
+    },
+    {
+      "slug": "bpce_international_et_outre_mer",
+      "name": "BPCE International et Outre-Mer",
+      "aliases": ["bpce international et outre mer", "bpce iom"]
+    },
+    {
+      "slug": "banque_de_polynesie",
+      "name": "Banque de Polynésie",
+      "aliases": ["banque de polynesie"]
+    },
+    {
+      "slug": "banque_francaise_commerciale_antilles_guyane",
+      "name": "Banque Française Commerciale Antilles-Guyane",
+      "aliases": ["banque francaise commerciale antilles guyane", "bfc antilles guyane"]
+    },
+    {
+      "slug": "banque_de_la_guyane",
+      "name": "Banque de la Guyane",
+      "aliases": ["banque de la guyane"]
+    },
+    {
+      "slug": "shine",
+      "name": "Shine",
+      "aliases": ["shine"]
+    },
+    {
+      "slug": "blank",
+      "name": "Blank",
+      "aliases": ["blank"]
+    },
+    {
+      "slug": "anytime",
+      "name": "Anytime",
+      "aliases": ["anytime"]
+    },
+    {
+      "slug": "helios",
+      "name": "Helios",
+      "aliases": ["helios"]
+    },
+    {
+      "slug": "sogexia",
+      "name": "Sogexia",
+      "aliases": ["sogexia"]
+    },
+    {
+      "slug": "manager_one",
+      "name": "Manager.one",
+      "aliases": ["manager one", "manager.one"]
+    },
+    {
+      "slug": "kard",
+      "name": "Kard",
+      "aliases": ["kard"]
+    },
+    {
+      "slug": "propulse_by_ca",
+      "name": "Propulse by CA",
+      "aliases": ["propulse by ca", "propulse credit agricole"]
+    },
+    {
+      "slug": "fiducial_banque",
+      "name": "Fiducial Banque",
+      "aliases": ["fiducial banque"]
+    },
+    {
+      "slug": "morning",
+      "name": "Morning",
+      "aliases": ["morning", "morning bank"]
+    },
+    {
+      "slug": "djingo",
+      "name": "Djingo",
+      "aliases": ["djingo"]
+    },
+    {
+      "slug": "credit_agricole_cib",
+      "name": "Crédit Agricole CIB",
+      "aliases": ["credit agricole cib", "credit agricole corporate and investment bank"]
+    },
+    {
+      "slug": "compagnie_de_financement_foncier",
+      "name": "Compagnie de Financement Foncier",
+      "aliases": ["compagnie de financement foncier", "cfif"]
+    },
+    {
+      "slug": "credit_foncier_de_france",
+      "name": "Crédit Foncier de France",
+      "aliases": ["credit foncier de france", "credit foncier"]
+    },
+    {
+      "slug": "cofinoga",
+      "name": "Cofinoga",
+      "aliases": ["cofinoga"]
+    },
+    {
+      "slug": "memo_bank",
+      "name": "Memo Bank",
+      "aliases": ["memo bank"]
+    },
+    {
+      "slug": "rci_banque",
+      "name": "RCI Banque",
+      "aliases": ["rci banque", "mobilize financial services"]
+    },
+    {
+      "slug": "free2move_bank",
+      "name": "Free2Move Bank",
+      "aliases": ["free2move bank", "psa banque france"]
+    },
+    {
+      "slug": "volkswagen_bank",
+      "name": "Volkswagen Bank",
+      "aliases": ["volkswagen bank", "vw bank"]
+    },
+    {
+      "slug": "societe_nanceienne_varin_bernier",
+      "name": "Société Nancéienne Varin-Bernier",
+      "aliases": ["societe nanceienne varin bernier", "snvb"]
+    },
+    {
+      "slug": "banque_europeenne_du_credit_mutuel",
+      "name": "Banque Européenne du Crédit Mutuel",
+      "aliases": ["banque europeenne du credit mutuel", "becm"]
+    },
+    {
+      "slug": "natixis",
+      "name": "Natixis",
+      "aliases": ["natixis"]
+    },
+    {
+      "slug": "domofinance",
+      "name": "Domofinance",
+      "aliases": ["domofinance"]
+    },
+    {
+      "slug": "banque_solfea",
+      "name": "Banque Solfea",
+      "aliases": ["banque solfea", "solfea"]
+    },
+    {
+      "slug": "btp_banque",
+      "name": "BTP Banque",
+      "aliases": ["btp banque"]
+    },
+    {
+      "slug": "natixis_interepargne",
+      "name": "Natixis Interépargne",
+      "aliases": ["natixis interepargne"]
+    },
+    {
+      "slug": "banque_descompte",
+      "name": "Banque d'Escompte",
+      "aliases": ["banque d'escompte", "banque descompte"]
+    },
+    {
+      "slug": "caceis",
+      "name": "CACEIS",
+      "aliases": ["caceis"]
+    },
+    {
+      "slug": "diac",
+      "name": "Diac",
+      "aliases": ["diac", "diac sa"]
+    },
+    {
+      "slug": "credit_municipal_angers",
+      "name": "Crédit Municipal d'Angers",
+      "aliases": ["credit municipal d'angers", "caisse de credit municipal d'angers"]
+    },
+    {
+      "slug": "credit_municipal_avignon",
+      "name": "Crédit Municipal d'Avignon",
+      "aliases": ["credit municipal d'avignon"]
+    },
+    {
+      "slug": "credit_municipal_bordeaux",
+      "name": "Crédit Municipal de Bordeaux",
+      "aliases": ["credit municipal de bordeaux"]
+    },
+    {
+      "slug": "credit_municipal_orleans",
+      "name": "Crédit Municipal d'Orléans",
+      "aliases": ["credit municipal d'orleans"]
+    },
+    {
+      "slug": "credit_municipal_poitiers",
+      "name": "Crédit Municipal de Poitiers",
+      "aliases": ["credit municipal de poitiers"]
+    },
+    {
+      "slug": "credit_municipal_boulogne_sur_mer",
+      "name": "Crédit Municipal de Boulogne-sur-Mer",
+      "aliases": ["credit municipal de boulogne sur mer"]
+    },
+    {
+      "slug": "credit_municipal_dijon",
+      "name": "Crédit Municipal de Dijon",
+      "aliases": ["credit municipal de dijon"]
+    },
+    {
+      "slug": "credit_municipal_lille",
+      "name": "Crédit Municipal de Lille",
+      "aliases": ["credit municipal de lille"]
+    },
+    {
+      "slug": "credit_municipal_lyon",
+      "name": "Crédit Municipal de Lyon",
+      "aliases": ["credit municipal de lyon"]
+    },
+    {
+      "slug": "credit_municipal_marseille",
+      "name": "Crédit Municipal de Marseille",
+      "aliases": ["credit municipal de marseille"]
+    },
+    {
+      "slug": "credit_municipal_nancy",
+      "name": "Crédit Municipal de Nancy",
+      "aliases": ["credit municipal de nancy"]
+    },
+    {
+      "slug": "credit_municipal_nantes",
+      "name": "Crédit Municipal de Nantes",
+      "aliases": ["credit municipal de nantes"]
+    },
+    {
+      "slug": "credit_municipal_nice",
+      "name": "Crédit Municipal de Nice",
+      "aliases": ["credit municipal de nice"]
+    },
+    {
+      "slug": "credit_municipal_nimes",
+      "name": "Crédit Municipal de Nîmes",
+      "aliases": ["credit municipal de nimes"]
+    },
+    {
+      "slug": "credit_municipal_reims",
+      "name": "Crédit Municipal de Reims",
+      "aliases": ["credit municipal de reims"]
+    },
+    {
+      "slug": "credit_municipal_roubaix",
+      "name": "Crédit Municipal de Roubaix",
+      "aliases": ["credit municipal de roubaix"]
+    },
+    {
+      "slug": "credit_municipal_strasbourg",
+      "name": "Crédit Municipal de Strasbourg",
+      "aliases": ["credit municipal de strasbourg"]
+    },
+    {
+      "slug": "credit_municipal_toulouse",
+      "name": "Crédit Municipal de Toulouse",
+      "aliases": ["credit municipal de toulouse"]
+    },
+    {
+      "slug": "credit_municipal_toulon",
+      "name": "Crédit Municipal de Toulon",
+      "aliases": ["credit municipal de toulon"]
+    },
+    {
+      "slug": "credit_municipal_rouen",
+      "name": "Crédit Municipal de Rouen",
+      "aliases": ["credit municipal de rouen"]
+    },
+    {
+      "slug": "credit_maritime_region_nord",
+      "name": "Caisse Régionale de Crédit Maritime Mutuel de la Région Nord",
+      "aliases": ["credit maritime region nord", "caisse regionale de credit maritime mutuel de la region nord"]
+    },
+    {
+      "slug": "credit_maritime_littoral_sud_ouest",
+      "name": "Caisse Régionale de Crédit Maritime Mutuel du Littoral du Sud-Ouest",
+      "aliases": ["credit maritime littoral sud ouest"]
+    },
+    {
+      "slug": "banque_hervet",
+      "name": "Banque Hervet",
+      "aliases": ["banque hervet"]
+    },
+    {
+      "slug": "banque_chalus",
+      "name": "Banque Chalus",
+      "aliases": ["banque chalus"]
+    },
+    {
+      "slug": "union_de_credit_pour_le_batiment",
+      "name": "Union de Crédit pour le Bâtiment",
+      "aliases": ["union de credit pour le batiment", "ucb"]
+    },
+    {
+      "slug": "cofica",
+      "name": "COFICA",
+      "aliases": ["cofica"]
+    },
+    {
+      "slug": "banque_de_lunion_parisienne",
+      "name": "Banque de l'Union Parisienne",
+      "aliases": ["banque de l'union parisienne", "banque de l union parisienne"]
+    },
+    {
+      "slug": "banque_nationale_de_credit",
+      "name": "Banque Nationale de Crédit",
+      "aliases": ["banque nationale de credit"]
+    },
+    {
+      "slug": "banque_chaix",
+      "name": "Banque Chaix",
+      "aliases": ["banque chaix"]
+    },
+    {
+      "slug": "banque_dupuy_de_parseval",
+      "name": "Banque Dupuy de Parseval",
+      "aliases": ["banque dupuy de parseval"]
+    },
+    {
+      "slug": "banque_marze",
+      "name": "Banque Marze",
+      "aliases": ["banque marze"]
+    },
+    {
+      "slug": "union_de_banques_a_paris",
+      "name": "Union de Banques à Paris",
+      "aliases": ["union de banques a paris"]
+    }
+  ],
+  "energy": [
+    {
+      "slug": "totalenergies",
+      "name": "TotalEnergies",
+      "aliases": ["totalenergies", "total energies", "total direct energie"]
+    },
+    {
+      "slug": "ekwateur",
+      "name": "Ekwateur",
+      "aliases": ["ekwateur"]
+    },
+    {
+      "slug": "mint_energie",
+      "name": "Mint Énergie",
+      "aliases": ["mint energie", "mint énergie"]
+    },
+    {
+      "slug": "ohm_energie",
+      "name": "Ohm Énergie",
+      "aliases": ["ohm energie", "ohm énergie"]
+    },
+    {
+      "slug": "octopus_energy",
+      "name": "Octopus Energy",
+      "aliases": ["octopus energy", "octopus"]
+    },
+    {
+      "slug": "vattenfall",
+      "name": "Vattenfall",
+      "aliases": ["vattenfall"]
+    },
+    {
+      "slug": "plenitude",
+      "name": "Plenitude",
+      "aliases": ["plenitude"]
+    },
+    {
+      "slug": "edf",
+      "name": "EDF",
+      "aliases": ["edf", "electricite de france"]
+    },
+    {
+      "slug": "engie",
+      "name": "Engie",
+      "aliases": ["engie"]
+    },
+    {
+      "slug": "eni",
+      "name": "Eni",
+      "aliases": ["eni"]
+    },
+    {
+      "slug": "enercoop",
+      "name": "Enercoop",
+      "aliases": ["enercoop"]
+    },
+    {
+      "slug": "alterna",
+      "name": "Alterna",
+      "aliases": ["alterna"]
+    },
+    {
+      "slug": "alpiq",
+      "name": "Alpiq",
+      "aliases": ["alpiq"]
+    },
+    {
+      "slug": "wekiwi",
+      "name": "Wekiwi",
+      "aliases": ["wekiwi"]
+    },
+    {
+      "slug": "happ_e",
+      "name": "Happ-e",
+      "aliases": ["happ-e", "happe"]
+    },
+    {
+      "slug": "sowee",
+      "name": "Sowee",
+      "aliases": ["sowee"]
+    },
+    {
+      "slug": "butagaz",
+      "name": "Butagaz",
+      "aliases": ["butagaz"]
+    },
+    {
+      "slug": "dyneff",
+      "name": "Dyneff",
+      "aliases": ["dyneff"]
+    },
+    {
+      "slug": "leclerc_energies",
+      "name": "Leclerc Énergies",
+      "aliases": ["leclerc energies", "leclerc énergies"]
+    },
+    {
+      "slug": "energie_x",
+      "name": "Cdiscount Énergie",
+      "aliases": ["cdiscount energie"]
+    },
+    {
+      "slug": "gaz_de_bordeaux",
+      "name": "Gaz de Bordeaux",
+      "aliases": ["gaz de bordeaux"]
+    },
+    {
+      "slug": "es_energies_strasbourg",
+      "name": "ES (Électricité de Strasbourg)",
+      "aliases": ["es energies strasbourg", "electricite de strasbourg"]
+    },
+    {
+      "slug": "selia",
+      "name": "Sélia",
+      "aliases": ["selia"]
+    },
+    {
+      "slug": "primeo_energie",
+      "name": "Primeo Energie",
+      "aliases": ["primeo energie"]
+    },
+    {
+      "slug": "geg",
+      "name": "GEG (Gaz Électricité de Grenoble)",
+      "aliases": ["geg", "gaz electricite de grenoble"]
+    },
+    {
+      "slug": "urban_solar_energy",
+      "name": "Urban Solar Energy",
+      "aliases": ["urban solar energy"]
+    },
+    {
+      "slug": "antargaz",
+      "name": "Antargaz",
+      "aliases": ["antargaz"]
+    },
+    {
+      "slug": "primagaz",
+      "name": "Primagaz",
+      "aliases": ["primagaz"]
+    },
+    {
+      "slug": "ilek",
+      "name": "Ilek",
+      "aliases": ["ilek"]
+    },
+    {
+      "slug": "plum_energie",
+      "name": "Plüm Énergie",
+      "aliases": ["plum energie", "plüm énergie"]
+    },
+    {
+      "slug": "iberdrola",
+      "name": "Iberdrola",
+      "aliases": ["iberdrola"]
+    },
+    {
+      "slug": "direct_energie",
+      "name": "Direct Énergie",
+      "aliases": ["direct energie", "direct énergie"]
+    },
+    {
+      "slug": "vialis",
+      "name": "Vialis",
+      "aliases": ["vialis"]
+    },
+    {
+      "slug": "gaz_de_barr",
+      "name": "Gaz de Barr",
+      "aliases": ["gaz de barr"]
+    },
+    {
+      "slug": "planete_oui",
+      "name": "Planète OUI",
+      "aliases": ["planete oui", "planète oui"]
+    },
+    {
+      "slug": "lampiris",
+      "name": "Lampiris",
+      "aliases": ["lampiris"]
+    },
+    {
+      "slug": "proxelia",
+      "name": "Proxelia",
+      "aliases": ["proxelia"]
+    },
+    {
+      "slug": "mega_energie",
+      "name": "Méga Énergie",
+      "aliases": ["mega energie", "méga énergie"]
+    },
+    {
+      "slug": "ovo_energy",
+      "name": "OVO Energy",
+      "aliases": ["ovo energy", "ovo"]
+    },
+    {
+      "slug": "elmy",
+      "name": "Elmy",
+      "aliases": ["elmy energie", "elmy sas"]
+    },
+    {
+      "slug": "la_belle_energie",
+      "name": "La Belle Énergie",
+      "aliases": ["la belle energie", "labellenergie", "electricite de provence"]
+    },
+    {
+      "slug": "jeety",
+      "name": "Jeety Energy",
+      "aliases": ["jeety energy", "elecocite"]
+    },
+    {
+      "slug": "papernest_energie",
+      "name": "Papernest Énergie",
+      "aliases": ["papernest energie", "papernest"]
+    },
+    {
+      "slug": "seolis",
+      "name": "Séolis",
+      "aliases": ["seolis", "srd seolis deux-sevres"]
+    },
+    {
+      "slug": "uem",
+      "name": "UEM (Usine d'Électricité de Metz)",
+      "aliases": ["uem metz", "usine d'electricite de metz"]
+    },
+    {
+      "slug": "gedia",
+      "name": "Gédia Énergies & Services",
+      "aliases": ["gedia energies", "gedia dreux"]
+    },
+    {
+      "slug": "sicae_oise",
+      "name": "SICAE de l'Oise",
+      "aliases": ["sicae oise", "sicae-oise"]
+    },
+    {
+      "slug": "sicae_somme",
+      "name": "SICAE de la Somme et du Cambraisis",
+      "aliases": ["sicae somme", "sicae somme et du cambraisis"]
+    },
+    {
+      "slug": "sicae_aisne",
+      "name": "SICAE de l'Aisne",
+      "aliases": ["sicae aisne", "sica electricite aisne"]
+    },
+    {
+      "slug": "sicae_est",
+      "name": "SICAE Est",
+      "aliases": ["sicae est", "sicae-est"]
+    },
+    {
+      "slug": "soregies",
+      "name": "Sorégies",
+      "aliases": ["soregies", "soregies vienne"]
+    },
+    {
+      "slug": "gascogne_energies_services",
+      "name": "Gascogne Énergies Services",
+      "aliases": ["gascogne energies services", "ges landes"]
+    },
+    {
+      "slug": "hunelec",
+      "name": "Hunelec",
+      "aliases": ["hunelec huningue"]
+    },
+    {
+      "slug": "electricite_de_mayotte",
+      "name": "Électricité de Mayotte",
+      "aliases": ["electricite de mayotte", "edm mayotte"]
+    },
+    {
+      "slug": "sicap_pithiviers",
+      "name": "SICAP Pithiviers",
+      "aliases": ["sicap pithiviers", "sicap"]
+    },
+    {
+      "slug": "volterres",
+      "name": "Volterres",
+      "aliases": ["volterres energie"]
+    },
+    {
+      "slug": "energie_d_ici",
+      "name": "Énergie d'Ici",
+      "aliases": ["energie d'ici", "energie dici"]
+    },
+    {
+      "slug": "llum",
+      "name": "LLUM",
+      "aliases": ["llum energie", "llum occitanie"]
+    },
+    {
+      "slug": "energies_du_santerre",
+      "name": "Énergies du Santerre",
+      "aliases": ["energies du santerre", "energie du santerre"]
+    },
+    {
+      "slug": "lucia_energie",
+      "name": "Lucia Énergie",
+      "aliases": ["lucia energie", "lucia"]
+    },
+    {
+      "slug": "energem",
+      "name": "Énergem",
+      "aliases": ["energem", "energem metz"]
+    },
+    {
+      "slug": "greenyellow",
+      "name": "GreenYellow",
+      "aliases": ["greenyellow vente d'energie", "greenyellow energie"]
+    },
+    {
+      "slug": "cesml",
+      "name": "CESML (Coopérative d'Électricité de Saint-Martin-de-Londres)",
+      "aliases": ["cesml", "cooperative electricite saint martin de londres"]
+    },
+    {
+      "slug": "bulb",
+      "name": "Bulb",
+      "aliases": ["bulb energie", "bulb france"]
+    },
+    {
+      "slug": "barry_energy",
+      "name": "Barry Energy",
+      "aliases": ["barry energie", "barry france"]
+    },
+    {
+      "slug": "bordeaux_metropole_energies",
+      "name": "Bordeaux Métropole Énergies",
+      "aliases": ["bordeaux metropole energies", "bm energies"]
+    }
+  ],
+  "telecom": [
+    {
+      "slug": "orange",
+      "name": "Orange",
+      "aliases": ["orange"]
+    },
+    {
+      "slug": "sosh",
+      "name": "Sosh",
+      "aliases": ["sosh"]
+    },
+    {
+      "slug": "bouygues_telecom",
+      "name": "Bouygues Telecom",
+      "aliases": ["bouygues telecom", "bouygues", "b&you", "b and you"]
+    },
+    {
+      "slug": "free",
+      "name": "Free",
+      "aliases": ["free", "free mobile"]
+    },
+    {
+      "slug": "red_by_sfr",
+      "name": "RED by SFR",
+      "aliases": ["red by sfr"]
+    },
+    {
+      "slug": "sfr",
+      "name": "SFR",
+      "aliases": ["sfr"]
+    },
+    {
+      "slug": "la_poste_mobile",
+      "name": "La Poste Mobile",
+      "aliases": ["la poste mobile"]
+    },
+    {
+      "slug": "nrj_mobile",
+      "name": "NRJ Mobile",
+      "aliases": ["nrj mobile"]
+    },
+    {
+      "slug": "coriolis_telecom",
+      "name": "Coriolis Télécom",
+      "aliases": ["coriolis telecom", "coriolis"]
+    },
+    {
+      "slug": "auchan_telecom",
+      "name": "Auchan Telecom",
+      "aliases": ["auchan telecom"]
+    },
+    {
+      "slug": "cdiscount_mobile",
+      "name": "Cdiscount Mobile",
+      "aliases": ["cdiscount mobile"]
+    },
+    {
+      "slug": "leclerc_mobile",
+      "name": "Leclerc Mobile",
+      "aliases": ["leclerc mobile"]
+    },
+    {
+      "slug": "prixtel",
+      "name": "Prixtel",
+      "aliases": ["prixtel"]
+    },
+    {
+      "slug": "youprice",
+      "name": "YouPrice",
+      "aliases": ["youprice"]
+    },
+    {
+      "slug": "lebara",
+      "name": "Lebara",
+      "aliases": ["lebara"]
+    },
+    {
+      "slug": "lycamobile",
+      "name": "Lycamobile",
+      "aliases": ["lycamobile", "lyca mobile"]
+    },
+    {
+      "slug": "syma_mobile",
+      "name": "Syma Mobile",
+      "aliases": ["syma mobile", "syma"]
+    },
+    {
+      "slug": "simyo",
+      "name": "Simyo",
+      "aliases": ["simyo"]
+    },
+    {
+      "slug": "ortel_mobile",
+      "name": "Ortel Mobile",
+      "aliases": ["ortel mobile", "ortel"]
+    },
+    {
+      "slug": "transatel",
+      "name": "Transatel",
+      "aliases": ["transatel"]
+    },
+    {
+      "slug": "zeop",
+      "name": "Zeop",
+      "aliases": ["zeop"]
+    },
+    {
+      "slug": "afone_mobile",
+      "name": "Afone Mobile",
+      "aliases": ["afone mobile", "afone"]
+    },
+    {
+      "slug": "orange_caraibe",
+      "name": "Orange Caraïbe",
+      "aliases": ["orange caraibe", "orange caraïbe"]
+    },
+    {
+      "slug": "onoff_telecom",
+      "name": "OnOff Telecom",
+      "aliases": ["onoff telecom", "onoff"]
+    },
+    {
+      "slug": "bazile_telecom",
+      "name": "Bazile Telecom",
+      "aliases": ["bazile telecom", "bazile"]
+    },
+    {
+      "slug": "carrefour_mobile",
+      "name": "Carrefour Mobile",
+      "aliases": ["carrefour mobile"]
+    },
+    {
+      "slug": "nordnet",
+      "name": "Nordnet",
+      "aliases": ["nordnet"]
+    },
+    {
+      "slug": "reglo_mobile",
+      "name": "Réglo Mobile",
+      "aliases": ["reglo mobile", "réglo mobile"]
+    },
+    {
+      "slug": "akeo_telecom",
+      "name": "Akéo Télécom",
+      "aliases": ["akeo telecom", "akéo télécom"]
+    },
+    {
+      "slug": "ciel_telecom",
+      "name": "Ciel Télécom",
+      "aliases": ["ciel telecom", "ciel télécom"]
+    },
+    {
+      "slug": "mobisud",
+      "name": "Mobisud",
+      "aliases": ["mobisud"]
+    },
+    {
+      "slug": "buzz_mobile",
+      "name": "BuzzMobile",
+      "aliases": ["buzz mobile", "buzzmobile"]
+    },
+    {
+      "slug": "virgin_mobile",
+      "name": "Virgin Mobile France",
+      "aliases": ["virgin mobile"]
+    },
+    {
+      "slug": "omea_telecom",
+      "name": "Omea Telecom",
+      "aliases": ["omea telecom"]
+    },
+    {
+      "slug": "m6_mobile",
+      "name": "M6 Mobile",
+      "aliases": ["m6 mobile", "m6 mobile by orange"]
+    },
+    {
+      "slug": "tele2_mobile",
+      "name": "Tele2 Mobile",
+      "aliases": ["tele2 mobile", "tele2"]
+    },
+    {
+      "slug": "neuf_mobile",
+      "name": "Neuf Mobile",
+      "aliases": ["neuf mobile", "neuf telecom mobile"]
+    },
+    {
+      "slug": "fnac_mobile",
+      "name": "Fnac Mobile",
+      "aliases": ["fnac mobile"]
+    },
+    {
+      "slug": "tf1_mobile",
+      "name": "TF1 Mobile",
+      "aliases": ["tf1 mobile"]
+    },
+    {
+      "slug": "numericable",
+      "name": "Numericable",
+      "aliases": ["numericable", "numéricable"]
+    },
+    {
+      "slug": "darty_mobile",
+      "name": "Darty Mobile",
+      "aliases": ["darty mobile", "dartybox"]
+    },
+    {
+      "slug": "cic_mobile",
+      "name": "CIC Mobile",
+      "aliases": ["cic mobile"]
+    },
+    {
+      "slug": "credit_mutuel_mobile",
+      "name": "Crédit Mutuel Mobile",
+      "aliases": ["credit mutuel mobile", "crédit mutuel mobile"]
+    },
+    {
+      "slug": "telecoop",
+      "name": "TeleCoop",
+      "aliases": ["telecoop", "télécoop"]
+    },
+    {
+      "slug": "luvimobile",
+      "name": "Luvi Mobile",
+      "aliases": ["luvimobile", "luvi mobile"]
+    },
+    {
+      "slug": "mobileo_telecom",
+      "name": "Mobileo Telecom",
+      "aliases": ["mobileo telecom", "mobileo"]
+    },
+    {
+      "slug": "source_mobile",
+      "name": "Source Mobile",
+      "aliases": ["source mobile"]
+    }
+  ],
+  "insurance": [
+    {
+      "slug": "axa",
+      "name": "AXA",
+      "aliases": ["axa"]
+    },
+    {
+      "slug": "maif",
+      "name": "MAIF",
+      "aliases": ["maif"]
+    },
+    {
+      "slug": "macif",
+      "name": "MACIF",
+      "aliases": ["macif"]
+    },
+    {
+      "slug": "maaf",
+      "name": "MAAF",
+      "aliases": ["maaf"]
+    },
+    {
+      "slug": "groupama",
+      "name": "Groupama",
+      "aliases": ["groupama"]
+    },
+    {
+      "slug": "matmut",
+      "name": "Matmut",
+      "aliases": ["matmut"]
+    },
+    {
+      "slug": "gmf",
+      "name": "GMF",
+      "aliases": ["gmf"]
+    },
+    {
+      "slug": "generali",
+      "name": "Generali",
+      "aliases": ["generali"]
+    },
+    {
+      "slug": "direct_assurance",
+      "name": "Direct Assurance",
+      "aliases": ["direct assurance"]
+    },
+    {
+      "slug": "a2a",
+      "name": "A2A",
+      "aliases": ["a2a"]
+    },
+    {
+      "slug": "allianz",
+      "name": "Allianz",
+      "aliases": ["allianz"]
+    },
+    {
+      "slug": "abeille_assurances",
+      "name": "Abeille Assurances",
+      "aliases": ["abeille assurances", "aviva france"]
+    },
+    {
+      "slug": "covea",
+      "name": "Covéa",
+      "aliases": ["covea", "covéa"]
+    },
+    {
+      "slug": "mma",
+      "name": "MMA",
+      "aliases": ["mma", "mutuelles du mans assurances"]
+    },
+    {
+      "slug": "pacifica",
+      "name": "Pacifica (Crédit Agricole Assurances)",
+      "aliases": ["pacifica", "credit agricole assurances"]
+    },
+    {
+      "slug": "swisslife",
+      "name": "SwissLife",
+      "aliases": ["swisslife", "swiss life"]
+    },
+    {
+      "slug": "april",
+      "name": "April",
+      "aliases": ["april"]
+    },
+    {
+      "slug": "ag2r_la_mondiale",
+      "name": "AG2R La Mondiale",
+      "aliases": ["ag2r la mondiale", "ag2r"]
+    },
+    {
+      "slug": "thelem_assurances",
+      "name": "Thélem Assurances",
+      "aliases": ["thelem assurances", "thélem"]
+    },
+    {
+      "slug": "smacl",
+      "name": "SMACL Assurances",
+      "aliases": ["smacl"]
+    },
+    {
+      "slug": "gan_assurances",
+      "name": "Gan Assurances",
+      "aliases": ["gan assurances", "gan"]
+    },
+    {
+      "slug": "leocare",
+      "name": "Leocare",
+      "aliases": ["leocare"]
+    },
+    {
+      "slug": "luko",
+      "name": "Luko",
+      "aliases": ["luko"]
+    },
+    {
+      "slug": "lovys",
+      "name": "Lovys",
+      "aliases": ["lovys"]
+    },
+    {
+      "slug": "wakam",
+      "name": "Wakam",
+      "aliases": ["wakam"]
+    },
+    {
+      "slug": "euro_assurance",
+      "name": "Euro-Assurance",
+      "aliases": ["euro assurance", "euro-assurance"]
+    },
+    {
+      "slug": "areas_assurances",
+      "name": "Areas Assurances",
+      "aliases": ["areas assurances", "areas"]
+    },
+    {
+      "slug": "predica",
+      "name": "Prédica",
+      "aliases": ["predica", "prédica"]
+    },
+    {
+      "slug": "suravenir",
+      "name": "Suravenir",
+      "aliases": ["suravenir"]
+    },
+    {
+      "slug": "groupama_gan_vie",
+      "name": "Groupama Gan Vie",
+      "aliases": ["groupama gan vie"]
+    },
+    {
+      "slug": "generali_iard",
+      "name": "Generali IARD",
+      "aliases": ["generali iard"]
+    },
+    {
+      "slug": "klesia",
+      "name": "Klesia",
+      "aliases": ["klesia"]
+    },
+    {
+      "slug": "henner",
+      "name": "Henner",
+      "aliases": ["henner"]
+    },
+    {
+      "slug": "novys",
+      "name": "Novys",
+      "aliases": ["novys"]
+    },
+    {
+      "slug": "assurpeople",
+      "name": "AssurPeople",
+      "aliases": ["assurpeople", "assur people"]
+    },
+    {
+      "slug": "generali_vie",
+      "name": "Generali Vie",
+      "aliases": ["generali vie"]
+    },
+    {
+      "slug": "mutuelle_des_motards",
+      "name": "Mutuelle des Motards",
+      "aliases": ["mutuelle des motards"]
+    },
+    {
+      "slug": "smabtp",
+      "name": "SMABTP",
+      "aliases": ["smabtp"]
+    },
+    {
+      "slug": "gan_eurocourtage",
+      "name": "Gan Eurocourtage",
+      "aliases": ["gan eurocourtage"]
+    },
+    {
+      "slug": "assu2000",
+      "name": "Assu2000",
+      "aliases": ["assu2000", "assu 2000"]
+    },
+    {
+      "slug": "filia_maif",
+      "name": "Filia-MAIF",
+      "aliases": ["filia maif", "filia-maif"]
+    },
+    {
+      "slug": "smavie_btp",
+      "name": "SMAvie BTP",
+      "aliases": ["smavie btp", "smavie"]
+    },
+    {
+      "slug": "mae",
+      "name": "MAE Assurances",
+      "aliases": ["mae assurances", "mutuelle assurance de l'education"]
+    },
+    {
+      "slug": "coface",
+      "name": "Coface",
+      "aliases": ["coface"]
+    },
+    {
+      "slug": "allianz_trade",
+      "name": "Allianz Trade",
+      "aliases": ["allianz trade", "euler hermes"]
+    },
+    {
+      "slug": "verspieren",
+      "name": "Verspieren",
+      "aliases": ["verspieren"]
+    },
+    {
+      "slug": "la_parisienne_assurances",
+      "name": "La Parisienne Assurances",
+      "aliases": ["la parisienne assurances"]
+    },
+    {
+      "slug": "metlife",
+      "name": "MetLife France",
+      "aliases": ["metlife"]
+    },
+    {
+      "slug": "bnp_paribas_cardif",
+      "name": "BNP Paribas Cardif",
+      "aliases": ["cardif", "bnp paribas cardif"]
+    },
+    {
+      "slug": "cnp_assurances",
+      "name": "CNP Assurances",
+      "aliases": ["cnp assurances", "cnp"]
+    },
+    {
+      "slug": "sogecap",
+      "name": "Sogecap",
+      "aliases": ["sogecap"]
+    },
+    {
+      "slug": "assurances_credit_mutuel",
+      "name": "Assurances du Crédit Mutuel",
+      "aliases": ["acm", "assurances du credit mutuel"]
+    },
+    {
+      "slug": "eurofil",
+      "name": "Eurofil",
+      "aliases": ["eurofil"]
+    },
+    {
+      "slug": "amaguiz",
+      "name": "Amaguiz",
+      "aliases": ["amaguiz"]
+    },
+    {
+      "slug": "olivier_assurances",
+      "name": "Olivier Assurances",
+      "aliases": ["olivier assurances"]
+    },
+    {
+      "slug": "groupama_centre_manche",
+      "name": "Groupama Centre-Manche",
+      "aliases": ["groupama centre manche"]
+    },
+    {
+      "slug": "groupama_loire_bretagne",
+      "name": "Groupama Loire Bretagne",
+      "aliases": ["groupama loire bretagne"]
+    },
+    {
+      "slug": "groupama_centre_atlantique",
+      "name": "Groupama Centre-Atlantique",
+      "aliases": ["groupama centre atlantique"]
+    },
+    {
+      "slug": "groupama_d_oc",
+      "name": "Groupama d'Oc",
+      "aliases": ["groupama d oc", "groupama doc"]
+    },
+    {
+      "slug": "groupama_paris_val_de_loire",
+      "name": "Groupama Paris Val de Loire",
+      "aliases": ["groupama paris val de loire"]
+    },
+    {
+      "slug": "groupama_nord_est",
+      "name": "Groupama Nord Est",
+      "aliases": ["groupama nord est"]
+    },
+    {
+      "slug": "groupama_rhone_alpes_auvergne",
+      "name": "Groupama Rhône-Alpes Auvergne",
+      "aliases": ["groupama rhone alpes auvergne"]
+    },
+    {
+      "slug": "groupama_mediterranee",
+      "name": "Groupama Méditerranée",
+      "aliases": ["groupama mediterranee"]
+    },
+    {
+      "slug": "groupama_grand_est",
+      "name": "Groupama Grand Est",
+      "aliases": ["groupama grand est"]
+    },
+    {
+      "slug": "groupama_antilles_guyane",
+      "name": "Groupama Antilles-Guyane",
+      "aliases": ["groupama antilles guyane"]
+    },
+    {
+      "slug": "groupama_ocean_indien",
+      "name": "Groupama Océan Indien",
+      "aliases": ["groupama ocean indien"]
+    },
+    {
+      "slug": "groupama_assurances_mutuelles",
+      "name": "Groupama Assurances Mutuelles",
+      "aliases": ["groupama assurances mutuelles"]
+    },
+    {
+      "slug": "groupama_assurance_credit_caution",
+      "name": "Groupama Assurance-Crédit & Caution",
+      "aliases": ["groupama assurance credit", "groupama assurance credit caution"]
+    },
+    {
+      "slug": "gan_prevoyance",
+      "name": "Gan Prévoyance",
+      "aliases": ["gan prevoyance"]
+    },
+    {
+      "slug": "gan_patrimoine",
+      "name": "Gan Patrimoine",
+      "aliases": ["gan patrimoine"]
+    },
+    {
+      "slug": "axa_france_iard",
+      "name": "AXA France IARD",
+      "aliases": ["axa france iard"]
+    },
+    {
+      "slug": "axa_france_vie",
+      "name": "AXA France Vie",
+      "aliases": ["axa france vie"]
+    },
+    {
+      "slug": "axa_assurances_iard_mutuelle",
+      "name": "AXA Assurances IARD Mutuelle",
+      "aliases": ["axa assurances iard mutuelle"]
+    },
+    {
+      "slug": "axa_assurcredit",
+      "name": "AXA Assurcrédit",
+      "aliases": ["axa assurcredit"]
+    },
+    {
+      "slug": "axa_xl",
+      "name": "AXA XL",
+      "aliases": ["axa xl"]
+    },
+    {
+      "slug": "axa_corporate_solutions",
+      "name": "AXA Corporate Solutions",
+      "aliases": ["axa corporate solutions"]
+    },
+    {
+      "slug": "allianz_iard",
+      "name": "Allianz IARD",
+      "aliases": ["allianz iard"]
+    },
+    {
+      "slug": "allianz_vie",
+      "name": "Allianz Vie",
+      "aliases": ["allianz vie"]
+    },
+    {
+      "slug": "mma_iard",
+      "name": "MMA IARD",
+      "aliases": ["mma iard"]
+    },
+    {
+      "slug": "mma_vie",
+      "name": "MMA Vie",
+      "aliases": ["mma vie"]
+    },
+    {
+      "slug": "mma_iard_assurances_mutuelles",
+      "name": "MMA IARD Assurances Mutuelles",
+      "aliases": ["mma iard assurances mutuelles"]
+    },
+    {
+      "slug": "mma_vie_assurances_mutuelles",
+      "name": "MMA Vie Assurances Mutuelles",
+      "aliases": ["mma vie assurances mutuelles"]
+    },
+    {
+      "slug": "acm_iard",
+      "name": "ACM IARD",
+      "aliases": ["acm iard", "assurances du credit mutuel iard"]
+    },
+    {
+      "slug": "acm_vie",
+      "name": "ACM Vie",
+      "aliases": ["acm vie", "assurances du credit mutuel vie"]
+    },
+    {
+      "slug": "partners_assurances",
+      "name": "Partners Assurances",
+      "aliases": ["partners assurances"]
+    },
+    {
+      "slug": "nord_europe_assurances",
+      "name": "Nord Europe Assurances",
+      "aliases": ["nord europe assurances"]
+    },
+    {
+      "slug": "natixis_assurances",
+      "name": "Natixis Assurances",
+      "aliases": ["natixis assurances"]
+    },
+    {
+      "slug": "hsbc_assurances",
+      "name": "HSBC Assurances",
+      "aliases": ["hsbc assurances"]
+    },
+    {
+      "slug": "sogessur",
+      "name": "Sogessur",
+      "aliases": ["sogessur"]
+    },
+    {
+      "slug": "bpce_assurances",
+      "name": "BPCE Assurances",
+      "aliases": ["bpce assurances"]
+    },
+    {
+      "slug": "la_banque_postale_assurances",
+      "name": "La Banque Postale Assurances",
+      "aliases": ["la banque postale assurances", "banque postale assurance"]
+    },
+    {
+      "slug": "oradea_vie",
+      "name": "Oradéa Vie",
+      "aliases": ["oradea vie"]
+    },
+    {
+      "slug": "fortuneo_vie",
+      "name": "Fortuneo Vie",
+      "aliases": ["fortuneo vie"]
+    },
+    {
+      "slug": "ageas_france",
+      "name": "Ageas France",
+      "aliases": ["ageas france"]
+    },
+    {
+      "slug": "aig_france",
+      "name": "AIG France",
+      "aliases": ["aig france", "aig europe france"]
+    },
+    {
+      "slug": "helvetia_assurances",
+      "name": "Helvetia Assurances",
+      "aliases": ["helvetia assurances"]
+    },
+    {
+      "slug": "hiscox_france",
+      "name": "Hiscox France",
+      "aliases": ["hiscox france"]
+    },
+    {
+      "slug": "chubb_france",
+      "name": "Chubb France",
+      "aliases": ["chubb france"]
+    },
+    {
+      "slug": "zurich_assurances",
+      "name": "Zurich Assurances",
+      "aliases": ["zurich assurances", "zurich insurance france"]
+    },
+    {
+      "slug": "albingia",
+      "name": "Albingia",
+      "aliases": ["albingia"]
+    },
+    {
+      "slug": "juridica",
+      "name": "Juridica",
+      "aliases": ["juridica"]
+    },
+    {
+      "slug": "l_equite",
+      "name": "L'Équité",
+      "aliases": ["l equite", "lequite"]
+    },
+    {
+      "slug": "l_europeenne_d_assurances",
+      "name": "L'Européenne d'Assurances",
+      "aliases": ["l europeenne d assurances", "leuropeenne dassurances"]
+    },
+    {
+      "slug": "covea_fleet",
+      "name": "Covéa Fleet",
+      "aliases": ["covea fleet"]
+    },
+    {
+      "slug": "covea_risks",
+      "name": "Covéa Risks",
+      "aliases": ["covea risks"]
+    },
+    {
+      "slug": "sada_assurances",
+      "name": "Sada Assurances",
+      "aliases": ["sada assurances"]
+    },
+    {
+      "slug": "groupe_prevoir",
+      "name": "Groupe Prévoir",
+      "aliases": ["groupe prevoir"]
+    },
+    {
+      "slug": "assurone",
+      "name": "Assurone",
+      "aliases": ["assurone"]
+    },
+    {
+      "slug": "assuronline",
+      "name": "Assuronline",
+      "aliases": ["assuronline"]
+    },
+    {
+      "slug": "netvox",
+      "name": "Netvox",
+      "aliases": ["netvox"]
+    },
+    {
+      "slug": "euler_hermes",
+      "name": "Euler Hermes",
+      "aliases": ["euler hermes", "euler hermes sfac"]
+    },
+    {
+      "slug": "atradius",
+      "name": "Atradius",
+      "aliases": ["atradius"]
+    },
+    {
+      "slug": "credendo",
+      "name": "Credendo",
+      "aliases": ["credendo"]
+    },
+    {
+      "slug": "spirica",
+      "name": "Spirica",
+      "aliases": ["spirica"]
+    },
+    {
+      "slug": "afi_esca",
+      "name": "AFI ESCA",
+      "aliases": ["afi esca"]
+    },
+    {
+      "slug": "gmf_vie",
+      "name": "GMF Vie",
+      "aliases": ["gmf vie"]
+    },
+    {
+      "slug": "ircem",
+      "name": "Groupe IRCEM",
+      "aliases": ["ircem", "groupe ircem"]
+    },
+    {
+      "slug": "mncap",
+      "name": "Groupe MNCAP",
+      "aliases": ["mncap", "groupe mncap"]
+    },
+    {
+      "slug": "quatrem",
+      "name": "Quatrem Assurances Collectives",
+      "aliases": ["quatrem"]
+    },
+    {
+      "slug": "aema_groupe",
+      "name": "Aéma Groupe",
+      "aliases": ["aema groupe"]
+    },
+    {
+      "slug": "agipi",
+      "name": "AGIPI",
+      "aliases": ["agipi"]
+    },
+    {
+      "slug": "carac",
+      "name": "Carac",
+      "aliases": ["carac"]
+    },
+    {
+      "slug": "le_conservateur",
+      "name": "Le Conservateur",
+      "aliases": ["le conservateur"]
+    },
+    {
+      "slug": "la_france_mutualiste",
+      "name": "La France Mutualiste",
+      "aliases": ["la france mutualiste"]
+    },
+    {
+      "slug": "uaf_life_patrimoine",
+      "name": "UAF Life Patrimoine",
+      "aliases": ["uaf life patrimoine"]
+    },
+    {
+      "slug": "vie_plus",
+      "name": "Vie Plus",
+      "aliases": ["vie plus"]
+    },
+    {
+      "slug": "irp_auto",
+      "name": "IRP Auto",
+      "aliases": ["irp auto"]
+    },
+    {
+      "slug": "carcept_prevoyance",
+      "name": "Carcept Prévoyance",
+      "aliases": ["carcept prevoyance"]
+    },
+    {
+      "slug": "audiens",
+      "name": "Audiens",
+      "aliases": ["audiens"]
+    },
+    {
+      "slug": "ocirp",
+      "name": "OCIRP",
+      "aliases": ["ocirp"]
+    },
+    {
+      "slug": "uniprevoyance",
+      "name": "Uniprévoyance",
+      "aliases": ["uniprevoyance"]
+    },
+    {
+      "slug": "macsf",
+      "name": "MACSF",
+      "aliases": ["macsf"]
+    },
+    {
+      "slug": "la_medicale",
+      "name": "La Médicale",
+      "aliases": ["la medicale"]
+    },
+    {
+      "slug": "le_sou_medical",
+      "name": "Le Sou Médical",
+      "aliases": ["le sou medical"]
+    },
+    {
+      "slug": "relyens",
+      "name": "Relyens",
+      "aliases": ["relyens"]
+    },
+    {
+      "slug": "sham",
+      "name": "SHAM",
+      "aliases": ["sham"]
+    },
+    {
+      "slug": "branchet",
+      "name": "Branchet",
+      "aliases": ["branchet"]
+    },
+    {
+      "slug": "maf_assurances",
+      "name": "MAF Assurances",
+      "aliases": ["maf assurances", "mutuelle des architectes francais"]
+    },
+    {
+      "slug": "mapa_assurances",
+      "name": "MAPA Assurances",
+      "aliases": ["mapa assurances"]
+    },
+    {
+      "slug": "mutuelles_de_bretagne",
+      "name": "Mutuelles de Bretagne",
+      "aliases": ["mutuelles de bretagne"]
+    },
+    {
+      "slug": "mutuelle_de_poitiers",
+      "name": "Mutuelle de Poitiers Assurances",
+      "aliases": ["mutuelle de poitiers"]
+    },
+    {
+      "slug": "mfa_assurances",
+      "name": "MFA Assurances",
+      "aliases": ["mfa assurances", "mutuelle fraternelle d assurances"]
+    },
+    {
+      "slug": "amf_assurances",
+      "name": "AMF Assurances",
+      "aliases": ["amf assurances"]
+    },
+    {
+      "slug": "agpm",
+      "name": "AGPM",
+      "aliases": ["agpm"]
+    },
+    {
+      "slug": "gpm_assurances",
+      "name": "GPM Assurances",
+      "aliases": ["gpm assurances"]
+    },
+    {
+      "slug": "gfa_caraibes",
+      "name": "GFA Caraïbes",
+      "aliases": ["gfa caraibes"]
+    },
+    {
+      "slug": "prudence_creole",
+      "name": "Prudence Créole",
+      "aliases": ["prudence creole"]
+    },
+    {
+      "slug": "diot_siaci",
+      "name": "Diot-Siaci",
+      "aliases": ["diot siaci"]
+    },
+    {
+      "slug": "siaci_saint_honore",
+      "name": "Siaci Saint Honoré",
+      "aliases": ["siaci saint honore"]
+    },
+    {
+      "slug": "gras_savoye_wtw",
+      "name": "Gras Savoye WTW",
+      "aliases": ["gras savoye wtw", "gras savoye"]
+    },
+    {
+      "slug": "wtw_france",
+      "name": "WTW France",
+      "aliases": ["wtw france", "willis towers watson france"]
+    },
+    {
+      "slug": "marsh_france",
+      "name": "Marsh France",
+      "aliases": ["marsh france"]
+    },
+    {
+      "slug": "aon_france",
+      "name": "Aon France",
+      "aliases": ["aon france"]
+    },
+    {
+      "slug": "verlingue",
+      "name": "Verlingue",
+      "aliases": ["verlingue"]
+    },
+    {
+      "slug": "besse",
+      "name": "Bessé",
+      "aliases": ["besse"]
+    },
+    {
+      "slug": "filhet_allard",
+      "name": "Filhet-Allard",
+      "aliases": ["filhet allard"]
+    },
+    {
+      "slug": "groupe_premium",
+      "name": "Groupe Premium",
+      "aliases": ["groupe premium"]
+    },
+    {
+      "slug": "spb",
+      "name": "SPB",
+      "aliases": ["spb"]
+    },
+    {
+      "slug": "filassistance",
+      "name": "Filassistance",
+      "aliases": ["filassistance"]
+    },
+    {
+      "slug": "capfinances",
+      "name": "Capfinances",
+      "aliases": ["capfinances"]
+    },
+    {
+      "slug": "rambaud_labrosse",
+      "name": "Rambaud Labrosse",
+      "aliases": ["rambaud labrosse"]
+    },
+    {
+      "slug": "cfdp",
+      "name": "CFDP Assurances",
+      "aliases": ["cfdp", "cfdp assurances"]
+    },
+    {
+      "slug": "roole",
+      "name": "Roole",
+      "aliases": ["roole"]
+    },
+    {
+      "slug": "cegema",
+      "name": "Cegema",
+      "aliases": ["cegema"]
+    },
+    {
+      "slug": "assureo",
+      "name": "Assuréo",
+      "aliases": ["assureo"]
+    },
+    {
+      "slug": "acommeassure",
+      "name": "AcommeAssure",
+      "aliases": ["acommeassure", "a comme assure"]
+    },
+    {
+      "slug": "meilleurtaux_assurance",
+      "name": "Meilleurtaux Assurance",
+      "aliases": ["meilleurtaux assurance"]
+    },
+    {
+      "slug": "acheel",
+      "name": "Acheel",
+      "aliases": ["acheel"]
+    },
+    {
+      "slug": "aloa_assurances",
+      "name": "ALOA Assurances",
+      "aliases": ["aloa assurances"]
+    },
+    {
+      "slug": "ornikar_assurances",
+      "name": "Ornikar Assurances",
+      "aliases": ["ornikar assurances", "ornikar"]
+    },
+    {
+      "slug": "wilov",
+      "name": "Wilov",
+      "aliases": ["wilov"]
+    },
+    {
+      "slug": "solly_azar",
+      "name": "Solly Azar",
+      "aliases": ["solly azar"]
+    },
+    {
+      "slug": "coverd",
+      "name": "Coverd",
+      "aliases": ["coverd"]
+    },
+    {
+      "slug": "otherwise_assurance",
+      "name": "Otherwise",
+      "aliases": ["otherwise assurance", "otherwise"]
+    },
+    {
+      "slug": "parachut",
+      "name": "Parachut",
+      "aliases": ["parachut"]
+    },
+    {
+      "slug": "flitter",
+      "name": "Flitter",
+      "aliases": ["flitter"]
+    },
+    {
+      "slug": "heyme",
+      "name": "Heyme",
+      "aliases": ["heyme"]
+    },
+    {
+      "slug": "cmonassurance",
+      "name": "CmonAssurance",
+      "aliases": ["cmonassurance", "c mon assurance"]
+    },
+    {
+      "slug": "auto_first",
+      "name": "Auto First",
+      "aliases": ["auto first"]
+    },
+    {
+      "slug": "indexia_group",
+      "name": "Indexia Group",
+      "aliases": ["indexia", "indexia group", "sfam"]
+    },
+    {
+      "slug": "amv_assurance",
+      "name": "AMV",
+      "aliases": ["amv", "assurance moto verte"]
+    },
+    {
+      "slug": "april_moto",
+      "name": "April Moto",
+      "aliases": ["april moto"]
+    },
+    {
+      "slug": "april_mon_assurance",
+      "name": "April Mon Assurance",
+      "aliases": ["april mon assurance"]
+    },
+    {
+      "slug": "groupe_accs",
+      "name": "Groupe ACCS",
+      "aliases": ["groupe accs"]
+    },
+    {
+      "slug": "ama_assurances",
+      "name": "AMA Assurances",
+      "aliases": ["ama assurances"]
+    },
+    {
+      "slug": "groupe_zephir",
+      "name": "Groupe Zéphir",
+      "aliases": ["groupe zephir"]
+    },
+    {
+      "slug": "eurossur",
+      "name": "Moto Assurances Eurossur",
+      "aliases": ["eurossur", "groupe eurossur"]
+    },
+    {
+      "slug": "malusonline",
+      "name": "Malusonline",
+      "aliases": ["malusonline"]
+    },
+    {
+      "slug": "peyrac_assurances",
+      "name": "Peyrac Assurances",
+      "aliases": ["peyrac assurances"]
+    },
+    {
+      "slug": "jp_labalette",
+      "name": "JP Labalette",
+      "aliases": ["jp labalette"]
+    },
+    {
+      "slug": "net_assurances",
+      "name": "Net Assurances",
+      "aliases": ["net assurances"]
+    },
+    {
+      "slug": "fma_france_motos_assurances",
+      "name": "FMA France Motos Assurances",
+      "aliases": ["fma", "france motos assurances"]
+    },
+    {
+      "slug": "arca_assurances",
+      "name": "Arca Assurances",
+      "aliases": ["arca assurances"]
+    },
+    {
+      "slug": "quatre_assur",
+      "name": "4assur",
+      "aliases": ["4assur"]
+    },
+    {
+      "slug": "europ_assistance",
+      "name": "Europ Assistance",
+      "aliases": ["europ assistance"]
+    },
+    {
+      "slug": "mutuaide_assistance",
+      "name": "Mutuaide Assistance",
+      "aliases": ["mutuaide assistance"]
+    },
+    {
+      "slug": "inter_mutuelles_assistance",
+      "name": "Inter Mutuelles Assistance",
+      "aliases": ["inter mutuelles assistance", "ima"]
+    },
+    {
+      "slug": "inter_mutuelles_entreprises",
+      "name": "Inter Mutuelles Entreprises",
+      "aliases": ["inter mutuelles entreprises"]
+    },
+    {
+      "slug": "mondial_assistance",
+      "name": "Mondial Assistance",
+      "aliases": ["mondial assistance"]
+    },
+    {
+      "slug": "elvia_travel_insurance",
+      "name": "Elvia Travel Insurance",
+      "aliases": ["elvia travel insurance", "elvia"]
+    },
+    {
+      "slug": "chapka_assurances",
+      "name": "Chapka Assurances",
+      "aliases": ["chapka assurances", "chapka"]
+    },
+    {
+      "slug": "acs_assurances",
+      "name": "ACS Assurances",
+      "aliases": ["acs assurances", "acs ami"]
+    },
+    {
+      "slug": "santevet",
+      "name": "SantéVet",
+      "aliases": ["santevet"]
+    },
+    {
+      "slug": "assur_o_poil",
+      "name": "Assur O'Poil",
+      "aliases": ["assur o poil"]
+    },
+    {
+      "slug": "barkibu",
+      "name": "Barkibu",
+      "aliases": ["barkibu"]
+    },
+    {
+      "slug": "bulle_bleue",
+      "name": "Bulle Bleue",
+      "aliases": ["bulle bleue"]
+    },
+    {
+      "slug": "dalma",
+      "name": "Dalma",
+      "aliases": ["dalma"]
+    },
+    {
+      "slug": "fidanimo",
+      "name": "Fidanimo",
+      "aliases": ["fidanimo"]
+    },
+    {
+      "slug": "april_marine",
+      "name": "April Marine",
+      "aliases": ["april marine"]
+    },
+    {
+      "slug": "generali_plaisance",
+      "name": "Generali Plaisance",
+      "aliases": ["generali plaisance"]
+    },
+    {
+      "slug": "cm_nautisme",
+      "name": "CM-Nautisme",
+      "aliases": ["cm nautisme"]
+    },
+    {
+      "slug": "pantaenius_france",
+      "name": "Pantaenius France",
+      "aliases": ["pantaenius", "pantaenius france"]
+    },
+    {
+      "slug": "mascotte_assurances",
+      "name": "Mascotte Assurances",
+      "aliases": ["mascotte assurances"]
+    },
+    {
+      "slug": "tea_cerede",
+      "name": "Tea Cerede",
+      "aliases": ["tea cerede"]
+    },
+    {
+      "slug": "carene_assurances",
+      "name": "Carène Assurances",
+      "aliases": ["carene assurances"]
+    },
+    {
+      "slug": "frcourtage",
+      "name": "Frcourtage",
+      "aliases": ["frcourtage"]
+    },
+    {
+      "slug": "cavalassur",
+      "name": "Cavalassur",
+      "aliases": ["cavalassur"]
+    },
+    {
+      "slug": "cheval_assur",
+      "name": "Cheval Assur",
+      "aliases": ["cheval assur"]
+    },
+    {
+      "slug": "equitanet",
+      "name": "Equitanet",
+      "aliases": ["equitanet"]
+    },
+    {
+      "slug": "equestrassur",
+      "name": "Equestrassur",
+      "aliases": ["equestrassur"]
+    },
+    {
+      "slug": "helmett_sport",
+      "name": "Helmett Sport",
+      "aliases": ["helmett sport"]
+    },
+    {
+      "slug": "mila_assurance",
+      "name": "MILA",
+      "aliases": ["mila assurance", "mila"]
+    },
+    {
+      "slug": "saa_assurances",
+      "name": "SAA Assurances",
+      "aliases": ["saa assurances"]
+    },
+    {
+      "slug": "socaf",
+      "name": "Socaf",
+      "aliases": ["socaf"]
+    },
+    {
+      "slug": "stoik",
+      "name": "Stoïk",
+      "aliases": ["stoik"]
+    },
+    {
+      "slug": "dattak",
+      "name": "Dattak",
+      "aliases": ["dattak"]
+    },
+    {
+      "slug": "coverdrone",
+      "name": "Coverdrone",
+      "aliases": ["coverdrone"]
+    },
+    {
+      "slug": "air_courtage_assurances",
+      "name": "Air Courtage Assurances",
+      "aliases": ["air courtage assurances"]
+    },
+    {
+      "slug": "assurdrone",
+      "name": "Assurdrone",
+      "aliases": ["assurdrone"]
+    },
+    {
+      "slug": "art_et_assurances",
+      "name": "Art & Assurances",
+      "aliases": ["art et assurances"]
+    },
+    {
+      "slug": "art_assurance",
+      "name": "Art Assurance",
+      "aliases": ["art assurance"]
+    },
+    {
+      "slug": "auxia",
+      "name": "Auxia",
+      "aliases": ["auxia"]
+    },
+    {
+      "slug": "concerto_assurances",
+      "name": "Concerto",
+      "aliases": ["concerto assurances", "concerto"]
+    },
+    {
+      "slug": "assurance_du_lion",
+      "name": "Assurance du Lion",
+      "aliases": ["assurance du lion"]
+    },
+    {
+      "slug": "coste_fermon",
+      "name": "Coste Fermon",
+      "aliases": ["coste fermon"]
+    },
+    {
+      "slug": "maxiassur",
+      "name": "MaxiAssur",
+      "aliases": ["maxiassur"]
+    },
+    {
+      "slug": "apsilon",
+      "name": "Apsilon",
+      "aliases": ["apsilon"]
+    },
+    {
+      "slug": "cea_assurances",
+      "name": "CEA",
+      "aliases": ["cea assurances", "cea"]
+    },
+    {
+      "slug": "agemi",
+      "name": "AGEMI",
+      "aliases": ["agemi"]
+    },
+    {
+      "slug": "assurances_deleplanque",
+      "name": "Assurances Deleplanque",
+      "aliases": ["assurances deleplanque", "deleplanque"]
+    },
+    {
+      "slug": "axelliance_entreprise",
+      "name": "Axelliance Entreprise",
+      "aliases": ["axelliance entreprise", "axelliance"]
+    },
+    {
+      "slug": "eve_assurances",
+      "name": "EVE Assurances",
+      "aliases": ["eve assurances"]
+    },
+    {
+      "slug": "rise_assurances",
+      "name": "Rise Assurances",
+      "aliases": ["rise assurances", "rise"]
+    },
+    {
+      "slug": "ort_assurances",
+      "name": "ORT Assurances",
+      "aliases": ["ort assurances"]
+    },
+    {
+      "slug": "ctb_courtage_technique_du_batiment",
+      "name": "CTB - Courtage Technique du Bâtiment",
+      "aliases": ["ctb", "courtage technique du batiment"]
+    },
+    {
+      "slug": "segap",
+      "name": "Segap",
+      "aliases": ["segap"]
+    },
+    {
+      "slug": "assumarisk_group",
+      "name": "Assumarisk'Group",
+      "aliases": ["assumarisk group", "assumarisk"]
+    },
+    {
+      "slug": "build_assurances",
+      "name": "Build Assurances",
+      "aliases": ["build assurances"]
+    },
+    {
+      "slug": "macif_vie",
+      "name": "Macif Vie",
+      "aliases": ["macif vie", "mutavie"]
+    },
+    {
+      "slug": "matmut_vie",
+      "name": "Matmut Vie",
+      "aliases": ["matmut vie"]
+    },
+    {
+      "slug": "maaf_vie",
+      "name": "MAAF Vie",
+      "aliases": ["maaf vie"]
+    },
+    {
+      "slug": "suravenir_assurances",
+      "name": "Suravenir Assurances",
+      "aliases": ["suravenir assurances"]
+    },
+    {
+      "slug": "swisslife_assurance_et_patrimoine",
+      "name": "Swiss Life Assurance et Patrimoine",
+      "aliases": ["swisslife assurance et patrimoine", "swiss life assurance et patrimoine"]
+    },
+    {
+      "slug": "cardif_assurance_vie",
+      "name": "Cardif Assurance Vie",
+      "aliases": ["cardif assurance vie"]
+    },
+    {
+      "slug": "cardif_assurances_risques_divers",
+      "name": "Cardif-Assurances Risques Divers",
+      "aliases": ["cardif assurances risques divers", "cardif ard"]
+    },
+    {
+      "slug": "cardif_retraite",
+      "name": "Cardif Retraite",
+      "aliases": ["cardif retraite"]
+    },
+    {
+      "slug": "mutuelle_saint_christophe",
+      "name": "Mutuelle Saint-Christophe Assurances",
+      "aliases": ["mutuelle saint christophe", "saint christophe assurances"]
+    },
+    {
+      "slug": "studyassur",
+      "name": "StudyAssur",
+      "aliases": ["studyassur"]
+    },
+    {
+      "slug": "pole_position_assurances",
+      "name": "Pôle Position Assurances",
+      "aliases": ["pole position assurances"]
+    },
+    {
+      "slug": "cabinet_therond",
+      "name": "Cabinet Thérond",
+      "aliases": ["cabinet therond"]
+    },
+    {
+      "slug": "cabinet_boisnard",
+      "name": "Cabinet Boisnard",
+      "aliases": ["cabinet boisnard"]
+    },
+    {
+      "slug": "cabinet_tolede",
+      "name": "Cabinet Tolède",
+      "aliases": ["cabinet tolede"]
+    },
+    {
+      "slug": "legende_assurance",
+      "name": "Légende Assurance",
+      "aliases": ["legende assurance"]
+    },
+    {
+      "slug": "retro_assurances",
+      "name": "Rétro Assurances",
+      "aliases": ["retro assurances"]
+    },
+    {
+      "slug": "april_premium",
+      "name": "April Premium",
+      "aliases": ["april premium"]
+    },
+    {
+      "slug": "sm3a_assurances_jacquot",
+      "name": "SM3A - Assurances Jacquot",
+      "aliases": ["sm3a", "assurances jacquot"]
+    },
+    {
+      "slug": "suisscourtage",
+      "name": "Suisscourtage",
+      "aliases": ["suisscourtage"]
+    },
+    {
+      "slug": "herve_clavel_assurance",
+      "name": "Hervé Clavel Assurance",
+      "aliases": ["herve clavel assurance"]
+    },
+    {
+      "slug": "groupe_satec",
+      "name": "Groupe SATEC",
+      "aliases": ["groupe satec", "satec"]
+    },
+    {
+      "slug": "axeria_iard",
+      "name": "Axeria IARD",
+      "aliases": ["axeria iard"]
+    },
+    {
+      "slug": "axeria_prevoyance",
+      "name": "Axeria Prévoyance",
+      "aliases": ["axeria prevoyance"]
+    },
+    {
+      "slug": "cautioneo",
+      "name": "Cautionéo",
+      "aliases": ["cautioneo"]
+    },
+    {
+      "slug": "smartloc",
+      "name": "Smartloc",
+      "aliases": ["smartloc"]
+    },
+    {
+      "slug": "id_malus",
+      "name": "ID Malus",
+      "aliases": ["id malus"]
+    },
+    {
+      "slug": "sos_malus",
+      "name": "SOS Malus",
+      "aliases": ["sos malus"]
+    },
+    {
+      "slug": "rio_assurance",
+      "name": "Rio Assurance",
+      "aliases": ["rio assurance"]
+    },
+    {
+      "slug": "orus",
+      "name": "Orus",
+      "aliases": ["orus"]
+    },
+    {
+      "slug": "la_rurale",
+      "name": "La Rurale",
+      "aliases": ["la rurale"]
+    },
+    {
+      "slug": "compagnie_nantaise_assurances",
+      "name": "Compagnie Nantaise d'Assurances Maritimes et Terrestres",
+      "aliases": ["compagnie nantaise d assurances", "compagnie nantaise assurances"]
+    },
+    {
+      "slug": "axa_assistance_france",
+      "name": "AXA Assistance France",
+      "aliases": ["axa assistance france"]
+    },
+    {
+      "slug": "wtw_hipcover",
+      "name": "WTW Hipcover",
+      "aliases": ["wtw hipcover", "hipcover"]
+    },
+    {
+      "slug": "hipassur",
+      "name": "Hipassur",
+      "aliases": ["hipassur"]
+    },
+    {
+      "slug": "pegase_insurance",
+      "name": "Pegase Insurance",
+      "aliases": ["pegase insurance"]
+    },
+    {
+      "slug": "selfassurance",
+      "name": "Selfassurance",
+      "aliases": ["selfassurance"]
+    },
+    {
+      "slug": "abg_assurances",
+      "name": "ABG Assurances",
+      "aliases": ["abg assurances"]
+    },
+    {
+      "slug": "amophys",
+      "name": "Amophys",
+      "aliases": ["amophys"]
+    },
+    {
+      "slug": "music_assur",
+      "name": "Music Assur",
+      "aliases": ["music assur", "musicassur"]
+    },
+    {
+      "slug": "gescopim_assurances",
+      "name": "Gescopim Assurances",
+      "aliases": ["gescopim assurances"]
+    },
+    {
+      "slug": "sambre_assurances",
+      "name": "Sambre Assurances",
+      "aliases": ["sambre assurances"]
+    },
+    {
+      "slug": "covassur",
+      "name": "Covassur",
+      "aliases": ["covassur"]
+    },
+    {
+      "slug": "granier_assurances",
+      "name": "Granier Assurances",
+      "aliases": ["granier assurances"]
+    },
+    {
+      "slug": "pixel_assur",
+      "name": "Pixel-Assur",
+      "aliases": ["pixel assur"]
+    },
+    {
+      "slug": "serenis_assurances",
+      "name": "Serenis Assurances",
+      "aliases": ["serenis assurances", "serenis"]
+    },
+    {
+      "slug": "cegc",
+      "name": "CEGC",
+      "aliases": ["cegc", "compagnie europeenne de garanties et cautions"]
+    },
+    {
+      "slug": "saccef",
+      "name": "SACCEF",
+      "aliases": ["saccef"]
+    },
+    {
+      "slug": "amaline_assurances",
+      "name": "Amaline Assurances",
+      "aliases": ["amaline assurances", "amaline courtage"]
+    },
+    {
+      "slug": "la_sauvegarde",
+      "name": "La Sauvegarde",
+      "aliases": ["la sauvegarde"]
+    },
+    {
+      "slug": "credit_logement",
+      "name": "Crédit Logement",
+      "aliases": ["credit logement"]
+    },
+    {
+      "slug": "camca",
+      "name": "CAMCA",
+      "aliases": ["camca"]
+    }
+  ],
+  "gov": [
+    {
+      "slug": "caf",
+      "name": "CAF",
+      "aliases": ["caf", "caisse d'allocations familiales", "allocations familiales"]
+    },
+    {
+      "slug": "cnav",
+      "name": "CNAV",
+      "aliases": ["cnav", "assurance retraite"]
+    },
+    {
+      "slug": "carsat",
+      "name": "CARSAT",
+      "aliases": ["carsat"]
+    },
+    {
+      "slug": "msa",
+      "name": "MSA",
+      "aliases": ["msa", "mutualite sociale agricole"]
+    },
+    {
+      "slug": "prefecture",
+      "name": "Préfecture",
+      "aliases": ["prefecture", "préfecture"]
+    },
+    {
+      "slug": "ants",
+      "name": "ANTS",
+      "aliases": ["ants", "agence nationale des titres securises"]
+    },
+    {
+      "slug": "urssaf",
+      "name": "URSSAF",
+      "aliases": ["urssaf", "cotisation"]
+    },
+    {
+      "slug": "dgfip",
+      "name": "DGFIP",
+      "aliases": ["dgfip", "direction generale des finances publiques"]
+    },
+    {
+      "slug": "france_travail",
+      "name": "France Travail",
+      "aliases": ["france travail", "pole emploi", "pôle emploi"]
+    },
+    {
+      "slug": "cpam",
+      "name": "CPAM",
+      "aliases": ["cpam", "caisse primaire d'assurance maladie"]
+    },
+    {
+      "slug": "ameli",
+      "name": "Ameli",
+      "aliases": ["ameli", "assurance maladie"]
+    },
+    {
+      "slug": "tresor_public",
+      "name": "Trésor Public",
+      "aliases": ["tresor public", "trésor public"]
+    },
+    {
+      "slug": "mairie",
+      "name": "Mairie",
+      "aliases": ["mairie", "hotel de ville", "hôtel de ville"]
+    },
+    {
+      "slug": "conseil_departemental",
+      "name": "Conseil Départemental",
+      "aliases": ["conseil departemental", "conseil général"]
+    },
+    {
+      "slug": "conseil_regional",
+      "name": "Conseil Régional",
+      "aliases": ["conseil regional", "conseil régional"]
+    },
+    {
+      "slug": "cnam",
+      "name": "CNAM",
+      "aliases": ["cnam", "caisse nationale de l'assurance maladie"]
+    },
+    {
+      "slug": "cnaf",
+      "name": "CNAF",
+      "aliases": ["cnaf", "caisse nationale des allocations familiales"]
+    },
+    {
+      "slug": "anah",
+      "name": "ANAH",
+      "aliases": ["anah", "agence nationale de l'habitat"]
+    },
+    {
+      "slug": "antai",
+      "name": "ANTAI",
+      "aliases": ["antai", "agence nationale de traitement automatise des infractions"]
+    },
+    {
+      "slug": "ministere_interieur",
+      "name": "Ministère de l'Intérieur",
+      "aliases": ["ministere de l'interieur", "ministère de l'intérieur"]
+    },
+    {
+      "slug": "cour_des_comptes",
+      "name": "Cour des Comptes",
+      "aliases": ["cour des comptes"]
+    },
+    {
+      "slug": "insee",
+      "name": "INSEE",
+      "aliases": ["insee"]
+    },
+    {
+      "slug": "agence_services_paiement",
+      "name": "Agence de Services et de Paiement",
+      "aliases": ["asp", "agence de services et de paiement"]
+    },
+    {
+      "slug": "chambre_metiers",
+      "name": "Chambre de Métiers et de l'Artisanat",
+      "aliases": ["chambre de metiers", "cma"]
+    },
+    {
+      "slug": "cci",
+      "name": "CCI (Chambre de Commerce et d'Industrie)",
+      "aliases": ["cci", "chambre de commerce et d'industrie"]
+    },
+    {
+      "slug": "ofii",
+      "name": "OFII",
+      "aliases": ["ofii", "office francais de l'immigration et de l'integration"]
+    },
+    {
+      "slug": "ddfip",
+      "name": "DDFIP",
+      "aliases": ["ddfip", "direction departementale des finances publiques"]
+    },
+    {
+      "slug": "douanes",
+      "name": "Direction Générale des Douanes",
+      "aliases": ["douanes", "direction generale des douanes"]
+    },
+    {
+      "slug": "rectorat",
+      "name": "Rectorat",
+      "aliases": ["rectorat"]
+    },
+    {
+      "slug": "academie",
+      "name": "Académie",
+      "aliases": ["academie", "académie"]
+    },
+    {
+      "slug": "gendarmerie_nationale",
+      "name": "Gendarmerie Nationale",
+      "aliases": ["gendarmerie", "gendarmerie nationale"]
+    },
+    {
+      "slug": "service_public",
+      "name": "Service-Public.fr",
+      "aliases": ["service public", "service-public.fr"]
+    },
+    {
+      "slug": "cnsa",
+      "name": "CNSA",
+      "aliases": ["cnsa", "caisse nationale de solidarite pour l'autonomie"]
+    },
+    {
+      "slug": "mdph",
+      "name": "MDPH",
+      "aliases": ["mdph", "maison departementale des personnes handicapees"]
+    },
+    {
+      "slug": "ars",
+      "name": "ARS (Agence Régionale de Santé)",
+      "aliases": ["agence regionale de sante"]
+    },
+    {
+      "slug": "securite_sociale_independants",
+      "name": "Sécurité Sociale des Indépendants",
+      "aliases": ["securite sociale des independants", "ssi"]
+    },
+    {
+      "slug": "rsi",
+      "name": "RSI (Régime Social des Indépendants)",
+      "aliases": ["regime social des independants"]
+    },
+    {
+      "slug": "dreal",
+      "name": "DREAL",
+      "aliases": ["dreal"]
+    },
+    {
+      "slug": "dreets",
+      "name": "DREETS",
+      "aliases": ["dreets"]
+    },
+    {
+      "slug": "sous_prefecture",
+      "name": "Sous-préfecture",
+      "aliases": ["sous-prefecture", "sous-préfecture"]
+    },
+    {
+      "slug": "conseil_etat",
+      "name": "Conseil d'État",
+      "aliases": ["conseil d'etat", "conseil d'état"]
+    },
+    {
+      "slug": "cour_appel",
+      "name": "Cour d'Appel",
+      "aliases": ["cour d'appel"]
+    },
+    {
+      "slug": "tribunal_judiciaire",
+      "name": "Tribunal Judiciaire",
+      "aliases": ["tribunal judiciaire"]
+    },
+    {
+      "slug": "cipav",
+      "name": "CIPAV",
+      "aliases": ["cipav"]
+    },
+    {
+      "slug": "carpimko",
+      "name": "CARPIMKO",
+      "aliases": ["carpimko"]
+    },
+    {
+      "slug": "agirc_arrco",
+      "name": "Agirc-Arrco",
+      "aliases": ["agirc-arrco", "agirc arrco"]
+    },
+    {
+      "slug": "ofpra",
+      "name": "OFPRA",
+      "aliases": ["ofpra"]
+    },
+    {
+      "slug": "ministere_justice",
+      "name": "Ministère de la Justice",
+      "aliases": ["ministere de la justice", "ministère de la justice"]
+    },
+    {
+      "slug": "ministere_economie_finances",
+      "name": "Ministère de l'Économie et des Finances",
+      "aliases": ["ministere de l'economie et des finances", "ministère de l'économie"]
+    },
+    {
+      "slug": "ademe",
+      "name": "ADEME (Agence de l'Environnement et de la Maîtrise de l'Énergie)",
+      "aliases": ["ademe", "agence de l'environnement et de la maitrise de l'energie", "agence de la transition ecologique"]
+    },
+    {
+      "slug": "anru",
+      "name": "ANRU (Agence Nationale pour la Rénovation Urbaine)",
+      "aliases": ["anru", "agence nationale pour la renovation urbaine"]
+    },
+    {
+      "slug": "inpi",
+      "name": "INPI (Institut National de la Propriété Industrielle)",
+      "aliases": ["inpi", "institut national de la propriete industrielle"]
+    },
+    {
+      "slug": "cnil",
+      "name": "CNIL (Commission Nationale de l'Informatique et des Libertés)",
+      "aliases": ["cnil", "commission nationale de l'informatique et des libertes"]
+    },
+    {
+      "slug": "anpe",
+      "name": "ANPE (Agence Nationale pour l'Emploi)",
+      "aliases": ["anpe", "agence nationale pour l'emploi"]
+    },
+    {
+      "slug": "assedic",
+      "name": "Assédic",
+      "aliases": ["assedic", "assedics"]
+    },
+    {
+      "slug": "agence_biomedecine",
+      "name": "Agence de la Biomédecine",
+      "aliases": ["agence de la biomedecine", "biomedecine"]
+    },
+    {
+      "slug": "meteo_france",
+      "name": "Météo-France",
+      "aliases": ["meteo france", "meteo-france"]
+    },
+    {
+      "slug": "ign",
+      "name": "IGN (Institut National de l'Information Géographique et Forestière)",
+      "aliases": ["ign", "institut national de l'information geographique et forestiere"]
+    },
+    {
+      "slug": "vnf",
+      "name": "VNF (Voies Navigables de France)",
+      "aliases": ["vnf", "voies navigables de france"]
+    },
+    {
+      "slug": "sncf_reseau",
+      "name": "SNCF Réseau",
+      "aliases": ["sncf reseau", "reseau ferre de france"]
+    },
+    {
+      "slug": "onf",
+      "name": "ONF (Office National des Forêts)",
+      "aliases": ["onf", "office national des forets"]
+    },
+    {
+      "slug": "crous",
+      "name": "CROUS (Centre Régional des Œuvres Universitaires et Scolaires)",
+      "aliases": ["crous", "centre regional des oeuvres universitaires et scolaires"]
+    },
+    {
+      "slug": "cned",
+      "name": "CNED (Centre National d'Enseignement à Distance)",
+      "aliases": ["cned", "centre national d'enseignement a distance"]
+    },
+    {
+      "slug": "parcoursup",
+      "name": "Parcoursup",
+      "aliases": ["parcoursup"]
+    },
+    {
+      "slug": "opco",
+      "name": "OPCO (Opérateur de Compétences)",
+      "aliases": ["opco", "operateur de competences", "operateurs de competences"]
+    },
+    {
+      "slug": "afpa",
+      "name": "AFPA (Agence Nationale pour la Formation Professionnelle des Adultes)",
+      "aliases": ["afpa", "agence nationale pour la formation professionnelle des adultes"]
+    },
+    {
+      "slug": "cnfpt",
+      "name": "CNFPT (Centre National de la Fonction Publique Territoriale)",
+      "aliases": ["cnfpt", "centre national de la fonction publique territoriale"]
+    },
+    {
+      "slug": "crpcen",
+      "name": "CRPCEN (Caisse de Retraite et de Prévoyance des Clercs et Employés de Notaires)",
+      "aliases": ["crpcen", "caisse de retraite et de prevoyance des clercs et employes de notaires"]
+    },
+    {
+      "slug": "cavimac",
+      "name": "CAVIMAC (Caisse d'Assurance Vieillesse, Invalidité et Maladie des Cultes)",
+      "aliases": ["cavimac", "caisse d'assurance vieillesse invalidite et maladie des cultes"]
+    },
+    {
+      "slug": "cnbf",
+      "name": "CNBF (Caisse Nationale des Barreaux Français)",
+      "aliases": ["cnbf", "caisse nationale des barreaux francais"]
+    },
+    {
+      "slug": "carcdsf",
+      "name": "CARCDSF (Caisse Autonome de Retraite des Chirurgiens-Dentistes et des Sages-Femmes)",
+      "aliases": ["carcdsf", "caisse autonome de retraite des chirurgiens-dentistes et des sages-femmes"]
+    },
+    {
+      "slug": "cavec",
+      "name": "CAVEC (Caisse d'Assurance Vieillesse des Experts-Comptables)",
+      "aliases": ["cavec", "caisse d'assurance vieillesse des experts-comptables"]
+    },
+    {
+      "slug": "carmf",
+      "name": "CARMF (Caisse Autonome de Retraite des Médecins de France)",
+      "aliases": ["carmf", "caisse autonome de retraite des medecins de france"]
+    },
+    {
+      "slug": "cavp",
+      "name": "CAVP (Caisse d'Assurance Vieillesse des Pharmaciens)",
+      "aliases": ["cavp", "caisse d'assurance vieillesse des pharmaciens"]
+    },
+    {
+      "slug": "carpa",
+      "name": "CARPA (Caisse des Règlements Pécuniaires des Avocats)",
+      "aliases": ["carpa", "caisse des reglements pecuniaires des avocats"]
+    },
+    {
+      "slug": "ircantec",
+      "name": "IRCANTEC (Institution de Retraite Complémentaire des Agents Non Titulaires de l'État et des Collectivités Publiques)",
+      "aliases": ["ircantec", "institution de retraite complementaire des agents non titulaires"]
+    },
+    {
+      "slug": "anct",
+      "name": "ANCT (Agence Nationale de la Cohésion des Territoires)",
+      "aliases": ["anct", "agence nationale de la cohesion des territoires"]
+    },
+    {
+      "slug": "anses",
+      "name": "ANSES (Agence Nationale de Sécurité Sanitaire de l'Alimentation, de l'Environnement et du Travail)",
+      "aliases": ["anses", "agence nationale de securite sanitaire"]
+    },
+    {
+      "slug": "ansm",
+      "name": "ANSM (Agence Nationale de Sécurité du Médicament et des Produits de Santé)",
+      "aliases": ["ansm", "agence nationale de securite du medicament"]
+    },
+    {
+      "slug": "andra",
+      "name": "ANDRA (Agence Nationale pour la Gestion des Déchets Radioactifs)",
+      "aliases": ["andra", "agence nationale pour la gestion des dechets radioactifs"]
+    },
+    {
+      "slug": "cada",
+      "name": "CADA (Commission d'Accès aux Documents Administratifs)",
+      "aliases": ["cada", "commission d'acces aux documents administratifs"]
+    },
+    {
+      "slug": "defenseur_droits",
+      "name": "Défenseur des Droits",
+      "aliases": ["defenseur des droits"]
+    },
+    {
+      "slug": "dgccrf",
+      "name": "DGCCRF (Direction Générale de la Concurrence, de la Consommation et de la Répression des Fraudes)",
+      "aliases": ["dgccrf", "direction generale de la concurrence de la consommation et de la repression des fraudes"]
+    },
+    {
+      "slug": "dila",
+      "name": "DILA (Direction de l'Information Légale et Administrative)",
+      "aliases": ["dila", "direction de l'information legale et administrative"]
+    },
+    {
+      "slug": "anfr",
+      "name": "ANFR (Agence Nationale des Fréquences)",
+      "aliases": ["anfr", "agence nationale des frequences"]
+    },
+    {
+      "slug": "cerema",
+      "name": "Cerema (Centre d'Études et d'Expertise sur les Risques, l'Environnement, la Mobilité et l'Aménagement)",
+      "aliases": ["cerema", "centre d'etudes et d'expertise sur les risques l'environnement la mobilite et l'amenagement"]
+    },
+    {
+      "slug": "haute_autorite_sante",
+      "name": "Haute Autorité de Santé (HAS)",
+      "aliases": ["haute autorite de sante", "has"]
+    },
+    {
+      "slug": "police_nationale",
+      "name": "Police Nationale",
+      "aliases": ["police nationale"]
+    },
+    {
+      "slug": "education_nationale",
+      "name": "Ministère de l'Éducation Nationale",
+      "aliases": ["ministere de l'education nationale", "education nationale"]
+    },
+    {
+      "slug": "ministere_sante",
+      "name": "Ministère de la Santé",
+      "aliases": ["ministere de la sante"]
+    },
+    {
+      "slug": "ministere_travail",
+      "name": "Ministère du Travail",
+      "aliases": ["ministere du travail"]
+    },
+    {
+      "slug": "ministere_agriculture",
+      "name": "Ministère de l'Agriculture",
+      "aliases": ["ministere de l'agriculture"]
+    },
+    {
+      "slug": "ministere_armees",
+      "name": "Ministère des Armées",
+      "aliases": ["ministere des armees"]
+    },
+    {
+      "slug": "ministere_culture",
+      "name": "Ministère de la Culture",
+      "aliases": ["ministere de la culture"]
+    },
+    {
+      "slug": "ministere_transition_ecologique",
+      "name": "Ministère de la Transition Écologique",
+      "aliases": ["ministere de la transition ecologique"]
+    },
+    {
+      "slug": "pajemploi",
+      "name": "Pajemploi",
+      "aliases": ["pajemploi"]
+    },
+    {
+      "slug": "cesu",
+      "name": "CESU (Chèque Emploi Service Universel)",
+      "aliases": ["cesu", "cheque emploi service universel"]
+    },
+    {
+      "slug": "cleiss",
+      "name": "CLEISS (Centre des Liaisons Européennes et Internationales de Sécurité Sociale)",
+      "aliases": ["cleiss", "centre des liaisons europeennes et internationales de securite sociale"]
+    },
+    {
+      "slug": "onac_vg",
+      "name": "ONAC-VG (Office National des Combattants et des Victimes de Guerre)",
+      "aliases": ["onac-vg", "office national des combattants et des victimes de guerre"]
+    },
+    {
+      "slug": "drfip",
+      "name": "DRFiP (Direction Régionale des Finances Publiques)",
+      "aliases": ["drfip", "direction regionale des finances publiques"]
+    }
+  ],
+  "health": [
+    {
+      "slug": "alan",
+      "name": "Alan",
+      "aliases": ["alan"]
+    },
+    {
+      "slug": "harmonie_mutuelle",
+      "name": "Harmonie Mutuelle",
+      "aliases": ["harmonie mutuelle"]
+    },
+    {
+      "slug": "malakoff_humanis",
+      "name": "Malakoff Humanis",
+      "aliases": ["malakoff humanis", "malakoff", "humanis"]
+    },
+    {
+      "slug": "mgen",
+      "name": "MGEN",
+      "aliases": ["mgen"]
+    },
+    {
+      "slug": "ociane_matmut",
+      "name": "Ociane Matmut",
+      "aliases": ["ociane matmut", "ociane"]
+    },
+    {
+      "slug": "adrea_mutuelle",
+      "name": "Adréa Mutuelle",
+      "aliases": ["adrea mutuelle", "adréa"]
+    },
+    {
+      "slug": "apreva_mutuelle",
+      "name": "Apréva Mutuelle",
+      "aliases": ["apreva mutuelle", "apréva"]
+    },
+    {
+      "slug": "eovi_mcd_mutuelle",
+      "name": "Eovi Mcd Mutuelle",
+      "aliases": ["eovi mcd mutuelle", "eovi"]
+    },
+    {
+      "slug": "solimut_mutuelle",
+      "name": "Solimut Mutuelle",
+      "aliases": ["solimut mutuelle", "solimut"]
+    },
+    {
+      "slug": "vyv",
+      "name": "VYV (Groupe VYV)",
+      "aliases": ["vyv", "groupe vyv"]
+    },
+    {
+      "slug": "integrance",
+      "name": "Intégrance",
+      "aliases": ["integrance", "intégrance"]
+    },
+    {
+      "slug": "radiance_mutuelle",
+      "name": "Radiance Mutuelle",
+      "aliases": ["radiance mutuelle", "radiance"]
+    },
+    {
+      "slug": "la_mutuelle_generale",
+      "name": "La Mutuelle Générale",
+      "aliases": ["la mutuelle generale", "mutuelle generale"]
+    },
+    {
+      "slug": "mfp",
+      "name": "MFP (Mutualité Fonction Publique)",
+      "aliases": ["mfp", "mutualite fonction publique"]
+    },
+    {
+      "slug": "mnh",
+      "name": "MNH (Mutuelle Nationale des Hospitaliers)",
+      "aliases": ["mnh", "mutuelle nationale des hospitaliers"]
+    },
+    {
+      "slug": "mget",
+      "name": "MGET",
+      "aliases": ["mget"]
+    },
+    {
+      "slug": "mgefi",
+      "name": "MGEFI",
+      "aliases": ["mgefi"]
+    },
+    {
+      "slug": "miltis",
+      "name": "Miltis",
+      "aliases": ["miltis"]
+    },
+    {
+      "slug": "aesio_mutuelle",
+      "name": "Aésio Mutuelle",
+      "aliases": ["aesio mutuelle", "aésio"]
+    },
+    {
+      "slug": "apicil",
+      "name": "Apicil",
+      "aliases": ["apicil"]
+    },
+    {
+      "slug": "wemind",
+      "name": "Wemind",
+      "aliases": ["wemind"]
+    },
+    {
+      "slug": "april_sante",
+      "name": "April Santé",
+      "aliases": ["april sante", "april santé"]
+    },
+    {
+      "slug": "allianz_sante",
+      "name": "Allianz Santé",
+      "aliases": ["allianz sante", "allianz santé"]
+    },
+    {
+      "slug": "generali_sante",
+      "name": "Generali Santé",
+      "aliases": ["generali sante", "generali santé"]
+    },
+    {
+      "slug": "groupama_sante",
+      "name": "Groupama Santé",
+      "aliases": ["groupama sante", "groupama santé"]
+    },
+    {
+      "slug": "swisslife_sante",
+      "name": "SwissLife Santé",
+      "aliases": ["swisslife sante", "swisslife santé"]
+    },
+    {
+      "slug": "utwin",
+      "name": "Utwin",
+      "aliases": ["utwin"]
+    },
+    {
+      "slug": "coover",
+      "name": "Coover",
+      "aliases": ["coover"]
+    },
+    {
+      "slug": "chorum",
+      "name": "Chorum",
+      "aliases": ["chorum"]
+    },
+    {
+      "slug": "kalixia",
+      "name": "Kalixia",
+      "aliases": ["kalixia"]
+    },
+    {
+      "slug": "mutuelle_bleue",
+      "name": "Mutuelle Bleue",
+      "aliases": ["mutuelle bleue"]
+    },
+    {
+      "slug": "april_international",
+      "name": "April International",
+      "aliases": ["april international"]
+    },
+    {
+      "slug": "ipeca",
+      "name": "Ipeca Prévoyance",
+      "aliases": ["ipeca", "ipeca prevoyance"]
+    },
+    {
+      "slug": "uneo",
+      "name": "Unéo",
+      "aliases": ["uneo", "unéo"]
+    },
+    {
+      "slug": "malakoff_mederic",
+      "name": "Malakoff Médéric",
+      "aliases": ["malakoff mederic", "malakoff médéric"]
+    },
+    {
+      "slug": "axa_sante",
+      "name": "AXA Santé",
+      "aliases": ["axa sante", "axa santé"]
+    },
+    {
+      "slug": "groupe_pasteur_mutualite",
+      "name": "Groupe Pasteur Mutualité",
+      "aliases": ["groupe pasteur mutualite", "pasteur mutualite"]
+    },
+    {
+      "slug": "mnt",
+      "name": "MNT (Mutuelle Nationale Territoriale)",
+      "aliases": ["mutuelle nationale territoriale"]
+    },
+    {
+      "slug": "interiale",
+      "name": "Intériale",
+      "aliases": ["interiale", "intériale"]
+    },
+    {
+      "slug": "lmde",
+      "name": "LMDE (La Mutuelle des Étudiants)",
+      "aliases": ["lmde", "la mutuelle des etudiants"]
+    },
+    {
+      "slug": "smerep",
+      "name": "SMEREP",
+      "aliases": ["smerep"]
+    },
+    {
+      "slug": "mutex",
+      "name": "Mutex",
+      "aliases": ["mutex"]
+    },
+    {
+      "slug": "santeclair",
+      "name": "Santéclair",
+      "aliases": ["santeclair", "santéclair"]
+    },
+    {
+      "slug": "almerys",
+      "name": "Almerys",
+      "aliases": ["almerys"]
+    },
+    {
+      "slug": "carte_blanche_partenaires",
+      "name": "Carte Blanche Partenaires",
+      "aliases": ["carte blanche partenaires"]
+    },
+    {
+      "slug": "viamedis",
+      "name": "Viamedis",
+      "aliases": ["viamedis"]
+    },
+    {
+      "slug": "ccmo_mutuelle",
+      "name": "CCMO Mutuelle",
+      "aliases": ["ccmo mutuelle", "ccmo"]
+    },
+    {
+      "slug": "neoliane",
+      "name": "Néoliane",
+      "aliases": ["neoliane", "néoliane"]
+    },
+    {
+      "slug": "acoris_mutuelles",
+      "name": "Acoris Mutuelles",
+      "aliases": ["acoris mutuelles", "acoris"]
+    },
+    {
+      "slug": "complevie",
+      "name": "Complévie",
+      "aliases": ["complevie"]
+    },
+    {
+      "slug": "mut_est",
+      "name": "Mut'Est",
+      "aliases": ["mut'est", "mutest"]
+    },
+    {
+      "slug": "avenir_sante_mutuelle",
+      "name": "Avenir Santé Mutuelle",
+      "aliases": ["avenir sante mutuelle", "avenir sante"]
+    },
+    {
+      "slug": "france_mutuelle",
+      "name": "France Mutuelle",
+      "aliases": ["france mutuelle"]
+    },
+    {
+      "slug": "la_bressane",
+      "name": "La Bressane",
+      "aliases": ["la bressane", "bressane"]
+    },
+    {
+      "slug": "mutualp",
+      "name": "Mutualp",
+      "aliases": ["mutualp"]
+    },
+    {
+      "slug": "la_mutuelle_verte",
+      "name": "La Mutuelle Verte",
+      "aliases": ["la mutuelle verte", "mutuelle verte"]
+    },
+    {
+      "slug": "mutuelle_la_dijonnaise",
+      "name": "Mutuelle La Dijonnaise",
+      "aliases": ["mutuelle la dijonnaise", "la dijonnaise"]
+    },
+    {
+      "slug": "mutuelle_403",
+      "name": "Mutuelle 403",
+      "aliases": ["mutuelle 403"]
+    },
+    {
+      "slug": "mutuelle_europe",
+      "name": "Mutuelle Europe",
+      "aliases": ["mutuelle europe"]
+    },
+    {
+      "slug": "la_mutuelle_de_la_corse",
+      "name": "La Mutuelle de la Corse",
+      "aliases": ["mutuelle de la corse", "mutuelle corse"]
+    },
+    {
+      "slug": "groupe_languedoc_mutualite",
+      "name": "Groupe Languedoc Mutualité",
+      "aliases": ["languedoc mutualite", "groupe languedoc mutualite"]
+    },
+    {
+      "slug": "mutuelle_du_champagne",
+      "name": "Mutuelle du Champagne",
+      "aliases": ["mutuelle du champagne"]
+    },
+    {
+      "slug": "mutuelle_epargne_retraite",
+      "name": "Mutuelle Épargne Retraite",
+      "aliases": ["mutuelle epargne retraite"]
+    },
+    {
+      "slug": "mutuelle_de_france_bretagne_centre_ocean",
+      "name": "Mutuelle de France Bretagne Centre Océan",
+      "aliases": ["mutuelle de france bretagne centre ocean"]
+    },
+    {
+      "slug": "mutuelle_de_france_04_05",
+      "name": "Mutuelle de France 04/05",
+      "aliases": ["mutuelle de france 04 05"]
+    },
+    {
+      "slug": "mutuelle_medico_chirurgicale",
+      "name": "Mutuelle Médico-Chirurgicale",
+      "aliases": ["mutuelle medico chirurgicale"]
+    },
+    {
+      "slug": "mutuelle_novamut",
+      "name": "Mutuelle Novamut",
+      "aliases": ["mutuelle novamut", "novamut"]
+    },
+    {
+      "slug": "mutuelle_du_var",
+      "name": "Mutuelle du Var",
+      "aliases": ["mutuelle du var"]
+    },
+    {
+      "slug": "mutuelle_previfrance",
+      "name": "Mutuelle Prévifrance",
+      "aliases": ["mutuelle previfrance", "previfrance"]
+    },
+    {
+      "slug": "mgen_filia",
+      "name": "MGEN Filia",
+      "aliases": ["mgen filia"]
+    },
+    {
+      "slug": "mutuelle_saint_germain",
+      "name": "Mutuelle Saint-Germain",
+      "aliases": ["mutuelle saint germain"]
+    },
+    {
+      "slug": "mutuelle_de_la_somme",
+      "name": "Mutuelle de la Somme",
+      "aliases": ["mutuelle de la somme"]
+    },
+    {
+      "slug": "mutuelles_du_soleil",
+      "name": "Mutuelles du Soleil",
+      "aliases": ["mutuelles du soleil"]
+    },
+    {
+      "slug": "mutuelle_complementaire_dalsace",
+      "name": "Mutuelle Complémentaire d'Alsace",
+      "aliases": ["mutuelle complementaire d'alsace", "mutuelle complementaire alsace"]
+    },
+    {
+      "slug": "mutuelle_drome_arpica",
+      "name": "Mutuelle Drôme ARPICA",
+      "aliases": ["mutuelle drome arpica", "arpica"]
+    },
+    {
+      "slug": "mutuelles_presence",
+      "name": "Mutuelles Présence",
+      "aliases": ["mutuelles presence"]
+    },
+    {
+      "slug": "myriade_mutuelle",
+      "name": "Myriade",
+      "aliases": ["myriade", "mutuelle myriade"]
+    },
+    {
+      "slug": "roanne_mutuelle",
+      "name": "Roanne Mutuelle",
+      "aliases": ["roanne mutuelle"]
+    },
+    {
+      "slug": "la_mif",
+      "name": "La MIF",
+      "aliases": ["la mif"]
+    },
+    {
+      "slug": "novalia_mutuelle",
+      "name": "Novalia Mutuelle",
+      "aliases": ["novalia mutuelle", "novalia"]
+    },
+    {
+      "slug": "noveocare",
+      "name": "NoveoCare",
+      "aliases": ["noveocare"]
+    },
+    {
+      "slug": "pavillon_prevoyance",
+      "name": "Pavillon Prévoyance",
+      "aliases": ["pavillon prevoyance"]
+    },
+    {
+      "slug": "precocia",
+      "name": "Precocia",
+      "aliases": ["precocia"]
+    },
+    {
+      "slug": "refuge_mutualiste_aveyronnais",
+      "name": "Refuge Mutualiste Aveyronnais",
+      "aliases": ["refuge mutualiste aveyronnais"]
+    },
+    {
+      "slug": "sorual",
+      "name": "Sorual",
+      "aliases": ["sorual"]
+    },
+    {
+      "slug": "union_fraternelle_des_regions",
+      "name": "Union Fraternelle des Régions",
+      "aliases": ["union fraternelle des regions"]
+    },
+    {
+      "slug": "umc_mutuelle",
+      "name": "UMC Mutuelle",
+      "aliases": ["umc mutuelle"]
+    },
+    {
+      "slug": "avenir_mutuelle",
+      "name": "Avenir Mutuelle",
+      "aliases": ["avenir mutuelle"]
+    },
+    {
+      "slug": "miel_mutuelle",
+      "name": "Miel",
+      "aliases": ["miel mutuelle", "miel malakoff humanis"]
+    },
+    {
+      "slug": "henner_mutuelle",
+      "name": "Henner",
+      "aliases": ["henner mutuelle", "henner"]
+    },
+    {
+      "slug": "mutuelle_generale_des_cheminots",
+      "name": "Mutuelle Générale des Cheminots",
+      "aliases": ["mutuelle generale des cheminots"]
+    },
+    {
+      "slug": "umen",
+      "name": "uMEn",
+      "aliases": ["umen"]
+    },
+    {
+      "slug": "mutuelle_lmp",
+      "name": "Mutuelle LMP",
+      "aliases": ["mutuelle lmp"]
+    },
+    {
+      "slug": "maaf_sante",
+      "name": "MAAF Santé",
+      "aliases": ["maaf sante"]
+    },
+    {
+      "slug": "macif_mutualite",
+      "name": "Macif Mutualité",
+      "aliases": ["macif mutualite"]
+    },
+    {
+      "slug": "smacl_sante",
+      "name": "SMACL Santé",
+      "aliases": ["smacl sante"]
+    },
+    {
+      "slug": "ag_mut",
+      "name": "AG Mut",
+      "aliases": ["ag mut"]
+    },
+    {
+      "slug": "mutuelle_ibm",
+      "name": "Mutuelle IBM",
+      "aliases": ["mutuelle ibm"]
+    },
+    {
+      "slug": "apivia_mutuelle",
+      "name": "Apivia Mutuelle",
+      "aliases": ["apivia mutuelle", "apivia"]
+    },
+    {
+      "slug": "sud_ouest_mutualite",
+      "name": "Sud-Ouest Mutualité",
+      "aliases": ["sud ouest mutualite"]
+    },
+    {
+      "slug": "grm_mutuelle",
+      "name": "GRM",
+      "aliases": ["grm mutuelle", "grm"]
+    },
+    {
+      "slug": "premeris",
+      "name": "Premeris",
+      "aliases": ["premeris"]
+    },
+    {
+      "slug": "mfif",
+      "name": "MFIF",
+      "aliases": ["mfif"]
+    },
+    {
+      "slug": "cybelle_solidarite",
+      "name": "Cybelle Solidarité",
+      "aliases": ["cybelle solidarite"]
+    },
+    {
+      "slug": "harmonie_fonction_publique",
+      "name": "Harmonie Fonction Publique",
+      "aliases": ["harmonie fonction publique"]
+    },
+    {
+      "slug": "mutame_et_plus",
+      "name": "Mutame & Plus",
+      "aliases": ["mutame et plus", "mutame plus"]
+    },
+    {
+      "slug": "mutuelle_autonome_generale_de_leducation",
+      "name": "Mutuelle Autonome Générale de l'Éducation",
+      "aliases": ["mutuelle autonome generale de l'education", "mage"]
+    },
+    {
+      "slug": "mutuelle_centrale_des_finances",
+      "name": "Mutuelle Centrale des Finances",
+      "aliases": ["mutuelle centrale des finances"]
+    },
+    {
+      "slug": "mutuelle_civile_de_la_defense",
+      "name": "Mutuelle Civile de la Défense",
+      "aliases": ["mutuelle civile de la defense", "mcdef"]
+    },
+    {
+      "slug": "mutuelle_de_linsee",
+      "name": "Mutuelle de l'Insee",
+      "aliases": ["mutuelle de l'insee", "mutuelle insee"]
+    },
+    {
+      "slug": "mutuelle_de_la_communication_et_de_laudiovisuel",
+      "name": "Mutuelle de la Communication et de l'Audiovisuel",
+      "aliases": ["mutuelle communication audiovisuel"]
+    },
+    {
+      "slug": "mutuelle_des_affaires_etrangeres_et_europeennes",
+      "name": "Mutuelle des Affaires Étrangères et Européennes",
+      "aliases": ["mutuelle des affaires etrangeres"]
+    },
+    {
+      "slug": "mutuelle_des_agents_des_impots",
+      "name": "Mutuelle des Agents des Impôts",
+      "aliases": ["mutuelle des agents des impots"]
+    },
+    {
+      "slug": "mutuelle_des_douanes",
+      "name": "Mutuelle des Douanes",
+      "aliases": ["mutuelle des douanes"]
+    },
+    {
+      "slug": "mutuelle_de_france_des_hospitaliers",
+      "name": "Mutuelle de France des Hospitaliers",
+      "aliases": ["mutuelle de france des hospitaliers"]
+    },
+    {
+      "slug": "mutuelle_des_services_publics",
+      "name": "Mutuelle des Services Publics",
+      "aliases": ["mutuelle des services publics"]
+    },
+    {
+      "slug": "mutuelle_du_ministere_de_la_justice",
+      "name": "Mutuelle du Ministère de la Justice",
+      "aliases": ["mutuelle du ministere de la justice"]
+    },
+    {
+      "slug": "mutuelle_nationale_des_sapeurs_pompiers_de_france",
+      "name": "Mutuelle Nationale des Sapeurs-Pompiers de France",
+      "aliases": ["mutuelle nationale des sapeurs pompiers de france"]
+    },
+    {
+      "slug": "mutuelle_du_personnel_de_lassemblee_nationale",
+      "name": "Mutuelle du Personnel de l'Assemblée Nationale",
+      "aliases": ["mutuelle du personnel de l'assemblee nationale"]
+    },
+    {
+      "slug": "cdc_mutuelle",
+      "name": "CDC Mutuelle",
+      "aliases": ["cdc mutuelle"]
+    },
+    {
+      "slug": "mutuelle_du_tresor",
+      "name": "Mutuelle du Trésor",
+      "aliases": ["mutuelle du tresor"]
+    },
+    {
+      "slug": "mutuelle_familiale_france_et_outre_mer",
+      "name": "Mutuelle Familiale France et Outre-Mer",
+      "aliases": ["mutuelle familiale france et outre mer"]
+    },
+    {
+      "slug": "mutuelle_generale_de_la_police",
+      "name": "Mutuelle Générale de la Police",
+      "aliases": ["mutuelle generale de la police"]
+    },
+    {
+      "slug": "mutuelle_generale_des_affaires_sociales",
+      "name": "Mutuelle Générale des Affaires Sociales",
+      "aliases": ["mutuelle generale des affaires sociales"]
+    },
+    {
+      "slug": "mutuelle_nationale_de_lentraide_administrative",
+      "name": "Mutuelle Nationale de l'Entr'aide Administrative",
+      "aliases": ["mutuelle nationale de l'entraide administrative"]
+    },
+    {
+      "slug": "mutuelle_nationale_des_fonctionnaires_des_collectivites_territoriales",
+      "name": "Mutuelle Nationale des Fonctionnaires des Collectivités Territoriales",
+      "aliases": ["mutuelle nationale des fonctionnaires des collectivites territoriales"]
+    },
+    {
+      "slug": "union_des_mutuelles_de_france_de_la_defense_nationale",
+      "name": "Union des Mutuelles de France de la Défense Nationale",
+      "aliases": ["union mutuelles defense nationale"]
+    },
+    {
+      "slug": "union_nationale_des_mutuelles_de_la_sante",
+      "name": "Union Nationale des Mutuelles de la Santé",
+      "aliases": ["union nationale des mutuelles de la sante"]
+    },
+    {
+      "slug": "mutame_savoie_mont_blanc",
+      "name": "Mutame Savoie Mont-Blanc",
+      "aliases": ["mutame savoie mont blanc"]
+    },
+    {
+      "slug": "mutame_provence",
+      "name": "Mutame Provence",
+      "aliases": ["mutame provence"]
+    },
+    {
+      "slug": "mutuelle_du_groupe_bnp_paribas",
+      "name": "Mutuelle du Groupe BNP Paribas",
+      "aliases": ["mutuelle bnp paribas"]
+    },
+    {
+      "slug": "mutuelle_guillerm",
+      "name": "Mutuelle Guillerm",
+      "aliases": ["mutuelle guillerm"]
+    },
+    {
+      "slug": "mutuelle_des_industries_electriques_et_gazieres",
+      "name": "Mutuelle des Industries Électriques et Gazières",
+      "aliases": ["mutuelle industries electriques et gazieres", "mieg"]
+    },
+    {
+      "slug": "mutuelle_keolis_rennes",
+      "name": "Mutuelle Keolis Rennes",
+      "aliases": ["mutuelle keolis rennes"]
+    },
+    {
+      "slug": "mutuelle_la_france_maritime",
+      "name": "Mutuelle La France Maritime",
+      "aliases": ["mutuelle la france maritime"]
+    },
+    {
+      "slug": "mutuelle_des_metiers_de_lelectronique_et_de_linformatique",
+      "name": "Mutuelle des Métiers de l'Électronique et de l'Informatique",
+      "aliases": ["mmei"]
+    },
+    {
+      "slug": "mutuelle_ouest_france",
+      "name": "Mutuelle Ouest-France",
+      "aliases": ["mutuelle ouest france"]
+    },
+    {
+      "slug": "mutuelle_du_personnel_du_groupe_ratp",
+      "name": "Mutuelle du Personnel du Groupe RATP",
+      "aliases": ["mutuelle ratp"]
+    },
+    {
+      "slug": "mutuelle_sg",
+      "name": "Mutuelle SG",
+      "aliases": ["mutuelle sg", "mutuelle societe generale"]
+    },
+    {
+      "slug": "mutuelle_des_tramways_de_nancy",
+      "name": "Mutuelle des Tramways de Nancy",
+      "aliases": ["mutuelle des tramways de nancy"]
+    },
+    {
+      "slug": "alptis",
+      "name": "Alptis",
+      "aliases": ["alptis"]
+    },
+    {
+      "slug": "association_sante_et_action_familiale",
+      "name": "Association Santé et Action Familiale",
+      "aliases": ["sante et action familiale"]
+    },
+    {
+      "slug": "mutuelle_de_poitiers_assurances",
+      "name": "Mutuelle de Poitiers Assurances",
+      "aliases": ["mutuelle de poitiers"]
+    },
+    {
+      "slug": "mutuelle_de_seine_et_marne",
+      "name": "Mutuelle de Seine-et-Marne",
+      "aliases": ["mutuelle de seine et marne"]
+    },
+    {
+      "slug": "mutuelle_des_metiers_de_la_justice_et_de_la_securite",
+      "name": "Mutuelle des Métiers de la Justice et de la Sécurité",
+      "aliases": ["mutuelle metiers justice securite"]
+    },
+    {
+      "slug": "almutra",
+      "name": "Almutra",
+      "aliases": ["almutra", "alliance des mutualistes du transport"]
+    },
+    {
+      "slug": "amellis_mutuelles",
+      "name": "Amellis Mutuelles",
+      "aliases": ["amellis mutuelles", "amellis"]
+    },
+    {
+      "slug": "agmf_prevoyance",
+      "name": "AGMF Prévoyance",
+      "aliases": ["agmf prevoyance", "association generale des medecins de france prevoyance"]
+    },
+    {
+      "slug": "aubeane_mutuelle_de_france",
+      "name": "Aubeane Mutuelle de France",
+      "aliases": ["aubeane mutuelle de france", "aubeane"]
+    },
+    {
+      "slug": "banque_populaire_mutualite",
+      "name": "Banque Populaire Mutualité",
+      "aliases": ["banque populaire mutualite"]
+    },
+    {
+      "slug": "bpce_mutuelle",
+      "name": "BPCE Mutuelle",
+      "aliases": ["bpce mutuelle"]
+    },
+    {
+      "slug": "choralis_mutuelle",
+      "name": "Choralis - Mutuelle Le Libre Choix",
+      "aliases": ["choralis", "mutuelle le libre choix"]
+    },
+    {
+      "slug": "energie_mutuelle",
+      "name": "Energie Mutuelle",
+      "aliases": ["energie mutuelle"]
+    },
+    {
+      "slug": "garance_mutuelle",
+      "name": "Garance",
+      "aliases": ["garance", "mutuelle garance"]
+    },
+    {
+      "slug": "groupe_des_mutuelles_independantes",
+      "name": "Groupe des Mutuelles Indépendantes",
+      "aliases": ["gmi", "groupe des mutuelles independantes"]
+    },
+    {
+      "slug": "la_mutuelle_catalane",
+      "name": "La Mutuelle Catalane",
+      "aliases": ["la mutuelle catalane", "mutuelle catalane"]
+    },
+    {
+      "slug": "la_prevoyance_artisanale_commerciale_et_salariale",
+      "name": "La Prévoyance Artisanale Commerciale et Salariale",
+      "aliases": ["prevoyance artisanale commerciale et salariale"]
+    },
+    {
+      "slug": "lamie_mutuelle",
+      "name": "Lamie Mutuelle",
+      "aliases": ["lamie mutuelle", "lamie"]
+    },
+    {
+      "slug": "les_mutuelles_ligeriennes",
+      "name": "Les Mutuelles Ligériennes",
+      "aliases": ["mutuelles ligeriennes"]
+    },
+    {
+      "slug": "macif_sante_prevoyance",
+      "name": "Macif Santé Prévoyance",
+      "aliases": ["macif sante prevoyance"]
+    },
+    {
+      "slug": "mcen_mutuelle",
+      "name": "MCEN",
+      "aliases": ["mcen", "mutuelle des clercs et employes de notaire"]
+    },
+    {
+      "slug": "mclr",
+      "name": "MCLR",
+      "aliases": ["mclr"]
+    },
+    {
+      "slug": "mfprecaution",
+      "name": "MFPrécaution",
+      "aliases": ["mfprecaution"]
+    },
+    {
+      "slug": "mg_union",
+      "name": "MG Union",
+      "aliases": ["mg union"]
+    },
+    {
+      "slug": "mos_mutuelle",
+      "name": "MOS Mutuelle",
+      "aliases": ["mos mutuelle", "mos"]
+    },
+    {
+      "slug": "mposs",
+      "name": "MPOSS",
+      "aliases": ["mposs"]
+    },
+    {
+      "slug": "mutac",
+      "name": "Mutac",
+      "aliases": ["mutac"]
+    },
+    {
+      "slug": "mutaero",
+      "name": "Mutaero",
+      "aliases": ["mutaero"]
+    },
+    {
+      "slug": "mutame_marseille_metropole",
+      "name": "Mutame Marseille Métropole",
+      "aliases": ["mutame marseille metropole"]
+    },
+    {
+      "slug": "mutami",
+      "name": "Mutami",
+      "aliases": ["mutami"]
+    },
+    {
+      "slug": "mutlog_garanties",
+      "name": "Mutlog Garanties",
+      "aliases": ["mutlog garanties", "mutlog"]
+    },
+    {
+      "slug": "mutualite_de_la_reunion",
+      "name": "Mutualité de la Réunion",
+      "aliases": ["mutualite de la reunion"]
+    },
+    {
+      "slug": "mutuelle_cheminots_du_nord",
+      "name": "Mutuelle Cheminots du Nord",
+      "aliases": ["mutuelle cheminots du nord"]
+    },
+    {
+      "slug": "mutuelle_des_fonctionnaires",
+      "name": "Mutuelle des Fonctionnaires",
+      "aliases": ["mutuelle des fonctionnaires"]
+    },
+    {
+      "slug": "mutuelle_facom",
+      "name": "Mutuelle Facom",
+      "aliases": ["mutuelle facom"]
+    },
+    {
+      "slug": "mutuelle_familiale",
+      "name": "Mutuelle Familiale",
+      "aliases": ["mutuelle familiale"]
+    },
+    {
+      "slug": "mutuelle_familiale_de_la_reunion",
+      "name": "Mutuelle Familiale de la Réunion",
+      "aliases": ["mutuelle familiale de la reunion"]
+    },
+    {
+      "slug": "mutuelle_familiale_de_normandie",
+      "name": "Mutuelle Familiale de Normandie",
+      "aliases": ["mutuelle familiale de normandie"]
+    },
+    {
+      "slug": "mutuelle_familiale_des_travailleurs_du_groupe_safran",
+      "name": "Mutuelle Familiale des Travailleurs du Groupe Safran",
+      "aliases": ["mutuelle safran"]
+    },
+    {
+      "slug": "mutuelle_generale_de_prevoyance",
+      "name": "Mutuelle Générale de Prévoyance",
+      "aliases": ["mutuelle generale de prevoyance"]
+    },
+    {
+      "slug": "mutuelle_mae",
+      "name": "Mutuelle MAE",
+      "aliases": ["mutuelle mae"]
+    },
+    {
+      "slug": "mutuelle_renault",
+      "name": "Mutuelle Renault",
+      "aliases": ["mutuelle renault"]
+    },
+    {
+      "slug": "mutuelle_smh",
+      "name": "Mutuelle SMH",
+      "aliases": ["mutuelle smh", "smh"]
+    },
+    {
+      "slug": "mutuelle_viasante",
+      "name": "Mutuelle ViaSanté",
+      "aliases": ["mutuelle viasante", "viasante"]
+    },
+    {
+      "slug": "nuoma_mutuelle",
+      "name": "Nuoma Mutuelle",
+      "aliases": ["nuoma mutuelle", "nuoma"]
+    },
+    {
+      "slug": "ressources_mutuelles_assistance",
+      "name": "Ressources Mutuelles Assistance",
+      "aliases": ["ressources mutuelles assistance", "rma"]
+    },
+    {
+      "slug": "solyon_mutuelle",
+      "name": "So'Lyon Mutuelle",
+      "aliases": ["so'lyon mutuelle", "solyon mutuelle"]
+    },
+    {
+      "slug": "tutelaire",
+      "name": "Tutélaire",
+      "aliases": ["tutelaire"]
+    },
+    {
+      "slug": "mutualia",
+      "name": "Mutualia",
+      "aliases": ["mutualia"]
+    },
+    {
+      "slug": "reunica",
+      "name": "Réunica",
+      "aliases": ["reunica"]
+    },
+    {
+      "slug": "identites_mutuelle",
+      "name": "Identités Mutuelle",
+      "aliases": ["identites mutuelle", "identites"]
+    },
+    {
+      "slug": "apgis",
+      "name": "APGIS",
+      "aliases": ["apgis"]
+    },
+    {
+      "slug": "smatis",
+      "name": "Smatis",
+      "aliases": ["smatis", "smatis france"]
+    },
+    {
+      "slug": "mutuelle_mieux_etre",
+      "name": "Mutuelle Mieux-Être",
+      "aliases": ["mutuelle mieux etre"]
+    },
+    {
+      "slug": "mutuelle_mip",
+      "name": "Mutuelle MIP",
+      "aliases": ["mutuelle mip", "mip entreprise sante"]
+    },
+    {
+      "slug": "nymphea_sante",
+      "name": "Nymphéa Santé",
+      "aliases": ["nymphea sante"]
+    },
+    {
+      "slug": "mutuelle_des_sapeurs_pompiers_de_paris",
+      "name": "Mutuelle des Sapeurs-Pompiers de Paris",
+      "aliases": ["mutuelle sapeurs pompiers de paris"]
+    },
+    {
+      "slug": "mutuelle_des_scop_et_des_scic",
+      "name": "Mutuelle des Scop et des Scic",
+      "aliases": ["mutuelle des scop et des scic"]
+    },
+    {
+      "slug": "orphelinat_mutualiste_de_la_police_nationale_prevoyance",
+      "name": "Orphelinat Mutualiste de la Police Nationale Prévoyance",
+      "aliases": ["orphelinat mutualiste police nationale"]
+    },
+    {
+      "slug": "mutuelle_du_commerce",
+      "name": "Mutuelle du Commerce",
+      "aliases": ["mutuelle du commerce"]
+    },
+    {
+      "slug": "mutuelle_du_logement",
+      "name": "Mutuelle du Logement",
+      "aliases": ["mutuelle du logement"]
+    },
+    {
+      "slug": "mutuelle_du_monde_combattant",
+      "name": "Mutuelle du Monde Combattant",
+      "aliases": ["mutuelle du monde combattant"]
+    },
+    {
+      "slug": "mutuelle_du_nickel",
+      "name": "Mutuelle du Nickel",
+      "aliases": ["mutuelle du nickel"]
+    },
+    {
+      "slug": "mutuelle_entrain",
+      "name": "Mutuelle Entrain",
+      "aliases": ["mutuelle entrain"]
+    },
+    {
+      "slug": "mutuelle_entrenous",
+      "name": "Mutuelle Entrenous",
+      "aliases": ["mutuelle entrenous", "entrenous"]
+    },
+    {
+      "slug": "mutuelle_des_transports",
+      "name": "Mutuelle des Transports",
+      "aliases": ["mutuelle des transports"]
+    },
+    {
+      "slug": "mutuelle_des_territoriaux_et_hospitaliers",
+      "name": "Mutuelle des Territoriaux et Hospitaliers",
+      "aliases": ["mutuelle des territoriaux et hospitaliers"]
+    },
+    {
+      "slug": "mutuelle_provence_entreprises",
+      "name": "Mutuelle Provence Entreprises",
+      "aliases": ["mutuelle provence entreprises"]
+    },
+    {
+      "slug": "mutuelles_de_lorraine",
+      "name": "Mutuelles de Lorraine",
+      "aliases": ["mutuelles de lorraine"]
+    },
+    {
+      "slug": "mutuelles_du_pays_haut",
+      "name": "Mutuelles du Pays Haut",
+      "aliases": ["mutuelles du pays haut"]
+    },
+    {
+      "slug": "mutuelle_prevoyance_alsace",
+      "name": "Mutuelle Prévoyance Alsace",
+      "aliases": ["mutuelle prevoyance alsace"]
+    },
+    {
+      "slug": "mutuelle_prevoyance_et_de_lhabitat_de_la_reunion",
+      "name": "Mutuelle Prévoyance et de l'Habitat de la Réunion",
+      "aliases": ["mutuelle prevoyance habitat reunion"]
+    },
+    {
+      "slug": "mutuelle_varoise_des_travailleurs_de_letat",
+      "name": "Mutuelle Varoise des Travailleurs de l'État",
+      "aliases": ["mutuelle varoise des travailleurs de l'etat"]
+    },
+    {
+      "slug": "union_mutualiste_de_prevoyance",
+      "name": "Union Mutualiste de Prévoyance",
+      "aliases": ["union mutualiste de prevoyance"]
+    },
+    {
+      "slug": "union_nationale_mutualiste_interprofessionnelle",
+      "name": "Union Nationale Mutualiste Interprofessionnelle",
+      "aliases": ["union nationale mutualiste interprofessionnelle", "unmi"]
+    },
+    {
+      "slug": "union_des_mutuelles_de_la_reunion",
+      "name": "Union des Mutuelles de la Réunion",
+      "aliases": ["union des mutuelles de la reunion"]
+    },
+    {
+      "slug": "societe_mutualiste_interprofessionnelle",
+      "name": "Société Mutualiste Interprofessionnelle",
+      "aliases": ["societe mutualiste interprofessionnelle"]
+    },
+    {
+      "slug": "mutuelle_generale_de_prevoyance_et_dassistance",
+      "name": "Mutuelle Générale de Prévoyance et d'Assistance",
+      "aliases": ["mutuelle generale de prevoyance et d'assistance"]
+    },
+    {
+      "slug": "mutuelle_generale_de_prevoyance_sociale",
+      "name": "Mutuelle Générale de Prévoyance Sociale",
+      "aliases": ["mutuelle generale de prevoyance sociale"]
+    },
+    {
+      "slug": "mutuelle_generale_interprofessionnelle",
+      "name": "Mutuelle Générale Interprofessionnelle",
+      "aliases": ["mutuelle generale interprofessionnelle"]
+    },
+    {
+      "slug": "mutuelle_generale_solidarite_de_la_reunion",
+      "name": "Mutuelle Générale Solidarité de la Réunion",
+      "aliases": ["mutuelle generale solidarite reunion"]
+    },
+    {
+      "slug": "matmut_mutualite",
+      "name": "Matmut Mutualité",
+      "aliases": ["matmut mutualite"]
+    },
+    {
+      "slug": "mutuelle_nationale_militaire",
+      "name": "Mutuelle Nationale Militaire",
+      "aliases": ["mutuelle nationale militaire", "mnm"]
+    },
+    {
+      "slug": "mutuelle_de_pontoise",
+      "name": "Mutuelle de Pontoise",
+      "aliases": ["mutuelle de pontoise"]
+    },
+    {
+      "slug": "mutuelle_de_saint_junien_et_des_environs",
+      "name": "Mutuelle de Saint-Junien et des Environs",
+      "aliases": ["mutuelle de saint junien"]
+    },
+    {
+      "slug": "mutuelle_de_la_verrerie_dalbi",
+      "name": "Mutuelle de la Verrerie d'Albi",
+      "aliases": ["mutuelle de la verrerie d'albi"]
+    },
+    {
+      "slug": "mutuelle_des_hopitaux_de_la_vienne",
+      "name": "Mutuelle des Hôpitaux de la Vienne",
+      "aliases": ["mutuelle des hopitaux de la vienne"]
+    },
+    {
+      "slug": "mutuelle_des_industries_aeronautiques_spatiales_et_connexes",
+      "name": "Mutuelle des Industries Aéronautiques Spatiales et Connexes",
+      "aliases": ["miasc"]
+    },
+    {
+      "slug": "mutuelle_des_patentes_et_liberaux_de_nouvelle_caledonie",
+      "name": "Mutuelle des Patentés et Libéraux de Nouvelle-Calédonie",
+      "aliases": ["mutuelle des patentes et liberaux de nouvelle caledonie"]
+    },
+    {
+      "slug": "mutuelle_des_personnels_maritimes",
+      "name": "Mutuelle des Personnels Maritimes",
+      "aliases": ["mutuelle des personnels maritimes"]
+    },
+    {
+      "slug": "mutuelle_des_professions_judiciaires",
+      "name": "Mutuelle des Professions Judiciaires",
+      "aliases": ["mutuelle des professions judiciaires"]
+    },
+    {
+      "slug": "mutuelle_des_retraites_agf_et_allianz",
+      "name": "Mutuelle des Retraités AGF et Allianz",
+      "aliases": ["mutuelle des retraites agf et allianz"]
+    },
+    {
+      "slug": "mutuelle_du_batiment_et_des_travaux_publics_du_sud_est",
+      "name": "Mutuelle du Bâtiment et des Travaux Publics du Sud Est",
+      "aliases": ["mutuelle du batiment et des travaux publics du sud est"]
+    },
+    {
+      "slug": "mutuelle_du_chu_et_hopitaux_du_puy_de_dome",
+      "name": "Mutuelle du CHU et Hôpitaux du Puy de Dôme",
+      "aliases": ["mutuelle du chu et hopitaux du puy de dome"]
+    },
+    {
+      "slug": "mutuelle_du_grand_port_maritime_du_havre",
+      "name": "Mutuelle du Grand Port Maritime du Havre",
+      "aliases": ["mutuelle du grand port maritime du havre"]
+    },
+    {
+      "slug": "mutuelle_du_port_de_bordeaux",
+      "name": "Mutuelle du Port de Bordeaux",
+      "aliases": ["mutuelle du port de bordeaux"]
+    },
+    {
+      "slug": "mutuelle_du_val_de_sevre",
+      "name": "Mutuelle du Val de Sèvre",
+      "aliases": ["mutuelle du val de sevre"]
+    },
+    {
+      "slug": "mutuelle_intergroupes_dentraide",
+      "name": "Mutuelle Intergroupes d'Entraide",
+      "aliases": ["mutuelle intergroupes d'entraide"]
+    },
+    {
+      "slug": "mutuelle_interprofessionnelle_de_prevoyance",
+      "name": "Mutuelle Interprofessionnelle de Prévoyance",
+      "aliases": ["mutuelle interprofessionnelle de prevoyance"]
+    },
+    {
+      "slug": "mutuelle_la_choletaise",
+      "name": "Mutuelle La Choletaise",
+      "aliases": ["mutuelle la choletaise"]
+    },
+    {
+      "slug": "mutuelle_la_solidarite_daquitaine",
+      "name": "Mutuelle La Solidarité d'Aquitaine",
+      "aliases": ["mutuelle la solidarite d'aquitaine"]
+    },
+    {
+      "slug": "mutuelle_les_menages_prevoyants",
+      "name": "Mutuelle Les Ménages Prévoyants",
+      "aliases": ["mutuelle les menages prevoyants"]
+    },
+    {
+      "slug": "mutuelle_nationale_des_constructeurs_et_accedants_a_la_propriete",
+      "name": "Mutuelle Nationale des Constructeurs et Accédants à la Propriété",
+      "aliases": ["mutuelle nationale des constructeurs et accedants a la propriete"]
+    },
+    {
+      "slug": "mutuelle_nationale_des_personnels_air_france",
+      "name": "Mutuelle Nationale des Personnels Air France",
+      "aliases": ["mutuelle nationale des personnels air france"]
+    },
+    {
+      "slug": "mutuelle_nationale_du_personnel_des_etablissements_michelin",
+      "name": "Mutuelle Nationale du Personnel des Établissements Michelin",
+      "aliases": ["mutuelle nationale du personnel des etablissements michelin"]
+    },
+    {
+      "slug": "mutuelle_saint_aubannaise",
+      "name": "Mutuelle Saint-Aubannaise",
+      "aliases": ["mutuelle saint aubannaise"]
+    },
+    {
+      "slug": "mutuelle_sante_eiffage_energie",
+      "name": "Mutuelle Santé Eiffage Énergie",
+      "aliases": ["mutuelle sante eiffage energie"]
+    },
+    {
+      "slug": "mutuelle_dentraide_de_la_mutualite_francaise",
+      "name": "Mutuelle d'Entraide de la Mutualité Française",
+      "aliases": ["mutuelle d'entraide de la mutualite francaise"]
+    },
+    {
+      "slug": "mutuelle_dentreprises_schneider_electric",
+      "name": "Mutuelle d'Entreprises Schneider Electric",
+      "aliases": ["mutuelle schneider electric"]
+    },
+    {
+      "slug": "mutuelle_divry_la_fraternelle",
+      "name": "Mutuelle d'Ivry (La Fraternelle)",
+      "aliases": ["mutuelle d'ivry", "la fraternelle"]
+    },
+    {
+      "slug": "mutuelle_de_bagneaux",
+      "name": "Mutuelle de Bagneaux",
+      "aliases": ["mutuelle de bagneaux"]
+    },
+    {
+      "slug": "mutuelle_de_france_alpes_du_sud",
+      "name": "Mutuelle de France Alpes du Sud",
+      "aliases": ["mutuelle de france alpes du sud"]
+    },
+    {
+      "slug": "mutuelle_de_france_loire_forez",
+      "name": "Mutuelle de France Loire Forez",
+      "aliases": ["mutuelle de france loire forez"]
+    },
+    {
+      "slug": "mutuelle_de_lenseignement_catholique_des_cotes_darmor",
+      "name": "Mutuelle de l'Enseignement Catholique des Côtes d'Armor",
+      "aliases": ["mutuelle de l'enseignement catholique des cotes d'armor"]
+    },
+    {
+      "slug": "mutuelle_de_loise_des_agents_territoriaux",
+      "name": "Mutuelle de l'Oise des Agents Territoriaux",
+      "aliases": ["mutuelle de l'oise des agents territoriaux"]
+    },
+    {
+      "slug": "societe_mutualiste_du_personnel_de_la_snecma",
+      "name": "Société Mutualiste du Personnel de la Snecma",
+      "aliases": ["societe mutualiste du personnel de la snecma"]
+    },
+    {
+      "slug": "societe_mutualiste_du_saleve",
+      "name": "Société Mutualiste du Salève",
+      "aliases": ["societe mutualiste du saleve"]
+    },
+    {
+      "slug": "societe_mutualiste_interdepartementale_de_banque",
+      "name": "Société Mutualiste Interdépartementale de Banque",
+      "aliases": ["societe mutualiste interdepartementale de banque"]
+    },
+    {
+      "slug": "mutuelle_des_anciens_des_chantiers_la_rochelle_pallice",
+      "name": "Mutuelle des Anciens des Chantiers La Rochelle-Pallice",
+      "aliases": ["mutuelle des anciens des chantiers la rochelle pallice"]
+    },
+    {
+      "slug": "mutuelle_des_auteurs_compositeurs_et_editeurs_de_musique",
+      "name": "Mutuelle des Auteurs Compositeurs et Éditeurs de Musique",
+      "aliases": ["mutuelle des auteurs compositeurs et editeurs de musique"]
+    },
+    {
+      "slug": "mutuelle_des_auteurs_et_compositeurs_dramatiques",
+      "name": "Mutuelle des Auteurs et Compositeurs Dramatiques",
+      "aliases": ["mutuelle des auteurs et compositeurs dramatiques"]
+    },
+    {
+      "slug": "mutuelle_des_cheminots_de_la_region_de_nantes",
+      "name": "Mutuelle des Cheminots de la Région de Nantes",
+      "aliases": ["mutuelle des cheminots de la region de nantes"]
+    },
+    {
+      "slug": "mutuelle_des_entreprises_et_des_independants_du_commerce_de_lindustrie_et_des_services",
+      "name": "Mutuelle des Entreprises et des Indépendants du Commerce de l'Industrie et des Services",
+      "aliases": ["mutuelle des entreprises et des independants du commerce"]
+    },
+    {
+      "slug": "mutuelle_des_sapeurs_pompiers_du_gers",
+      "name": "Mutuelle des Sapeurs-Pompiers du Gers",
+      "aliases": ["mutuelle des sapeurs pompiers du gers"]
+    },
+    {
+      "slug": "mutuelle_du_personnel_de_la_banque_populaire_du_sud",
+      "name": "Mutuelle du Personnel de la Banque Populaire du Sud",
+      "aliases": ["mutuelle du personnel de la banque populaire du sud"]
+    },
+    {
+      "slug": "mutuelle_du_personnel_des_collectivites_territoriales_de_la_reunion",
+      "name": "Mutuelle du Personnel des Collectivités Territoriales de la Réunion",
+      "aliases": ["mutuelle du personnel des collectivites territoriales de la reunion"]
+    },
+    {
+      "slug": "mutuelle_du_personnel_des_ports_du_detroit",
+      "name": "Mutuelle du Personnel des Ports du Détroit",
+      "aliases": ["mutuelle du personnel des ports du detroit"]
+    },
+    {
+      "slug": "mutuelle_du_personnel_du_groupe_societe_generale",
+      "name": "Mutuelle du Personnel du Groupe Société Générale",
+      "aliases": ["mutuelle du personnel du groupe societe generale"]
+    },
+    {
+      "slug": "mutuelle_interentreprise_eram_526",
+      "name": "Mutuelle Interentreprise ERAM 526",
+      "aliases": ["mutuelle interentreprise eram 526"]
+    },
+    {
+      "slug": "mutuelle_intergroupes_poliet_et_ciment_francais",
+      "name": "Mutuelle Intergroupes Poliet et Ciment Français",
+      "aliases": ["mutuelle intergroupes poliet et ciment francais"]
+    },
+    {
+      "slug": "mutuelle_meusrec",
+      "name": "Mutuelle Meusrec",
+      "aliases": ["mutuelle meusrec", "meusrec"]
+    },
+    {
+      "slug": "mutuelle_mftsv",
+      "name": "Mutuelle MFTSV",
+      "aliases": ["mutuelle mftsv", "mftsv"]
+    },
+    {
+      "slug": "societe_de_prevoyance_mutualiste_du_personnel_de_la_banque_de_france",
+      "name": "Société de Prévoyance Mutualiste du Personnel de la Banque de France",
+      "aliases": ["societe de prevoyance mutualiste du personnel de la banque de france"]
+    },
+    {
+      "slug": "societe_mutualiste_chirurgicale_et_complementaire_du_personnel_de_la_banque_de_france",
+      "name": "Société Mutualiste Chirurgicale et Complémentaire du Personnel de la Banque de France",
+      "aliases": ["societe mutualiste chirurgicale et complementaire du personnel de la banque de france"]
+    },
+    {
+      "slug": "societe_mutualiste_inter_entreprises",
+      "name": "Société Mutualiste Inter-Entreprises",
+      "aliases": ["societe mutualiste inter entreprises"]
+    },
+    {
+      "slug": "mutuelle_dentreprises_525",
+      "name": "525ème Mutuelle d'Entreprises",
+      "aliases": ["525eme mutuelle d'entreprises", "525e mutuelle d'entreprises"]
+    },
+    {
+      "slug": "mutuelle_interentreprises_du_personnel_de_la_securite_sociale_dauvergne",
+      "name": "Mutuelle Interentreprises du Personnel de la Sécurité Sociale d'Auvergne",
+      "aliases": ["mutuelle interentreprises du personnel de la securite sociale d'auvergne"]
+    },
+    {
+      "slug": "mutuelle_des_maliens_de_lexterieur",
+      "name": "Mutuelle des Maliens de l'Extérieur",
+      "aliases": ["mutuelle des maliens de l'exterieur"]
+    },
+    {
+      "slug": "radiance_groupe_humanis_bretagne_atlantique",
+      "name": "Radiance Groupe Humanis Bretagne Atlantique",
+      "aliases": ["radiance groupe humanis bretagne atlantique"]
+    },
+    {
+      "slug": "radiance_groupe_humanis_est",
+      "name": "Radiance Groupe Humanis Est",
+      "aliases": ["radiance groupe humanis est"]
+    },
+    {
+      "slug": "mutuelle_du_chu_dangers",
+      "name": "Mutuelle du CHU d'Angers",
+      "aliases": ["mutuelle du chu d'angers"]
+    },
+    {
+      "slug": "mutuelle_de_lenseignement_catholique_de_lanjou",
+      "name": "Mutuelle de l'Enseignement Catholique de l'Anjou",
+      "aliases": ["mutuelle de l'enseignement catholique de l'anjou"]
+    },
+    {
+      "slug": "mutuelle_de_lentreprise_citram",
+      "name": "Mutuelle de l'Entreprise Citram",
+      "aliases": ["mutuelle de l'entreprise citram"]
+    },
+    {
+      "slug": "mutuelle_de_lindustrie_du_petrole",
+      "name": "Mutuelle de l'Industrie du Pétrole",
+      "aliases": ["mutuelle de l'industrie du petrole"]
+    },
+    {
+      "slug": "mutuelle_nestle_saint_menet",
+      "name": "Mutuelle Nestlé Saint-Menet",
+      "aliases": ["mutuelle nestle saint menet"]
+    },
+    {
+      "slug": "mutuelle_des_usines",
+      "name": "Mutuelle des Usines",
+      "aliases": ["mutuelle des usines"]
+    },
+    {
+      "slug": "mutuelle_setram",
+      "name": "Mutuelle SETRAM",
+      "aliases": ["mutuelle setram"]
+    },
+    {
+      "slug": "mutuelle_du_personnel_de_lusine_de_salindres",
+      "name": "Mutuelle du Personnel de l'Usine de Salindres",
+      "aliases": ["mutuelle du personnel de l'usine de salindres"]
+    },
+    {
+      "slug": "societe_nationale_de_la_mutualite",
+      "name": "Société Nationale de la Mutualité",
+      "aliases": ["societe nationale de la mutualite"]
+    },
+    {
+      "slug": "mutuelle_interprofessionnelle_antilles_guyane",
+      "name": "Mutuelle Interprofessionnelle Antilles Guyane",
+      "aliases": ["miag", "mutuelle interprofessionnelle antilles guyane"]
+    },
+    {
+      "slug": "mutuelle_interprofessionnelle_de_la_region_sud_est_de_paris",
+      "name": "Mutuelle Interprofessionnelle de la Région Sud-Est de Paris",
+      "aliases": ["mutuelle interprofessionnelle de la region sud est de paris"]
+    },
+    {
+      "slug": "territoria_mutuelle",
+      "name": "Territoria Mutuelle",
+      "aliases": ["territoria mutuelle", "territoria"]
+    }
+  ]
+}

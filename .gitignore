@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+
+# TypeScript & Installer Build Output
+dist/
+dist-installer/
+
+# SQLite Database Files
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# Input & Organized PDFs (Keep directory structure)
+input/*
+!input/.gitkeep
+organized/*
+!organized/.gitkeep
+
+# Runtime registry mirror (personal document metadata)
+registry.json
+
+# Runtime manual-decision feedback log (personal document metadata)
+manual_decisions.json
+
+# Personal taxonomy overlay — auto-created categories/subcategories derived from your own
+# documents (real bank branches, employers, etc.). categories.json (committed) stays a clean,
+# generic starter taxonomy; this file is where your real data actually lives. See
+# src/infrastructure/categories-store.ts for how the two are merged.
+.categories.private.json
+
+# Local user settings (contains private folder paths)
+settings.json
+
+# Environment variables & Logs
+.env
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Single-instance server lock
+.server.lock
+.scan.lock
+
+# Tesseract OCR language data (large binaries, runtime-downloaded)
+*.traineddata
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Vendored plugin (own git repo, not a submodule of this project)
+.claude/plugins/superpowers/
+
+# Local worktree sessions
+.claude/worktrees/
+
+# Subagent-driven-development scratch workspace (ledgers, briefs, review packages)
+.superpowers/
+
+# Throwaway one-off debug/probe scripts (not part of the app)
+scratch/

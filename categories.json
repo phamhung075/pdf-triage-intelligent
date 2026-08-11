@@ -1,0 +1,222 @@
+{
+  "categories": [
+    {
+      "id": "factures_clients",
+      "name": "Factures Clients",
+      "description": "Factures de vente émises aux clients et prestations facturées",
+      "aliases": [
+        "facture_client",
+        "client_invoice",
+        "sales_invoice",
+        "factures_clients",
+        "facture_emise"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "invoices",
+      "name": "Factures Fournisseurs",
+      "description": "Factures d'achat reçues des fournisseurs et prestataires",
+      "aliases": [
+        "facture",
+        "invoice",
+        "bill",
+        "receipt",
+        "factures",
+        "facture_fournisseur"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "contracts",
+      "name": "Contrats",
+      "description": "Contrats de travail, baux et engagements",
+      "aliases": [
+        "contrat",
+        "contract",
+        "agreement",
+        "nda",
+        "bail"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "bank",
+      "name": "Banque & Relevés",
+      "description": "Relevés de compte bancaire, RIB, opérations et crédits",
+      "aliases": [
+        "bank",
+        "banque",
+        "releve",
+        "rib",
+        "iban",
+        "banking",
+        "credit",
+        "bancaire"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "administrative",
+      "name": "Administratif",
+      "description": "Documents administratifs et impôts",
+      "aliases": [
+        "tax",
+        "taxe",
+        "impot",
+        "gov",
+        "attestation"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "health",
+      "name": "Santé",
+      "description": "Soins médicaux, remboursements, Ameli, mutuelles et ordonnances",
+      "aliases": [
+        "health",
+        "sante",
+        "medical",
+        "mutuelle",
+        "ameli",
+        "soins",
+        "dentaire"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "identity",
+      "name": "Identité",
+      "description": "Cartes d'identité, passeports, titres de séjour et actes civils",
+      "aliases": [
+        "identity",
+        "identite",
+        "passport",
+        "passeport",
+        "titresejour",
+        "permis",
+        "acte"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "housing",
+      "name": "Logement",
+      "description": "Justificatifs de domicile, loyers, baux et attestation d'hébergement",
+      "aliases": [
+        "housing",
+        "logement",
+        "domicile",
+        "hebergement",
+        "loyer",
+        "foncia"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "insurance",
+      "name": "Assurances",
+      "description": "Assurances auto, habitation, prévoyance et responsabilité civile",
+      "aliases": [
+        "insurance",
+        "assurance",
+        "allianz",
+        "macif",
+        "maaf",
+        "prevoyance"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "education",
+      "name": "Éducation",
+      "description": "Formations, cours, diplômes et scolarité",
+      "aliases": [
+        "education",
+        "formation",
+        "alternance",
+        "ecole",
+        "universite"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "recruitment",
+      "name": "Recrutement",
+      "description": "Lettres de motivation, CV et candidatures",
+      "aliases": [
+        "recrutement",
+        "candidature",
+        "entretien",
+        "postulation"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "correspondence",
+      "name": "Courriers",
+      "description": "Courriers reçus, emails et lettres",
+      "aliases": [
+        "courrier",
+        "lettre",
+        "mail",
+        "email",
+        "recommande"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "technical",
+      "name": "Technique",
+      "description": "Manuels techniques, guides et spécifications",
+      "aliases": [
+        "manual",
+        "spec",
+        "guide",
+        "documentation",
+        "technical"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "reports",
+      "name": "Rapports",
+      "description": "Rapports de projet et comptes-rendus",
+      "aliases": [
+        "report",
+        "rapport",
+        "presentation",
+        "meeting",
+        "project"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "bulletin_salaire",
+      "name": "Bulletin Salaire",
+      "description": "Bulletins de salaire et fiches de paie",
+      "aliases": [
+        "bulletin_salaire"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "general",
+      "name": "General",
+      "description": "Category auto-created for General",
+      "aliases": [
+        "general"
+      ],
+      "subcategories": []
+    },
+    {
+      "id": "benefits",
+      "name": "Benefits",
+      "description": "Category auto-created for Benefits",
+      "aliases": [
+        "benefits"
+      ],
+      "subcategories": []
+    }
+  ]
+}

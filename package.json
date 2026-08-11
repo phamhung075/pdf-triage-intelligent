@@ -1,0 +1,93 @@
+{
+  "name": "pdf_triage",
+  "version": "1.0.0",
+  "description": "Local PDF Triage, Categorization, SQLite/JSON Registry, Web UI & FastMCP Server",
+  "main": "desktop/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --exclude \"*.db\" --exclude \"*.db-journal\" --exclude \"*.db-shm\" --exclude \"*.db-wal\" --exclude \"registry.json\" --exclude \"categories.json\" --exclude \"settings.json\" --exclude \"logs/**\" --exclude \".server.lock\" --exclude \".scan.lock\" src/index.ts",
+    "start": "tsx watch --exclude \"*.db\" --exclude \"*.db-journal\" --exclude \"*.db-shm\" --exclude \"*.db-wal\" --exclude \"registry.json\" --exclude \"categories.json\" --exclude \"settings.json\" --exclude \"logs/**\" --exclude \".server.lock\" --exclude \".scan.lock\" src/index.ts",
+    "desktop": "electron desktop/main.cjs",
+    "dist:exe": "npx tsx -e \"import fs from 'fs'; import { execSync } from 'child_process'; try { execSync('taskkill /F /IM \\\"Smart PDF Triage.exe\\\" /T'); } catch {} try { execSync('taskkill /F /IM electron.exe /T'); } catch {} try { fs.rmSync('dist-installer', { recursive: true, force: true }); } catch {}\" && electron-builder --win",
+    "scan": "tsx src/index.ts scan",
+    "mcp": "tsx src/index.ts mcp",
+    "build": "npm run build:css && tsc && tsc -p tsconfig.frontend.json",
+    "build:css": "sass public/scss/style.scss public/style.css --no-source-map",
+    "watch:css": "sass --watch public/scss/style.scss:public/style.css",
+    "build:frontend": "npm run build:css && tsc -p tsconfig.frontend.json",
+    "watch:frontend": "tsc -p tsconfig.frontend.json -w",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.frontend.json"
+  },
+  "keywords": [
+    "pdf",
+    "triage",
+    "ollama",
+    "mcp",
+    "sqlite",
+    "zod"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "marked": "^18.0.9",
+    "ollama": "^0.5.15",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^5.4.624",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "tesseract.js": "^7.0.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.100",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.13.5",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/sqlite3": "^3.1.11",
+    "@types/supertest": "^7.2.1",
+    "electron": "^41.7.1",
+    "electron-builder": "^25.1.8",
+    "pdf-lib": "^1.17.1",
+    "sass": "^1.102.0",
+    "supertest": "^7.2.2",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "@noble/hashes": "1.7.1"
+  },
+  "build": {
+    "appId": "com.smartpdftriage.app",
+    "productName": "Smart PDF Triage",
+    "npmRebuild": false,
+    "asar": false,
+    "directories": {
+      "output": "dist-installer"
+    },
+    "files": [
+      "desktop/**/*",
+      "public/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "categories.json",
+      "entity_dictionary.json",
+      "package.json"
+    ],
+    "win": {
+      "target": "dir",
+      "publish": null,
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "differentialPackage": false
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "input_dir": "./input",
+  "output_root_dir": "./organized",
+  "ollama_model": "qwen3.5:9b",
+  "ollama_host": "http://127.0.0.1:11434",
+  "personal_name_denylist": []
+}

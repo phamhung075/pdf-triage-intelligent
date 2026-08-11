@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart PDF Triage System - Local AI Classifier</title>
+  <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="js/vendor/marked.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="header-title">
+        <h1 style="display: flex; align-items: center; gap: 0.65rem;"><img src="icon.png" alt="Smart PDF Triage Logo" class="header-logo-img"> Smart PDF Triage Dashboard</h1>
+        <p class="subtitle">AI Document Classification, Entity Extraction & Folder Sorting System</p>
+      </div>
+      <div class="header-actions">
+        <div id="ollamaStatusBadge" class="ollama-status-badge" title="Checking local Ollama AI agent...">
+          <span class="status-dot"></span>
+          <span id="ollamaStatusText">Checking Ollama...</span>
+        </div>
+        <button id="btnStartOllama" class="btn-secondary" style="display: none;" title="Launch the local Ollama server">▶️ Start Ollama</button>
+        <button id="btnRestartServer" class="btn-secondary" style="display: none;" title="Restart the backend server">🔄 Restart Server</button>
+        <button id="btnScan" class="btn-primary">⚡ Scan & Triage Files</button>
+        <button id="btnExportCsv" class="btn-secondary" title="Export indexed documents to CSV spreadsheet">📊 Export CSV</button>
+        <button id="btnExportMarkdown" class="btn-secondary" title="Download every document's converted Markdown as a ZIP of .md files">📝 Export Markdown</button>
+        <button id="btnPdfUtil" class="btn-secondary" title="Split multi-page PDFs or merge multiple scans">✂️ Split / Merge PDF</button>
+        <button id="btnRepair" class="btn-secondary" title="Fix file locations, reclassify generic items, and sync registry">🔧 Repair Registry</button>
+        <button id="btnBlockedFiles" class="btn-secondary" title="View files stuck in __raws/blocked_files and why">🚫 Blocked Files<span id="blockedFilesBadge" style="display:none; margin-left: 0.4rem; background: #ef4444; color: #fff; border-radius: 10px; padding: 0.05rem 0.5rem; font-size: 0.75rem;"></span></button>
+        <button id="btnOpenRaws" class="btn-secondary" title="Open the __raws incoming folder">📥 Open __raws</button>
+        <button id="btnOpenArchive" class="btn-secondary" title="Open the __archive folder">📂 Open __archive</button>
+        <button id="btnLogs" class="btn-secondary" title="View real-time backend terminal logs">📋 Terminal Logs</button>
+        <button id="btnOpenChatAssistant" class="btn-primary" style="background: linear-gradient(135deg, #a855f7, #7e22ce); border: none;" title="Ask questions or prepare administrative document dossiers with Local AI">💬 AI Assistant</button>
+        <button id="btnSettings" class="btn-secondary">⚙️ System Config</button>
+      </div>
+    </header>
+
+    <!-- Global Operation Progress Bar Banner -->
+    <div id="globalOperationBanner" class="global-op-banner hidden">
+      <div class="op-banner-content">
+        <div class="op-header-row">
+          <div class="op-type-badge">
+            <span class="spinner-small"></span>
+            <span id="opTypeLabel">WORKING...</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.8rem;">
+            <div class="op-counter-label" id="opCounterLabel">0 / 0 files (0%)</div>
+            <button id="btnUnlockOp" class="btn-secondary" style="font-size: 0.78rem; padding: 0.2rem 0.6rem; border-color: rgba(239, 68, 68, 0.4); color: #f87171;" title="Forcefully unlock active background scan/repair operation">🔓 Unlock</button>
+          </div>
+        </div>
+        <div class="op-progress-bar-bg">
+          <div class="op-progress-bar-fill" id="opProgressBarFill" style="width: 0%;"></div>
+        </div>
+        <div class="op-detail-row">
+          <span id="opCurrentStage">Stage: Initializing</span>
+          <span id="opCurrentFile" class="op-file-name"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Bar -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="statTotalDocs">0</div>
+        <div class="stat-label">Total Documents Indexed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statCategoriesCount">0</div>
+        <div class="stat-label">Active Categories</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statSubcategoriesCount">0</div>
+        <div class="stat-label">Active Subcategories</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="statSystemStatus" style="color: #10b981;">Ready</div>
+        <div class="stat-label">Classifier Engine Status</div>
+      </div>
+    </div>
+
+    <!-- Category & Subcategory Filter Pills Bar -->
+    <div id="categoryPills" class="category-pills" style="display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.8rem;"></div>
+    <div id="subcategoryPills" class="subcategory-pills" style="display: none; margin-bottom: 1rem;"></div>
+
+    <!-- Filter & Search Bar -->
+    <div class="filter-bar">
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="Search by title, ref #, text content, tags or summary...">
+        <button type="button" id="btnClearSearch" class="btn-clear-search" style="display: none;" title="Clear search" aria-label="Clear search">✕</button>
+      </div>
+    </div>
+
+    <!-- Main Documents Grid -->
+    <main id="docsGrid" class="docs-grid">
+      <!-- Document cards rendered dynamically via app.js -->
+    </main>
+  </div>
+
+  <!-- Document Edit Modal -->
+  <div id="editModal" class="modal-backdrop">
+    <div class="modal edit-modal-premium">
+
+      <!-- Header -->
+      <div class="edit-modal-header">
+        <div class="edit-modal-title-row">
+          <span class="edit-modal-icon">✏️</span>
+          <div>
+            <h2 class="edit-modal-title">Edit Document Metadata</h2>
+            <p id="editModalSubtitle" class="edit-modal-subtitle">Loading document…</p>
+          </div>
+        </div>
+        <button id="btnCloseModal" class="edit-close-btn" title="Close">✕</button>
+      </div>
+
+      <!-- Info strip: original filename + current path -->
+      <div class="edit-info-strip" id="editInfoStrip">
+        <span id="editInfoFilename" class="edit-info-chip">📄 —</span>
+        <span id="editInfoStatus" class="edit-info-chip">🏷️ —</span>
+        <span id="editInfoPath" class="edit-info-chip edit-info-path" title="">📂 —</span>
+      </div>
+
+      <form id="editForm" autocomplete="off">
+        <input type="hidden" id="editDocId">
+
+        <!-- Section: Identity -->
+        <div class="edit-section">
+          <div class="edit-section-header">
+            <span class="edit-section-icon">🆔</span>
+            <span class="edit-section-label">Identity</span>
+          </div>
+          <div class="edit-section-body">
+            <div class="edit-field-full">
+              <label class="edit-label" for="editTitle">Document Title <span class="edit-required">*</span></label>
+              <input class="edit-input" type="text" id="editTitle" required placeholder="e.g. Bulletin de salaire — Janvier 2026">
+            </div>
+            <div class="edit-grid-3">
+              <div>
+                <label class="edit-label" for="editDate">📅 Date</label>
+                <input class="edit-input" type="text" id="editDate" placeholder="YYYY-MM-DD">
+              </div>
+              <div>
+                <label class="edit-label" for="editRegistre">🔖 Reference / Registre</label>
+                <input class="edit-input" type="text" id="editRegistre" placeholder="Invoice # or Contract ID">
+              </div>
+              <div>
+                <label class="edit-label" for="editTags">🏷️ Tags <span class="edit-hint">(comma separated)</span></label>
+                <input class="edit-input" type="text" id="editTags" placeholder="invoice, edf, energy">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Classification -->
+        <div class="edit-section">
+          <div class="edit-section-header">
+            <span class="edit-section-icon">📂</span>
+            <span class="edit-section-label">Classification</span>
+          </div>
+          <div class="edit-section-body">
+            <div class="edit-grid-2">
+              <div>
+                <label class="edit-label" for="editCategory">Category <span class="edit-required">*</span></label>
+                <input class="edit-input" type="text" id="editCategory" required placeholder="e.g. bulletin_salaire">
+              </div>
+              <div>
+                <label class="edit-label" for="editSubcategory">Subcategory <span class="edit-required">*</span></label>
+                <input class="edit-input" type="text" id="editSubcategory" required placeholder="e.g. fournisseur_x">
+              </div>
+            </div>
+            <p class="edit-classification-hint">⚠️ Changing category / subcategory will physically relocalize the file on disk.</p>
+          </div>
+        </div>
+
+        <!-- Section: Executive Summary -->
+        <div class="edit-section">
+          <div class="edit-section-header">
+            <span class="edit-section-icon">💡</span>
+            <span class="edit-section-label">Executive Summary</span>
+          </div>
+          <div class="edit-section-body">
+            <div class="edit-field-full" style="position:relative;">
+              <textarea class="edit-input edit-textarea" id="editSummary" rows="4"
+                placeholder="3–5 sentence searchable summary: issuing org, ref numbers, amounts, core purpose…"
+                oninput="document.getElementById('editSummaryCount').textContent = this.value.length + ' chars'">
+              </textarea>
+              <span id="editSummaryCount" class="edit-char-count">0 chars</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Extracted Text (read-only) -->
+        <div class="edit-section">
+          <div class="edit-section-header" style="cursor:pointer;" onclick="this.closest('.edit-section').classList.toggle('edit-section-collapsed')">
+            <span class="edit-section-icon">📜</span>
+            <span class="edit-section-label">Extracted Raw Text <span class="edit-hint">(read-only — click to expand)</span></span>
+            <span class="edit-section-toggle">▾</span>
+          </div>
+          <div class="edit-section-body edit-raw-body">
+            <textarea class="edit-input edit-textarea edit-raw-textarea" id="editRawText" rows="7" readonly
+              placeholder="No text extracted from this document."></textarea>
+          </div>
+        </div>
+
+        <!-- Footer actions -->
+        <div class="edit-modal-footer">
+          <button type="button" id="btnCancelEdit" class="btn-secondary">✕ Cancel</button>
+          <button type="submit" class="btn-primary edit-save-btn">💾 Save &amp; Relocalize</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Settings & Categories Modal -->
+  <div id="settingsModal" class="modal-backdrop">
+    <div class="modal" style="max-width: 1200px; width: 94vw; height: 88vh; display: flex; flex-direction: column; padding: 1.5rem 2rem;">
+      <div class="modal-header" style="flex-shrink: 0;">
+        <h2>⚙️ System Configuration & Categories Manager</h2>
+        <button id="btnCloseSettings" class="btn-secondary">✕</button>
+      </div>
+
+      <div style="margin-bottom: 1.2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; display: flex; gap: 1rem; flex-shrink: 0;">
+        <button id="tabBtnSystem" class="btn-secondary" style="border-bottom: 2px solid var(--accent-blue);">System & Paths</button>
+        <button id="tabBtnCategories" class="btn-secondary">Manage Categories & Subcategories</button>
+      </div>
+
+      <!-- Tab 1: System Settings -->
+      <form id="settingsForm" style="flex: 1; min-height: 0; overflow-y: auto; padding-right: 0.3rem;">
+        
+        <!-- Storage & Path Statistics (Taille) -->
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;">
+          <h3 style="font-size: 1rem; color: var(--accent-blue); margin-bottom: 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>💾 Storage & Directory Volume (Taille & Disque)</span>
+          </h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.8rem;">
+              <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase;">📂 Incoming (`__raws`)</div>
+              <div id="statRawsSize" style="font-size: 1.25rem; font-weight: 700; color: #38bdf8; margin: 0.2rem 0;">- B</div>
+              <div id="statRawsCount" style="font-size: 0.8rem; color: #cbd5e1;">0 files</div>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.8rem;">
+              <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase;">📦 Archive (`__archive`)</div>
+              <div id="statArchiveSize" style="font-size: 1.25rem; font-weight: 700; color: #34d399; margin: 0.2rem 0;">- B</div>
+              <div id="statArchiveCount" style="font-size: 0.8rem; color: #cbd5e1;">0 files</div>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.8rem;">
+              <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase;">🗄️ SQLite Database</div>
+              <div id="statDbSize" style="font-size: 1.25rem; font-weight: 700; color: #fbbf24; margin: 0.2rem 0;">- B</div>
+              <div style="font-size: 0.8rem; color: #cbd5e1;">Indexed FTS5 Records</div>
+            </div>
+
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.8rem;">
+              <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase;">🌐 Total System Storage</div>
+              <div id="statTotalSize" style="font-size: 1.25rem; font-weight: 700; color: #f472b6; margin: 0.2rem 0;">- B</div>
+              <div id="statTotalCount" style="font-size: 0.8rem; color: #cbd5e1;">0 total files</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Formats Breakdown (Format) -->
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;">
+          <h3 style="font-size: 1rem; color: var(--accent-blue); margin-bottom: 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📄 Supported File Formats Distribution (Format & Types)</span>
+          </h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.8rem;" id="systemFormatsContainer">
+            <div style="padding: 0.6rem 0.8rem; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 6px;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #ef4444;">📕 PDF</div>
+              <div id="fmtPdfStats" style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.2rem;">0 files (0 B)</div>
+            </div>
+            <div style="padding: 0.6rem 0.8rem; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 6px;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #10b981;">🖼️ IMAGE</div>
+              <div id="fmtImgStats" style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.2rem;">0 files (0 B)</div>
+            </div>
+            <div style="padding: 0.6rem 0.8rem; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 6px;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #3b82f6;">📝 TEXT</div>
+              <div id="fmtTxtStats" style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.2rem;">0 files (0 B)</div>
+            </div>
+            <div style="padding: 0.6rem 0.8rem; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 6px;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #6366f1;">📘 WORD</div>
+              <div id="fmtWordStats" style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.2rem;">0 files (0 B)</div>
+            </div>
+            <div style="padding: 0.6rem 0.8rem; background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 6px;">
+              <div style="font-size: 0.85rem; font-weight: 600; color: #f59e0b;">📊 EXCEL</div>
+              <div id="fmtExcelStats" style="font-size: 0.8rem; color: #cbd5e1; margin-top: 0.2rem;">0 files (0 B)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Paths & System Language Config -->
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;">
+          <h3 style="font-size: 1rem; color: var(--accent-blue); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>📂 Workspace Directory Paths & Interface</span>
+          </h3>
+
+          <div class="form-group" style="margin-bottom: 1.2rem;">
+            <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🌐 System Interface & AI Language / Langue du Système</label>
+            <select id="cfgLanguage" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+              <option value="FR">🇫🇷 Français (French)</option>
+              <option value="EN">🇬🇧 English</option>
+            </select>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.2rem;">
+            <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">📥 Input Files Directory Path (`__raws`)</label>
+            <input type="text" id="cfgInputDir" required placeholder="C:\Users\...\__raws" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #38bdf8; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+            <span style="font-size: 0.78rem; color: #64748b; margin-top: 0.3rem; display: block;">Scanner & background watcher monitors incoming files exclusively in this folder.</span>
+          </div>
+
+          <div class="form-group">
+            <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">📤 Organized Output Root Path (`__archive`)</label>
+            <input type="text" id="cfgOutputDir" required placeholder="C:\Users\...\__archive" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #34d399; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+            <span style="font-size: 0.78rem; color: #64748b; margin-top: 0.3rem; display: block;">Target root directory where classified files are sorted by category, subcategory, and year.</span>
+          </div>
+        </div>
+
+        <!-- Local AI (Ollama) Engine Config -->
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;">
+          <h3 style="font-size: 1rem; color: var(--accent-blue); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
+            <span>🤖 Local AI (Ollama) Service & Model Setup</span>
+          </h3>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;">
+            <div class="form-group">
+              <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🌐 Ollama Host URL</label>
+              <input type="text" id="cfgOllamaHost" required placeholder="http://127.0.0.1:11434" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+            </div>
+
+            <div class="form-group">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">🧠 Ollama AI Model</label>
+                <button type="button" id="btnRefreshOllamaModels" class="btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" title="Fetch installed models from local Ollama API">🔄 Fetch Models</button>
+              </div>
+              <select id="cfgOllamaModelSelect" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fbbf24; border: 1px solid var(--border-color); font-size: 0.95rem; font-weight: 600;">
+                <option value="qwen3.5:9b">⚡ qwen3.5:9b (Default)</option>
+              </select>
+              <input type="text" id="cfgOllamaModel" required placeholder="qwen3.5:9b" style="display: none; width: 100%; margin-top: 0.4rem; padding: 0.5rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fbbf24; border: 1px solid var(--border-color); font-size: 0.9rem;">
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;">
+          <button type="submit" class="btn-primary" style="padding: 0.75rem 1.8rem; font-weight: 600;">💾 Save System Settings</button>
+        </div>
+
+        <div style="margin-top: 2rem; border-top: 1px dashed rgba(239, 68, 68, 0.4); padding-top: 1.2rem;">
+          <h4 style="color: #ef4444; font-size: 0.95rem; margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.4rem;">
+            <span>⚠️ Danger Zone</span>
+          </h4>
+          <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.4;">
+            Clearing the registry resets the SQLite database and moves all sorted files from <code>__archive</code> back into the <code>__raws</code> incoming folder for re-indexing.
+          </p>
+          <button type="button" id="btnClear" class="btn-secondary" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);" title="Clear database registry and return archived files to __raws">🗑️ Clear Registry & Reset Database</button>
+        </div>
+      </form>
+
+      <!-- Tab 2: Categories & Subcategories Editor -->
+      <div id="categoriesEditor" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.8rem; flex-shrink: 0;">
+          Add, edit, or remove document categories and subcategories used by Ollama AI classification.
+        </p>
+
+        <!-- Category Tag Selection Pills Bar -->
+        <div id="manageCategoryTagsBar" style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; padding: 0.6rem; background: rgba(15, 23, 42, 0.6); border-radius: 10px; border: 1px solid var(--border-color); align-items: center; flex-shrink: 0;">
+          <!-- Category Tag Pills populated dynamically by JS -->
+        </div>
+
+        <div id="categoriesList" style="display: flex; flex-direction: column; gap: 0.8rem; flex: 1; min-height: 0; overflow-y: auto; padding-right: 0.5rem; margin-bottom: 1rem;">
+          <!-- Rendered via JS -->
+        </div>
+
+        <div style="border-top: 1px solid var(--border-color); padding-top: 0.8rem; flex-shrink: 0; background: rgba(15, 23, 42, 0.6); border-radius: 8px; padding: 1rem; border: 1px solid var(--border-color);">
+          <h4 style="margin-bottom: 0.6rem; color: var(--accent-blue);">+ Add New Category</h4>
+          <div style="display: grid; grid-template-columns: 1fr 1.2fr 2fr auto; gap: 0.8rem; align-items: flex-end;">
+            <div class="form-group" style="margin: 0;">
+              <label style="font-size: 0.8rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.3rem;">Category ID</label>
+              <input type="text" id="newCatId" placeholder="e.g. medical" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #38bdf8; border: 1px solid var(--border-color); font-size: 0.9rem; font-family: monospace;">
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label style="font-size: 0.8rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.3rem;">Category Name</label>
+              <input type="text" id="newCatName" placeholder="e.g. Health & Medical" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.9rem;">
+            </div>
+            <div class="form-group" style="margin: 0;">
+              <label style="font-size: 0.8rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.3rem;">Keyword Aliases (comma separated)</label>
+              <input type="text" id="newCatAliases" placeholder="medical, doctor, health, rx" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.9rem;">
+            </div>
+            <button type="button" id="btnAddCategory" class="btn-primary" style="height: 42px; padding: 0 1.2rem; font-weight: 600;">+ Add Category</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Active Scan Flow Progress Tracker Modal -->
+  <div id="scanProgressModal" class="modal-backdrop">
+    <div class="modal" style="max-width: 850px;">
+      <div class="modal-header">
+        <h2>🔄 PDF Triage Execution Flow</h2>
+        <button id="btnCloseScanProgress" class="btn-secondary">✕</button>
+      </div>
+      <div style="margin-bottom: 1rem; color: #94a3b8; font-size: 0.9rem;" id="scanProgressHeader">
+        Scanning incoming PDFs from <code>__raws</code>...
+      </div>
+      <div style="max-height: 420px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 12px; padding: 0.8rem; background: rgba(15, 23, 42, 0.7);">
+        <div id="scanProgressList" style="display: flex; flex-direction: column; gap: 0.75rem;">
+          <!-- Live PDF status rows -->
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.2rem;">
+        <button id="btnDoneScanProgress" class="btn-primary" style="display: none;">Close & Refresh Dashboard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Relocalize & AI Feedback Modal with Dropdown Reason Controls -->
+  <div id="relocalizeModal" class="modal-backdrop">
+    <div class="modal" style="max-width: 680px;">
+      <div class="modal-header">
+        <h2>📍 Relocalize & Correct Document</h2>
+        <button id="btnCloseRelocalizeModal" class="btn-secondary">✕</button>
+      </div>
+
+      <input type="hidden" id="relocalizeDocId">
+
+      <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.2rem;">
+        <div style="font-size: 1rem; font-weight: 600; color: var(--accent-blue);" id="relocalizeDocTitle">Document Title</div>
+        <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.3rem;" id="relocalizeCurrentPath">Current Path: __archive/...</div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label>Target Category</label>
+          <select id="relocalizeCategorySelect" style="width: 100%; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+            <!-- Pre-populated via JS -->
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Target Subcategory</label>
+          <select id="relocalizeSubcategorySelect" style="width: 100%; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+            <!-- Pre-populated via JS -->
+          </select>
+        </div>
+      </div>
+
+      <input type="text" id="relocalizeCustomSubcategory" placeholder="Enter new subcategory slug (e.g. credit_mutuel, employeur_x)..." style="width: 100%; display: none; margin-bottom: 1rem; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color);">
+
+      <!-- Structured Reason Dropdowns -->
+      <div class="form-group">
+        <label>Why is Category / Location Wrong?</label>
+        <select id="relocalizeCatErrorReason" style="width: 100%; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+          <option value="">-- Select Category Error Reason --</option>
+          <option value="Bank Account Statement misclassified as Vendor Invoice (Internal transaction line issue)">Bank Account Statement misclassified as Vendor Invoice (Internal transaction line issue)</option>
+          <option value="Tax document (Avis d'impôt) misclassified as Courriers / Correspondence">Tax document (Avis d'impôt) misclassified as Courriers / Correspondence</option>
+          <option value="Pay Slip (Bulletin de salaire) misclassified as Invoice">Pay Slip (Bulletin de salaire) misclassified as Invoice</option>
+          <option value="Health / Medical document misclassified as Administrative">Health / Medical document misclassified as Administrative</option>
+          <option value="Identity / Passport / Civil Record misclassified as Education">Identity / Passport / Civil Record misclassified as Education</option>
+          <option value="Proof of Domicile misclassified as Contract">Proof of Domicile misclassified as Contract</option>
+          <option value="__CUSTOM__">Other Category Error Reason...</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Why is Subcategory Wrong?</label>
+        <select id="relocalizeSubErrorReason" style="width: 100%; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+          <option value="">-- Select Subcategory Error Reason --</option>
+          <option value="Generic subcategory fallback used (general / other / divers)">Generic subcategory fallback used (general / other / divers)</option>
+          <option value="Wrong Employer / Enterprise name for Pay Slip">Wrong Employer / Enterprise name for Pay Slip</option>
+          <option value="Wrong Bank Society name">Wrong Bank Society name</option>
+          <option value="Date numbers inside subcategory folder name">Date numbers inside subcategory folder name</option>
+          <option value="New Company / Organization needs to be created">New Company / Organization needs to be created</option>
+          <option value="__CUSTOM__">Other Subcategory Error Reason...</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>AI Correction Feedback Note (Auto-filled from reasons above or type custom note)</label>
+        <textarea id="relocalizeReason" rows="3" placeholder="Explain what local AI got wrong so it learns for future runs..." style="width: 100%; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.9rem;"></textarea>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 0.8rem; margin-top: 1.5rem;">
+        <button id="btnAiReanalyze" class="btn-secondary" style="color: #a7f3d0;">🤖 Re-Analyze with AI Feedback</button>
+        <button id="btnConfirmRelocalize" class="btn-primary">📍 Move & Relocalize Now</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Blocked Files Modal -->
+  <div id="blockedFilesModal" class="modal-backdrop">
+    <div class="modal-content" style="max-width: 900px; width: 95vw; max-height: 85vh; display: flex; flex-direction: column; background: #0b0f19; border: 1px solid #1e293b; padding: 1.5rem; border-radius: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; border-bottom: 1px solid #1e293b; padding-bottom: 0.8rem;">
+        <h3 style="margin: 0; display: flex; align-items: center; gap: 0.5rem; color: #f87171;">
+          <span>🚫</span> Blocked Files <span id="blockedFilesModalCount" style="color:#94a3b8; font-weight:400; font-size:0.9rem;"></span>
+        </h3>
+        <button class="modal-close" id="btnCloseBlockedFilesModal">&times;</button>
+      </div>
+      <p style="color:#94a3b8; font-size:0.85rem; margin: 0 0 1rem 0;">
+        These files stayed in <code>__raws/.blocked_files</code> because no text could be extracted from them, or no specific subcategory could be determined (Golden Rule #4). Fix the file (e.g. remove a password, rescan a clearer copy) and it will be automatically re-picked by the next scan.
+      </p>
+      <div id="blockedFilesList" style="flex: 1; overflow-y: auto;">
+        <div style="color: #6b7280; font-style: italic;">Loading...</div>
+      </div>
+    </div>
+  </div>
+  <!-- Grand Format Document Reader Modal -->
+  <div id="grandViewerModal" class="modal-backdrop">
+    <div class="modal" style="width: 92vw; max-width: 1400px; height: 90vh; display: flex; flex-direction: column; padding: 1.5rem; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);">
+      
+      <!-- Reader Header -->
+      <div class="modal-header" style="padding-bottom: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+          <h2 id="grandViewerTitle" style="font-size: 1.3rem; margin: 0; color: #f8fafc;">📖 Document Grand Viewer</h2>
+          <span id="grandViewerCategoryBadge" class="badge">CATEGORY</span>
+          <span id="grandViewerSubcategoryBadge" class="badge badge-sub" style="display: none;">SUBCATEGORY</span>
+        </div>
+        <button id="btnCloseGrandViewer" class="btn-secondary" style="font-size: 1.1rem; padding: 0.3rem 0.7rem;">✕</button>
+      </div>
+
+      <!-- Toolbar Actions -->
+      <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; background: rgba(15, 23, 42, 0.6); padding: 0.6rem 0.8rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05);">
+        <span id="grandViewerMetaDate" style="color: #94a3b8; font-size: 0.85rem;">📅 Date: N/A</span>
+        <span style="color: #475569;">•</span>
+        <span id="grandViewerMetaRegistre" style="color: #94a3b8; font-size: 0.85rem;">🏷️ Ref: N/A</span>
+        <div style="margin-left: auto; display: flex; gap: 0.5rem;">
+          <button id="btnGrandOpenChrome" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #facc15;" title="Open PDF in Google Chrome">🌐 Open in Chrome</button>
+          <button id="btnGrandOpenLocation" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">📂 Open Location</button>
+          <button id="btnGrandReanalyze" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #facc15;" title="Re-extract text and re-analyze with AI">🔄 Rescan / Re-analyze</button>
+          <button id="btnGrandRelocalize" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #a7f3d0;">📍 Move / Relocalize</button>
+          <button id="btnGrandEdit" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">✏️ Edit Metadata</button>
+          <button id="btnGrandCopyText" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #38bdf8;">📋 Copy Text</button>
+          <button id="btnGrandDelete" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #f87171; border-color: rgba(248, 113, 113, 0.4);" title="Unregister document and move file to __raws/.delete_files">🗑️ Delete</button>
+        </div>
+      </div>
+
+      <!-- Main Two-Column Reader Body -->
+      <div style="flex: 1; display: grid; grid-template-columns: 320px 1fr; gap: 1.2rem; min-height: 0;">
+        <!-- Left Panel: Metadata & Summary -->
+        <div style="display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; padding-right: 0.4rem;">
+          <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(56, 189, 248, 0.25); border-left: 4px solid #38bdf8; border-radius: 10px; padding: 1rem;">
+            <h4 style="color: #38bdf8; font-size: 0.9rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.05em;">💡 Executive AI Summary</h4>
+            <div id="grandViewerSummary" class="markdown-content" style="color: #e2e8f0; font-size: 0.85rem; line-height: 1.5;">No summary available.</div>
+          </div>
+
+          <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(192, 132, 252, 0.3); border-radius: 10px; padding: 1rem;">
+            <h4 style="color: #c084fc; font-size: 0.9rem; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.4rem;">📇 Contact Information</h4>
+            <div id="grandViewerContactCard" style="display: flex; flex-direction: column; gap: 0.45rem; font-size: 0.82rem; color: #e2e8f0;">
+              <div><strong style="color: #94a3b8;">Sender / Org:</strong> <span id="grandViewerContactName" style="color: #4ade80; font-weight: 600;">-</span></div>
+              <div><strong style="color: #94a3b8;">Email:</strong> <span id="grandViewerContactEmail" style="color: #38bdf8;">-</span></div>
+              <div><strong style="color: #94a3b8;">Phone:</strong> <span id="grandViewerContactPhone">-</span></div>
+              <div><strong style="color: #94a3b8;">Address:</strong> <span id="grandViewerContactAddress">-</span></div>
+              <div><strong style="color: #94a3b8;">Website:</strong> <span id="grandViewerContactWebsite">-</span></div>
+              <button id="btnGrandSearchContactDocs" class="btn-secondary" style="margin-top: 0.4rem; font-size: 0.78rem; padding: 0.3rem 0.6rem; color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); width: 100%;">🔍 View All Docs from this Contact</button>
+            </div>
+          </div>
+
+          <div style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 1rem;">
+            <h4 style="color: #c084fc; font-size: 0.9rem; margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">ℹ️ File Information</h4>
+            <div style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.82rem; color: #cbd5e1;">
+              <div><strong style="color: #94a3b8;">Original Name:</strong> <div id="grandViewerOrigName" style="word-break: break-all; margin-top: 0.2rem;">-</div></div>
+              <div><strong style="color: #94a3b8;">Status:</strong> <span id="grandViewerStatus" class="badge" style="display: inline-block; padding: 0.1rem 0.4rem; font-size: 0.7rem;">-</span></div>
+              <div><strong style="color: #94a3b8;">Current Path:</strong> <div id="grandViewerPath" style="font-family: monospace; font-size: 0.75rem; color: #94a3b8; word-break: break-all; margin-top: 0.2rem; background: rgba(0,0,0,0.3); padding: 0.4rem; border-radius: 4px;">-</div></div>
+              <div><strong style="color: #94a3b8;">Tags:</strong> <div id="grandViewerTags" style="display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.3rem;">-</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Panel: Full Grand Text Reader -->
+        <div style="display: flex; flex-direction: column; background: #030712; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 10px; padding: 1.2rem; min-height: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.06);">
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <button id="btnGrandTabMarkdown" class="btn-secondary" style="font-size: 0.8rem; padding: 0.25rem 0.65rem; border: none; border-bottom: 2px solid var(--accent-blue);" onclick="switchGrandViewerTab('markdown')">📝 AI Markdown (.md)</button>
+              <button id="btnGrandTabRaw" class="btn-secondary" style="font-size: 0.8rem; padding: 0.25rem 0.65rem; border: none;" onclick="switchGrandViewerTab('raw')">📜 Full PDF Raw Text</button>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span id="grandViewerCharCount" style="color: #64748b; font-size: 0.78rem; font-family: monospace;">0 characters</span>
+              <button id="btnDownloadMarkdown" class="btn-secondary" style="font-size: 0.78rem; padding: 0.25rem 0.65rem;" title="Download this document's converted Markdown as a .md file">⬇️ Download .md</button>
+            </div>
+          </div>
+          <div id="grandViewerTextContent" class="markdown-content" style="flex: 1; overflow-y: auto; font-family: 'Inter', system-ui, sans-serif; font-size: 0.88rem; line-height: 1.6; color: #e0f2fe; word-break: break-word; padding-right: 0.5rem;">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PDF Splitter & Merger Tool Modal -->
+  <div id="pdfUtilModal" class="modal-backdrop">
+    <div class="modal" style="max-width: 600px;">
+      <div class="modal-header">
+        <h2>✂️ PDF Utilities (Splitter & Merger)</h2>
+        <button class="close-btn" onclick="closePdfUtilModal()">×</button>
+      </div>
+      <div style="padding: 1.2rem;">
+        <div style="display: flex; gap: 1rem; border-bottom: 1px solid var(--border-color); margin-bottom: 1.2rem;">
+          <button id="tabBtnSplit" class="btn-secondary" style="border: none; border-bottom: 2px solid var(--accent-blue);" onclick="switchPdfUtilTab('split')">✂️ Split Multi-Page PDF</button>
+          <button id="tabBtnMerge" class="btn-secondary" style="border: none;" onclick="switchPdfUtilTab('merge')">🔗 Merge Multiple PDFs</button>
+        </div>
+
+        <!-- Split Tab -->
+        <div id="pdfSplitTab">
+          <p style="color: #94a3b8; font-size: 0.88rem; margin-bottom: 1rem;">Splits a multi-page PDF into individual 1-page PDF files placed directly into incoming <code>input_dir</code> for automatic re-triage.</p>
+          <form id="pdfSplitForm">
+            <div class="form-group">
+              <label>Absolute Path of PDF File to Split</label>
+              <input type="text" id="pdfSplitPath" required placeholder="C:\Users\...\input\document_multipage.pdf">
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+              <button type="submit" class="btn-primary">✂️ Split into Single-Page PDFs</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Merge Tab -->
+        <div id="pdfMergeTab" style="display: none;">
+          <p style="color: #94a3b8; font-size: 0.88rem; margin-bottom: 1rem;">Combines multiple PDF files into one combined PDF placed into incoming <code>input_dir</code>.</p>
+          <form id="pdfMergeForm">
+            <div class="form-group">
+              <label>File Paths (One absolute path per line)</label>
+              <textarea id="pdfMergePaths" rows="5" required style="width:100%; padding:0.6rem; background:#0f172a; color:#fff; border:1px solid var(--border-color); border-radius:6px; font-family:monospace;" placeholder="C:\Users\...\input\scan1.pdf&#10;C:\Users\...\input\scan2.pdf"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Output Filename (Optional)</label>
+              <input type="text" id="pdfMergeOutputName" placeholder="combined_scan.pdf">
+            </div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 1rem;">
+              <button type="submit" class="btn-primary">🔗 Merge PDFs</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Terminal Logs & Grouped Document Sessions Modal -->
+  <div id="logsModal" class="modal-backdrop">
+    <div class="modal" style="width: 88vw; max-width: 1200px; height: 85vh; display: flex; flex-direction: column; padding: 1.5rem; background: #0f172a; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);">
+      <div class="modal-header" style="padding-bottom: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.8rem;">
+          <h2 style="font-size: 1.25rem; margin: 0; color: #f8fafc;">📋 Terminal Logs & Document Processing Sessions</h2>
+        </div>
+        <button id="btnCloseLogsModal" class="btn-secondary" style="font-size: 1rem; padding: 0.25rem 0.6rem;">✕</button>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; background: rgba(15, 23, 42, 0.7); padding: 0.5rem 0.8rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.06);">
+        <div style="display: flex; gap: 0.6rem;">
+          <button id="btnLogsTabSessions" class="btn-secondary" style="font-size: 0.82rem; padding: 0.3rem 0.75rem; border-bottom: 2px solid #38bdf8;" onclick="switchLogsTab('sessions')">📂 Group by Document Session</button>
+          <button id="btnLogsTabStream" class="btn-secondary" style="font-size: 0.82rem; padding: 0.3rem 0.75rem;" onclick="switchLogsTab('stream')">📋 Stream Log Output</button>
+        </div>
+        <button id="btnRefreshLogs" class="btn-secondary" style="font-size: 0.8rem; padding: 0.3rem 0.65rem;" onclick="loadLogsView()">🔄 Refresh</button>
+      </div>
+
+      <!-- Grouped Session View -->
+      <div id="logsSessionsView" style="flex: 1; display: flex; overflow-y: auto; flex-direction: column; gap: 0.8rem; padding-right: 0.3rem;">
+        <div id="groupedSessionsContainer" style="display: flex; flex-direction: column; gap: 0.8rem;">
+          <div style="color: #64748b; font-style: italic;">Loading grouped document sessions...</div>
+        </div>
+      </div>
+
+      <!-- Stream Log View -->
+      <div id="logsStreamView" style="flex: 1; display: none; flex-direction: column; min-height: 0;">
+        <div id="terminalLogContainer" style="flex: 1; overflow-y: auto; background: #030712; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 1rem; font-family: monospace; font-size: 0.82rem; line-height: 1.5; color: #94a3b8; white-space: pre-wrap; word-break: break-all;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Local AI Dossier & Document Assistant Modal -->
+  <div id="chatAssistantModal" class="modal-backdrop">
+    <div class="modal" style="width: 92vw; max-width: 1200px; height: 90vh; display: flex; flex-direction: column; padding: 1.5rem; background: #0f172a; border: 1px solid rgba(168, 85, 247, 0.4); border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85);">
+      <div class="modal-header" style="padding-bottom: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 0.8rem;">
+        <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
+          <h2 style="font-size: 1.25rem; margin: 0; color: #f8fafc; display: flex; align-items: center; gap: 0.5rem;">
+            <span>💬 Local AI Document Archivist & Dossier Assistant</span>
+          </h2>
+          <span id="mcpStatusBadge" class="badge" style="background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.4); color: #4ade80; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.55rem; border-radius: 6px;" title="MCP Protocol Engine Connected & Active">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e;"></span>
+            <span>MCP Active (8 Tools)</span>
+          </span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.6rem;">
+          <button id="btnClearChatHistory" class="btn-secondary" style="font-size: 0.8rem; padding: 0.25rem 0.6rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.4);" title="Clear conversation history for a new query">🗑️ Clear Chat</button>
+          <button id="btnCloseChatAssistant" class="btn-secondary" style="font-size: 1rem; padding: 0.25rem 0.6rem;">✕</button>
+        </div>
+      </div>
+
+      <!-- Quick Prompt Dossier Chips -->
+      <div style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.8rem; padding: 0.6rem; background: rgba(30, 41, 59, 0.5); border-radius: 10px; border: 1px solid var(--border-color); align-items: center; flex-shrink: 0;">
+        <span style="font-size: 0.78rem; font-weight: 700; color: #a855f7; margin-right: 0.3rem;">🚀 Quick Dossiers:</span>
+        <button type="button" class="chat-prompt-chip pill" data-prompt="Prepare complete list of documents for my Housing Dossier (Justificatif de domicile, 3 Pay Slips, CDI Contract, Tax Notice)" style="font-size: 0.78rem; padding: 0.25rem 0.65rem;">📋 Housing Dossier</button>
+        <button type="button" class="chat-prompt-chip pill" data-prompt="Find all Tax Notices and income documents for Tax Audit" style="font-size: 0.78rem; padding: 0.25rem 0.65rem;">📑 Tax Audit</button>
+        <button type="button" class="chat-prompt-chip pill" data-prompt="List all my Pay Slips and Work Contracts" style="font-size: 0.78rem; padding: 0.25rem 0.65rem;">💼 Pay Slips & Contract</button>
+        <button type="button" class="chat-prompt-chip pill" data-prompt="Find all my Bank Statements and IBAN documents" style="font-size: 0.78rem; padding: 0.25rem 0.65rem;">🏦 Bank Statements</button>
+        <button type="button" class="chat-prompt-chip pill" data-prompt="Find my Passport, Identity Card, and Vitale Card" style="font-size: 0.78rem; padding: 0.25rem 0.65rem;">🪪 Identity Papers</button>
+      </div>
+
+      <!-- Chat History Output Window -->
+      <div id="chatMessageHistory" style="flex: 1; min-height: 0; overflow-y: auto; padding: 0.8rem; background: #030712; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; margin-bottom: 0.8rem;">
+        <div style="color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 2rem;">
+          👋 Hello! I am your local AI document archivist powered by Qwen 3.5.<br>Ask me any question or click a <strong>Quick Dossier chip</strong> above to generate a complete document checklist!
+        </div>
+      </div>
+
+      <!-- Input Form Bar -->
+      <form id="chatInputForm" style="display: flex; gap: 0.6rem; flex-shrink: 0;">
+        <input type="text" id="chatInputText" placeholder="Ask a question or request a dossier list (e.g. 'Prepare housing dossier list')..." style="flex: 1; padding: 0.75rem 1rem; border-radius: 10px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+        <button type="submit" class="btn-primary" style="padding: 0.75rem 1.4rem; font-size: 0.95rem; background: linear-gradient(135deg, #a855f7, #7e22ce); border: none;">Envoyer 🚀</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/Toast.js"></script>
+  <script src="js/TriageState.js"></script>
+  <script src="js/CategoryPillsManager.js"></script>
+  <script src="js/DocumentGridManager.js"></script>
+  <script src="js/ModalsManager.js"></script>
+  <script src="js/TriageEventsManager.js"></script>
+  <script src="js/ChatAssistantManager.js"></script>
+  <script src="js/TriageApp.js"></script>
+</body>
+</html>

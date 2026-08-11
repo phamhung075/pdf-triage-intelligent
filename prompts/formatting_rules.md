@@ -1,0 +1,4 @@
+🛑 MARKDOWN CONTENT IS HANDLED SEPARATELY — DO NOT GENERATE IT HERE:
+- A separate chunk-by-chunk conversion pass has already produced this document's full Markdown representation (tables, headings, everything). Do NOT include a "markdown_content" field in your JSON response, and do NOT spend effort reconstructing tables or full document formatting — it is discarded either way.
+- Your ONLY job in this step is: Category/Subcategory classification, the Executive Summary, and the structured metadata fields (titre, registre, date, tags, total_amount, vat_amount, siren, iban, expiry_date, contact_*).
+- FUSED OCR TEXT DE-CONCATENATION (for the fields above only): If the raw document text contains fused/concatenated words, jammed numbers, or run-together labels (e.g. "Invoice#INV2405030068", "Totalpayable€12.98"), mentally split them into clean words before extracting titre/summary/amounts/contacts — do not let jammed OCR text corrupt an extracted value.

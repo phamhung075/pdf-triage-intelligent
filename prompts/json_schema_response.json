@@ -1,0 +1,20 @@
+{
+  "thinking": "Reasoning chain for category and subcategory selection...",
+  "titre": "Document Title",
+  "registre": "REF-12345",
+  "date": "2026-05-15",
+  "categorie": "bulletin_salaire",
+  "subcategorie": "employeur_x",
+  "summary": "Executive summary...",
+  "tags": ["bulletin_salaire", "employeur_x", "salaire"],
+  "total_amount": "1250.50 €",
+  "vat_amount": "250.10 €",
+  "siren": "123456789",
+  "iban": "FR76...",
+  "expiry_date": "YYYY-MM-DD",
+  "contact_name": "Issuer / Company Name",
+  "contact_email": "contact@example.com",
+  "contact_phone": "+33 1 23 45 67 89",
+  "contact_address": "123 Main Street, Paris, France",
+  "contact_website": "www.example.com"
+}
