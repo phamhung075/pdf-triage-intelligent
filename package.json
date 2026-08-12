@@ -65,7 +65,6 @@
   "build": {
     "appId": "com.smartpdftriage.app",
     "productName": "Smart PDF Triage",
-    "npmRebuild": false,
     "asar": false,
     "directories": {
       "output": "dist-installer"
@@ -75,6 +74,7 @@
       "public/**/*",
       "dist/**/*",
       "src/**/*",
+      "prompts/**/*",
       "categories.json",
       "entity_dictionary.json",
       "package.json"

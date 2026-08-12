@@ -3,8 +3,6 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 
-dotenv.config();
-
 // Derived from this file's own location, NOT process.cwd(). cwd works fine for npm scripts
 // (tsx src/index.ts always runs with cwd = project root) but is unreliable for the packaged
 // Electron .exe: desktop/main.cjs imports the compiled dist/index.js in-process via a dynamic
@@ -18,6 +16,11 @@ const THIS_FILE_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const BASE_DIR = process.env.PDF_TRIAGE_BASE_DIR
   ? path.resolve(process.env.PDF_TRIAGE_BASE_DIR)
   : path.resolve(THIS_FILE_DIR, '..', '..');
+
+// dotenv.config() with no explicit `path` defaults to looking for .env in process.cwd() —
+// exactly the same unreliable-in-packaged-Electron problem BASE_DIR just had. Point it at
+// BASE_DIR explicitly instead of trusting cwd.
+dotenv.config({ path: path.join(BASE_DIR, '.env') });
 export const SETTINGS_FILE = path.join(BASE_DIR, 'settings.json');
 
 export function loadCustomSettings() {
