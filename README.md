@@ -17,7 +17,7 @@ flowchart TD
     C -->|Tier 3: Scanned / Vector PDF| F["Canvas Render + Tesseract OCR"]
     D & E & F --> G[🧠 Local Qwen 3.5 AI / Rule Classifier]
     G --> H[🔍 Grounding Verification Check]
-    H -->|✅ Valid & Grounded Entity| I[💾 Auto-Register Subcategory in categories.json]
+    H -->|✅ Valid & Grounded Entity| I[💾 Auto-Register Subcategory in .categories.private.json]
     H -->|❌ Ungrounded or Generic| J[📁 Move to input_dir/.blocked_files]
     H -->|🔁 Duplicate Checksum| K[📂 Move to input_dir/.duplicates_files]
     I --> L[📁 Move PDF to output_root_dir/category/subcategory/YYYY/]
@@ -45,12 +45,16 @@ YYYY-MM-DD_EntityName_CleanTitle.pdf
 ```
 *Example: `QPtmp001.PDF` $\rightarrow$ `2023-07-31_AcmeCorp_Pay_Slip_July.pdf`*
 
-### 5. Local Qwen 3.5 LLM Triage
-Document text is sent to local **Qwen 3.5:9b via Ollama** to analyze context, assign canonical Categories, identify specific Subcategories (company, issuer, or vendor names), and extract metadata (title, date, summary, payment status).
+### 5. Modular Local AI Pipeline (Qwen 3.5 via Ollama)
+Rather than one giant prompt trying to do everything at once, each document runs through three focused local-model passes:
+- **Step A — Entity Extraction**: a narrow, dedicated pass identifies the issuing entity and document type first, more reliably than hoping a single freeform call gets both the entity *and* the category right.
+- **Step B — Zero-Loss Markdown Conversion**: raw extracted text is chunked and converted into clean, structured GFM Markdown (headers, tables) — this becomes the document's `markdown_content`, used for display, search, and export.
+- **Step C — Classification**: the converted Markdown, plus Step A's entity as a grounded hint, drives the final category/subcategory/summary/metadata decision.
 
 ### 6. Dynamic Auto-Registration & Fail Guard
-- **Pre-Move Auto-Creation**: If a new valid subcategory slug is detected and verified, it is dynamically registered in `categories.json` BEFORE moving the file.
-- **Strict Fail Guard**: If a document fails to resolve to a grounded, specific subcategory (e.g. receives `general` or ungrounded gibberish), it is moved to `.blocked_files/` — preventing generic folder clutter.
+- **Public/Private Taxonomy Split**: `categories.json` (committed, generic starter categories) stays clean and shareable; every category/subcategory actually auto-created from *your* documents (real bank branches, employers, etc.) is written to `.categories.private.json` instead — gitignored, never leaves your machine if you fork or publish your own copy of this project.
+- **Pre-Move Auto-Creation**: a new valid subcategory slug is registered BEFORE moving the file.
+- **Strict Fail Guard**: if a document fails to resolve to a grounded, specific subcategory (e.g. receives `general` or ungrounded gibberish), it is moved to `.blocked_files/` — preventing generic folder clutter.
 
 ### 7. Physical Folder Filing & Real-Time Sync
 Accepted PDFs are moved to canonical folder paths on disk:
@@ -96,11 +100,18 @@ Navigate to **`http://localhost:3971`** in Google Chrome, Microsoft Edge, Firefo
   - Click **📍 Relocalize** on any document card to open the interactive modal.
   - Re-assign the category/subcategory, rename/edit subcategories, or select structured error reasons (*"Wrong Employer Name"*, *"Tax misclassified as Invoice"*) to teach and refine the local AI classifier.
 - 📂 **Open Physical Explorer Folder**: Click **📂 Open Folder** on any document card to open Windows Explorer / OS File Manager directly at the exact PDF path on your computer.
+- 💬 **AI Chat Assistant**: Ask questions in plain language ("my last 3 pay slips", "any documents from URSSAF this year?") and get answers grounded in your own indexed archive — runs entirely through the local Ollama model, nothing sent to the cloud.
+- 📝 **Markdown Export**: Download any single document's converted Markdown as a `.md` file from the Grand Viewer, or export every indexed document's Markdown at once as a ZIP.
+- 📊 **Group by Document Session**: The Logs modal groups every log line by the document that produced it, so you can see exactly what happened (extraction → entity → classification → filing) for one specific file.
 - 🔧 **System Tools**:
-  - **⚡ Scan & Triage PDFs**: Run immediate scan.
+  - **⚡ Scan & Triage PDFs**: Run immediate scan (with a live Stop button while it's running).
   - **🔧 Repair Registry**: Re-verify archive files and sync database.
   - **🗑️ Clear Registry**: Reset document records and return archive PDFs to input directory.
   - **⚙️ System Config**: Adjust input/output paths, language options (English / French), Ollama model hosts, and manage categories/subcategories.
+
+### 4. MCP Server — Connect External AI Agents
+
+`npm run mcp` starts a stdio-based [Model Context Protocol](https://modelcontextprotocol.io) server exposing your document registry as tools: `search_documents`, `get_full_document_text`, `update_document_metadata`, `trigger_triage`, `list_categories`, `prepare_dossier`. Point Claude Desktop (or any other MCP-capable client) at it to query and reason over your archive directly — your documents never leave your machine; only the MCP client's own queries and the tool results cross that boundary, and both stay local since the tool itself runs locally.
 
 ---
 
@@ -119,14 +130,32 @@ Navigate to **`http://localhost:3971`** in Google Chrome, Microsoft Edge, Firefo
 - 🪪 **Identity & Legal Document Sorting**: Intelligent routing for Residence Permits, Passports, ID Cards, Tax Notices, and Pay Slips.
 - ⚡ **High Performance Grid**: SQLite WAL mode + lightweight 300-char preview snippets for 100x faster API response times and instant 0ms reader modal feedback.
 - 🛡️ **Strict Fail Guard & Duplicate Relocation**: Automatically separates duplicates (`.duplicates_files/`) and unclassified files (`.blocked_files/`), keeping input directories completely clean.
+- 💬 **Local AI Chat Assistant**: Query your own document registry in natural language, answered by the local model.
+- 🔌 **MCP Server**: Exposes your archive to any MCP-capable AI agent (Claude Desktop and others) via `search_documents`, `get_full_document_text`, `update_document_metadata`, `trigger_triage`, `list_categories`, `prepare_dossier`.
+- 📝 **Markdown Export**: Per-document `.md` download, or a one-click ZIP of every document's converted Markdown.
+- 🔒 **Locked to localhost by default**: the web server binds to `127.0.0.1` only and has no wide-open CORS — reachable from your machine, not your network, unless you explicitly opt in via `PDF_TRIAGE_HOST`.
+
+---
+
+## 🔐 Privacy & Security
+
+This project exists because sending ID cards, bank statements, and tax records to a third-party cloud API wasn't an option. A few concrete things that back that up, not just marketing copy:
+
+- **Every AI call stays local.** Classification, entity extraction, embeddings, and the chat assistant all run through your own local Ollama instance. Nothing about a document's content is ever sent anywhere else.
+- **No auth, so it's locked to your machine instead.** The dashboard has no login system — rather than build one, it binds to `127.0.0.1` only and ships with no CORS headers, so it's not reachable from your network or from other tabs in your browser. This is deliberate: for a single-user local tool, "not reachable at all" is a stronger guarantee than "reachable but password-protected."
+- **Personal taxonomy stays out of git.** If you fork this repo for your own use, every category/subcategory your documents actually create goes to `.categories.private.json` (gitignored) — the committed `categories.json` never picks up your real bank branches, employers, or any other entity extracted from your documents.
+- **No telemetry, no update pings, no analytics.** The only network calls this app makes are to your own local Ollama instance.
+
+If you do want to expose the dashboard beyond your own machine (e.g. to reach it from your phone on the same network), that's an explicit opt-in via `PDF_TRIAGE_HOST` in `.env` — and worth knowing there's still no authentication layer if you do.
 
 ---
 
 ## 🛠️ Technology Stack
 
 - **Core Engine**: TypeScript, Node.js, Express
-- **Frontend Architecture**: Modular TypeScript (`public/ts/`) compiled to Vanilla JS (`public/js/`), Mozilla PDF.js Reader (`viewer.html`)
+- **Frontend Architecture**: Modular TypeScript (`public/ts/`) compiled to Vanilla JS (`public/js/`), SCSS compiled to `style.css`, Mozilla PDF.js Reader (`viewer.html`), `marked` (vendored locally, not loaded from a CDN)
 - **AI / LLM**: Ollama (`qwen3.5:9b`), Local Embeddings (`nomic-embed-text`)
+- **Agent Integration**: Model Context Protocol server (`@modelcontextprotocol/sdk`)
 - **Database**: SQLite3 with WAL Mode & FTS5 Full-Text Search
 - **PDF Extraction**: `pdf-parse`, `pdfjs-dist`, `@napi-rs/canvas`, `Tesseract.js` (Offline OCR)
 - **Desktop Shell**: Electron, Electron-Builder
@@ -163,12 +192,13 @@ Smart PDF Triage runs 100% locally on your computer using Node.js, Electron, SQL
 ---
 
 ### 1. Prerequisites
-- **Node.js** v18+ or v20+ installed.
+- **Node.js v22.12+** installed (required by the Electron version this project bundles; the web dashboard itself has no hard Node version requirement if you're not using the desktop shell).
 - **Ollama** installed locally ([ollama.com](https://ollama.com)).
 - Pull model:
   ```bash
   ollama pull qwen3.5:9b
   ```
+- **Optional, only if you plan to build the desktop `.exe`**: Visual Studio Build Tools with the "Desktop development with C++" workload (Windows). The desktop build compiles `sqlite3`'s native binding against Electron's own Node ABI, which needs a C++ toolchain available. Not needed for `npm run dev` or the web dashboard.
 
 ### 2. 🚀 Initial Setup & Startup for a New Repository (From Zero)
 When setting up `smart-pdf-triage` on a new computer or for a new user starting from scratch:
@@ -202,14 +232,18 @@ Customize `input_dir` (where incoming PDFs arrive) and `output_root_dir` (where 
   "ollama_host": "http://127.0.0.1:11434"
 }
 ```
-> 💡 **Automatic Directory Initialization**: On launch, the server automatically initializes all necessary folder structures (`./input`, `./organized`, `.blocked_files`, `.duplicates_files`, `.delete_files`), `categories.json`, and the SQLite database (`pdf_triage.db`) if they do not exist yet.
+> 💡 **Automatic Directory Initialization**: On launch, the server automatically initializes all necessary folder structures (`./input`, `./organized`, `.blocked_files`, `.duplicates_files`, `.delete_files`) and the SQLite database (`pdf_triage.db`) if they do not exist yet.
+
+Alternatively (or in addition), copy `.env.example` to `.env` and set any of `PDF_TRIAGE_BASE_DIR`, `PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_TRIAGE_HOST`, `PORT`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `SYSTEM_LANGUAGE` — see the file for what each one does. `settings.json` (via the Settings modal in the UI) is the friendlier way to change input/output folders and language day-to-day; `.env` is for things you set once per install.
+
+`categories.json` (the generic starter taxonomy) is committed and needs no setup. Everything auto-created from your own documents goes to `.categories.private.json` instead, which is gitignored — see [`categories-store.ts`](src/infrastructure/categories-store.ts) if you're curious how the two get merged.
 
 #### Step 4: Run the Application
 - **Development Mode** (API & Web Dashboard on `http://localhost:3971`):
   ```bash
   npm run dev
   ```
-- **Build Frontend TypeScript**:
+- **Build Frontend TypeScript** (run this after editing any `public/ts/*.ts` file — nothing recompiles it automatically):
   ```bash
   npm run build:frontend
   ```
@@ -217,7 +251,7 @@ Customize `input_dir` (where incoming PDFs arrive) and `output_root_dir` (where 
   ```bash
   npm run desktop
   ```
-- **Build Portable Desktop Installer (.exe)**:
+- **Build Portable Desktop Installer (.exe)** — requires Visual Studio Build Tools, see Prerequisites above:
   ```bash
   npm run build
   npm run dist:exe
@@ -231,13 +265,12 @@ Customize `input_dir` (where incoming PDFs arrive) and `output_root_dir` (where 
 # Run the full unit test suite
 npm test
 
-# Run TypeScript type check & frontend build
-npm run build:frontend
-npx tsc --noEmit
+# Type-check both backend and frontend (no emit)
+npm run typecheck
 ```
 
 ---
 
 ## 📄 License
 
-MIT License. Free for personal, commercial, and enterprise use.
+[MIT License](LICENSE). Free for personal, commercial, and enterprise use.
