@@ -1,16 +1,23 @@
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
-// Defaults to the current working directory (how every npm script in this repo invokes the
-// app — `tsx src/index.ts ...` from the project root) so a fresh clone works out of the box.
-// PDF_TRIAGE_BASE_DIR overrides this for setups where cwd isn't the project root (e.g. a
-// packaged Electron build, or running the compiled output from elsewhere).
+// Derived from this file's own location, NOT process.cwd(). cwd works fine for npm scripts
+// (tsx src/index.ts always runs with cwd = project root) but is unreliable for the packaged
+// Electron .exe: desktop/main.cjs imports the compiled dist/index.js in-process via a dynamic
+// import() rather than spawning it as a child process with an explicit cwd, so it inherits
+// Electron's own process.cwd() — which for a launched/double-clicked app is not guaranteed to
+// be the install directory at all. This file's location is stable in both cases:
+// src/infrastructure/settings.ts (tsx, dev) and dist/infrastructure/settings.js (compiled,
+// packaged) are both exactly two directories below the project root.
+// PDF_TRIAGE_BASE_DIR overrides this for setups that need something else entirely.
+const THIS_FILE_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const BASE_DIR = process.env.PDF_TRIAGE_BASE_DIR
   ? path.resolve(process.env.PDF_TRIAGE_BASE_DIR)
-  : path.resolve(process.cwd());
+  : path.resolve(THIS_FILE_DIR, '..', '..');
 export const SETTINGS_FILE = path.join(BASE_DIR, 'settings.json');
 
 export function loadCustomSettings() {
