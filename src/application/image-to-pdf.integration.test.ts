@@ -1,18 +1,17 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 
-// Unlike image-to-pdf.test.ts (which mocks both neighbors), this file mocks ONLY vision-client
-// — the one making real Ollama network calls — and lets the REAL image-processor.ts run against
-// a real synthetic PNG, to prove runVisionPipeline actually composes with real canvas operations
-// (rotate/crop/enhance), not just with mocks that happen to satisfy the interface.
-const { detectOrientationMock, detectCropBoxMock } = vi.hoisted(() => ({
-  detectOrientationMock: vi.fn(),
-  detectCropBoxMock: vi.fn(),
-}));
-vi.mock('../infrastructure/vision-client.js', () => ({
-  detectOrientation: detectOrientationMock,
-  detectCropBox: detectCropBoxMock,
-}));
+// Unlike image-to-pdf.test.ts (which mocks both neighbors), this file mocks ONLY the two
+// network/model-calling seams — orientation-detector (which itself wraps the real Ollama call
+// plus a Tesseract OSD fallback) and vision-client's detectCropBox (Ollama) — and lets the REAL
+// image-processor.ts run against a real synthetic PNG, to prove runVisionPipeline actually
+// composes with real canvas operations (rotate/crop/enhance), not just with mocks that happen to
+// satisfy the interface.
+const { detectOrientationCascadeMock } = vi.hoisted(() => ({ detectOrientationCascadeMock: vi.fn() }));
+vi.mock('../infrastructure/orientation-detector.js', () => ({ detectOrientationCascade: detectOrientationCascadeMock }));
+
+const { detectCropBoxMock } = vi.hoisted(() => ({ detectCropBoxMock: vi.fn() }));
+vi.mock('../infrastructure/vision-client.js', () => ({ detectCropBox: detectCropBoxMock }));
 
 async function makeTestPng(w: number, h: number): Promise<Buffer> {
   const canvas = createCanvas(w, h);
@@ -26,7 +25,15 @@ async function makeTestPng(w: number, h: number): Promise<Buffer> {
 
 describe('runVisionPipeline (real image-processor)', () => {
   it('composes with real rotate/crop/enhance operations end-to-end and produces decodable images at every step', async () => {
-    detectOrientationMock.mockResolvedValue({ rotationDegrees: 90, raw: '{"rotationDegrees":90}' });
+    detectOrientationCascadeMock.mockResolvedValue({
+      rotationDegrees: 90,
+      exifDegrees: null,
+      modelDegrees: 90,
+      modelRaw: '{"rotationDegrees":90}',
+      ocrDegrees: null,
+      ocrConfidence: null,
+      source: 'exif+model-agree',
+    });
     detectCropBoxMock.mockResolvedValue({ cropBox: { x: 5, y: 5, width: 50, height: 40 }, raw: '{"cropBox":{"x":5,"y":5,"width":50,"height":40}}' });
 
     const buf = await makeTestPng(100, 80);

@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { CONFIG, BASE_DIR } from './infrastructure/settings.js';
 import { runVisionPipeline } from './application/image-to-pdf.js';
+import { logger } from './infrastructure/logger.js';
 
 export function createVisionLabApp(): express.Express {
   const app = express();
@@ -25,6 +26,7 @@ export function createVisionLabApp(): express.Express {
   app.post('/api/vision/diagnose-image', async (req, res) => {
     const { imageBase64 } = req.body || {};
     if (!imageBase64 || typeof imageBase64 !== 'string') {
+      logger.warn('VISION_LAB', 'Rejected diagnose-image request: imageBase64 missing or not a string');
       res.status(400).json({ error: 'imageBase64 (string) is required' });
       return;
     }
@@ -33,6 +35,7 @@ export function createVisionLabApp(): express.Express {
       const steps = await runVisionPipeline(buffer);
       res.json({ steps });
     } catch (err: any) {
+      logger.error('VISION_LAB', 'diagnose-image request failed', { error: err.message });
       res.status(500).json({ error: err.message });
     }
   });

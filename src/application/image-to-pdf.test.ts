@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { detectOrientationMock, detectCropBoxMock } = vi.hoisted(() => ({
-  detectOrientationMock: vi.fn(),
+const { detectOrientationCascadeMock, detectCropBoxMock } = vi.hoisted(() => ({
+  detectOrientationCascadeMock: vi.fn(),
   detectCropBoxMock: vi.fn(),
 }));
+vi.mock('../infrastructure/orientation-detector.js', () => ({
+  detectOrientationCascade: detectOrientationCascadeMock,
+}));
 vi.mock('../infrastructure/vision-client.js', () => ({
-  detectOrientation: detectOrientationMock,
   detectCropBox: detectCropBoxMock,
 }));
 
@@ -38,7 +40,15 @@ const leveledBuf = Buffer.from('leveled');
 const finalBuf = Buffer.from('final');
 
 function mockHappyPath() {
-  detectOrientationMock.mockResolvedValue({ rotationDegrees: 90, raw: '{"rotationDegrees":90}' });
+  detectOrientationCascadeMock.mockResolvedValue({
+    rotationDegrees: 90,
+    exifDegrees: 90,
+    modelDegrees: 90,
+    modelRaw: '{"rotationDegrees":90}',
+    ocrDegrees: null,
+    ocrConfidence: null,
+    source: 'exif+model-agree',
+  });
   rotateImageMock.mockResolvedValue(orientedBuf);
   detectCropBoxMock.mockResolvedValue({ cropBox: { x: 1, y: 2, width: 3, height: 4 }, raw: '{"cropBox":{}}' });
   cropImageMock.mockResolvedValue(croppedBuf);
@@ -59,7 +69,14 @@ describe('runVisionPipeline', () => {
     expect(steps.every(s => typeof s.durationMs === 'number' && s.durationMs >= 0)).toBe(true);
     expect(steps[1].imageBase64).toBe(orientedBuf.toString('base64'));
     expect(steps[1].modelRaw).toBe('{"rotationDegrees":90}');
-    expect(steps[1].meta).toEqual({ rotationDegrees: 90 });
+    expect(steps[1].meta).toEqual({
+      rotationDegrees: 90,
+      exifDegrees: 90,
+      modelDegrees: 90,
+      ocrDegrees: null,
+      ocrConfidence: null,
+      source: 'exif+model-agree',
+    });
     expect(steps[2].imageBase64).toBe(croppedBuf.toString('base64'));
     expect(steps[2].meta).toEqual({ cropBox: { x: 1, y: 2, width: 3, height: 4 } });
     expect(steps[3].imageBase64).toBe(finalBuf.toString('base64'));
@@ -85,7 +102,7 @@ describe('runVisionPipeline', () => {
   });
 
   it('stops after step 1 with an error field when orientation detection fails', async () => {
-    detectOrientationMock.mockRejectedValue(new Error('vision model unreachable'));
+    detectOrientationCascadeMock.mockRejectedValue(new Error('vision model unreachable'));
     const { runVisionPipeline } = await import('./image-to-pdf.js');
     const steps = await runVisionPipeline(originalBuf);
 
