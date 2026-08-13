@@ -65,7 +65,8 @@ function renderSteps(steps) {
     div.className = 'step';
 
     const title = document.createElement('h2');
-    title.textContent = `Step ${step.step}: ${step.label}`;
+    const durationText = typeof step.durationMs === 'number' ? ` — ${step.durationMs}ms` : '';
+    title.textContent = `Step ${step.step}: ${step.label}${durationText}`;
     div.appendChild(title);
 
     if (step.error) {
@@ -111,7 +112,13 @@ runBtn.addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64 }),
     });
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      // Non-JSON body (e.g. Express's HTML error page for a 413 over the body-size limit).
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
     if (!res.ok) {
       throw new Error(data.error || `HTTP ${res.status}`);
     }

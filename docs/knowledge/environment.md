@@ -21,8 +21,17 @@
 | `OLLAMA_HOST`      | `settings.json` › env › default    | `http://127.0.0.1:11434`   |
 | `OLLAMA_MODEL`     | `settings.json` › env › default    | `qwen3.5:9b`               |
 | `OLLAMA_EMBED_MODEL` | env › default                    | `nomic-embed-text`         |
+| `OLLAMA_VISION_MODEL` | env only › default (no `settings.json` key) | `minicpm-v4.6:latest`      |
 
-Only `qwen3.5:9b` is supported. Legacy models are purged; do not reintroduce.
+Only `qwen3.5:9b` is supported for `OLLAMA_MODEL`. Legacy models are purged; do not reintroduce. `OLLAMA_VISION_MODEL` is separately pinned to `minicpm-v4.6:latest` for the Vision Lab image-to-PDF pipeline (orientation/crop detection) — any other value is rejected and falls back, same lock-down pattern as `OLLAMA_MODEL`.
+
+## Vision Lab
+
+| Key                | Source                             | Default |
+| ------------------ | ----------------------------------- | ------- |
+| `VISION_LAB_PORT`  | env › default                       | `3179`  |
+
+Standalone diagnostic server (`src/vision-lab-server.ts`, `npm run vision:dev`), separate process and port from the main app.
 
 ## `settings.json` shape
 
@@ -39,7 +48,7 @@ Written by `updateConfig()`; reloaded on every scan via `reloadConfigFromDisk()`
 
 ## Environment variables
 
-`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `PORT`.
+`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PORT`, `VISION_LAB_PORT`.
 
 Loaded from `.env` via `dotenv` when the process starts.
 

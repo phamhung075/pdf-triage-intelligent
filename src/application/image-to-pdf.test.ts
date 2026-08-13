@@ -55,6 +55,8 @@ describe('runVisionPipeline', () => {
 
     expect(steps.map(s => s.label)).toEqual(['original', 'oriented', 'cropped', 'enhanced']);
     expect(steps[0].imageBase64).toBe(originalBuf.toString('base64'));
+    expect(steps[0].durationMs).toBe(0);
+    expect(steps.every(s => typeof s.durationMs === 'number' && s.durationMs >= 0)).toBe(true);
     expect(steps[1].imageBase64).toBe(orientedBuf.toString('base64'));
     expect(steps[1].modelRaw).toBe('{"rotationDegrees":90}');
     expect(steps[1].meta).toEqual({ rotationDegrees: 90 });
@@ -90,6 +92,7 @@ describe('runVisionPipeline', () => {
     expect(steps).toHaveLength(2);
     expect(steps[1].label).toBe('oriented');
     expect(steps[1].error).toBe('vision model unreachable');
+    expect(typeof steps[1].durationMs).toBe('number');
   });
 
   it('stops after step 2 with an error field when crop detection fails', async () => {

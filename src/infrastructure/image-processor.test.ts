@@ -91,6 +91,7 @@ describe('applyBrightnessContrast', () => {
     const img = await loadImage(result);
     expect(img.width).toBe(10);
     expect(img.height).toBe(10);
+    expect(Buffer.compare(result, buf)).not.toBe(0);
   });
 });
 

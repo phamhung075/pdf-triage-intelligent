@@ -78,6 +78,7 @@ describe('config.ts', () => {
       const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       const { CONFIG } = await import('./settings.js');
       expect(CONFIG.OLLAMA_VISION_MODEL).toBe('minicpm-v4.6:latest');
+      expect(consoleWarnSpy).toHaveBeenCalledWith(expect.stringContaining('llava:7b'));
       consoleWarnSpy.mockRestore();
       if (original === undefined) delete process.env.OLLAMA_VISION_MODEL;
       else process.env.OLLAMA_VISION_MODEL = original;

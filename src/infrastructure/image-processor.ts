@@ -66,9 +66,10 @@ export async function applyBrightnessContrast(imageBuffer: Buffer, adjust: { bri
 // Runs on raw canvas pixels since CSS/canvas filters have no sharpen primitive — same approach
 // as pdf-awesome's js/domain/adjust.js applySharpen, ported to operate on a Buffer in/out.
 export async function applySharpen(imageBuffer: Buffer, amount: number): Promise<Buffer> {
+  if (!amount) return imageBuffer;
   const img = await loadImage(imageBuffer);
   const w = img.width, h = img.height;
-  if (!amount || w < 3 || h < 3) return imageBuffer;
+  if (w < 3 || h < 3) return imageBuffer;
 
   const canvas = createCanvas(w, h);
   const ctx = canvas.getContext('2d');

@@ -58,7 +58,7 @@ const ALLOWED_OLLAMA_VISION_MODEL = 'minicpm-v4.6:latest';
 function sanitizeOllamaVisionModel(model: unknown): string {
   if (model === ALLOWED_OLLAMA_VISION_MODEL) return ALLOWED_OLLAMA_VISION_MODEL;
   if (model) {
-    console.warn(`Ignoring unsupported ollama_vision_model '${model}' (only '${ALLOWED_OLLAMA_VISION_MODEL}' is supported by the Vision Lab pipeline) — falling back to '${ALLOWED_OLLAMA_VISION_MODEL}'.`);
+    console.warn(`Ignoring unsupported OLLAMA_VISION_MODEL env value '${model}' (only '${ALLOWED_OLLAMA_VISION_MODEL}' is supported by the Vision Lab pipeline) — falling back to '${ALLOWED_OLLAMA_VISION_MODEL}'.`);
   }
   return ALLOWED_OLLAMA_VISION_MODEL;
 }

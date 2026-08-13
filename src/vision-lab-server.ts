@@ -13,6 +13,11 @@ export function createVisionLabApp(): express.Express {
   const publicDir = path.join(BASE_DIR, 'public');
   if (fs.existsSync(publicDir)) {
     app.use(express.static(publicDir, {
+      // This serves the ENTIRE public/ directory (shared with the main triage app). Without
+      // index: false, Express's default index:'index.html' behavior would render the main
+      // app's dashboard at this server's root — an unrelated page whose API calls all 404
+      // here. The diagnostic page stays reachable at its explicit path, /test-image-to-pdf.html.
+      index: false,
       setHeaders: (res) => res.setHeader('Cache-Control', 'no-store'),
     }));
   }
