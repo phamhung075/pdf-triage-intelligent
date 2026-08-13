@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Vision Lab — Image to PDF Diagnostic</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; background: #1e293b; color: #f8fafc; max-width: 900px; margin: 0 auto; }
+  h1 { margin-bottom: 0.25rem; }
+  p.sub { color: #94a3b8; margin-top: 0; }
+  input[type="file"] { margin: 1rem 0; }
+  button { padding: 0.7rem 1.4rem; font-size: 1rem; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 6px; }
+  button:disabled { background: #475569; cursor: not-allowed; }
+  #status { margin: 1rem 0; color: #4ade80; white-space: pre-wrap; font-family: monospace; }
+  #status.error { color: #f87171; }
+  .step { background: #0f172a; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+  .step h2 { margin-top: 0; font-size: 1.1rem; }
+  .step img { max-width: 100%; border-radius: 4px; border: 1px solid #334155; }
+  .step pre { background: #020617; padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; color: #94a3b8; }
+  .step .error { color: #f87171; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Vision Lab — Image to PDF Diagnostic</h1>
+<p class="sub">Upload one phone photo of a document, run the pipeline, inspect every step.</p>
+
+<input type="file" id="fileInput" accept="image/*">
+<br>
+<button id="runBtn" disabled>Run Pipeline</button>
+
+<div id="status"></div>
+<div id="steps"></div>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const runBtn = document.getElementById('runBtn');
+const statusEl = document.getElementById('status');
+const stepsEl = document.getElementById('steps');
+let selectedFile = null;
+
+fileInput.addEventListener('change', () => {
+  selectedFile = fileInput.files[0] || null;
+  runBtn.disabled = !selectedFile;
+  statusEl.textContent = '';
+  statusEl.classList.remove('error');
+  stepsEl.innerHTML = '';
+});
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      const commaIdx = result.indexOf(',');
+      resolve(result.substring(commaIdx + 1));
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderSteps(steps) {
+  stepsEl.innerHTML = '';
+  for (const step of steps) {
+    const div = document.createElement('div');
+    div.className = 'step';
+
+    const title = document.createElement('h2');
+    title.textContent = `Step ${step.step}: ${step.label}`;
+    div.appendChild(title);
+
+    if (step.error) {
+      const errEl = document.createElement('div');
+      errEl.className = 'error';
+      errEl.textContent = `Error: ${step.error}`;
+      div.appendChild(errEl);
+    }
+
+    if (step.imageBase64) {
+      const img = document.createElement('img');
+      img.src = `data:image/png;base64,${step.imageBase64}`;
+      div.appendChild(img);
+    }
+
+    if (step.modelRaw) {
+      const pre = document.createElement('pre');
+      pre.textContent = `Model response:\n${step.modelRaw}`;
+      div.appendChild(pre);
+    }
+
+    if (step.meta) {
+      const pre = document.createElement('pre');
+      pre.textContent = `Meta: ${JSON.stringify(step.meta, null, 2)}`;
+      div.appendChild(pre);
+    }
+
+    stepsEl.appendChild(div);
+  }
+}
+
+runBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  runBtn.disabled = true;
+  statusEl.classList.remove('error');
+  statusEl.textContent = 'Running pipeline...';
+  stepsEl.innerHTML = '';
+
+  try {
+    const imageBase64 = await fileToBase64(selectedFile);
+    const res = await fetch('/api/vision/diagnose-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64 }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+    statusEl.textContent = `Done — ${data.steps.length} steps.`;
+    renderSteps(data.steps);
+  } catch (err) {
+    statusEl.classList.add('error');
+    statusEl.textContent = `Error: ${err.message}`;
+  } finally {
+    runBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
