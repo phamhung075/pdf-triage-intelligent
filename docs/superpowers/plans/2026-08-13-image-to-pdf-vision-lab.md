@@ -1015,11 +1015,14 @@ git commit -m "feat(vision-lab): add runVisionPipeline orchestrator"
 **Files:**
 - Create: `src/vision-lab-server.ts`
 - Create: `src/vision-lab-server.test.ts`
+- Create: `src/vision-lab-main.ts`
 - Modify: `package.json`
 
 **Interfaces:**
 - Consumes: `runVisionPipeline` (Task 5); `CONFIG.VISION_LAB_PORT`, `CONFIG.HOST`, `BASE_DIR` (existing/Task 1).
 - Produces: `createVisionLabApp(): express.Express`, `startVisionLabServer(port?: number): void`.
+
+Note: `vision-lab-server.ts` exports `createVisionLabApp`/`startVisionLabServer` only — it must NOT call either at module top level, because `vision-lab-server.test.ts` imports this same file directly to reach `createVisionLabApp` for `supertest`, and a top-level `startVisionLabServer()` call would bind a real port 3179 listener on every test run. This mirrors the existing `src/infrastructure/http/web-server.ts` (exports `createWebServer`/`startWebServer`, no top-level side effect) plus `src/index.ts` (the separate file that actually calls `startWebServer(...)`). `vision-lab-main.ts` is that separate thin entrypoint here, and `package.json`'s `vision:dev` script points at it, not at `vision-lab-server.ts`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1094,11 +1097,8 @@ Create `src/vision-lab-server.ts`:
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 import { CONFIG, BASE_DIR } from './infrastructure/settings.js';
 import { runVisionPipeline } from './application/image-to-pdf.js';
-
-const THIS_FILE_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export function createVisionLabApp(): express.Express {
   const app = express();
@@ -1146,15 +1146,22 @@ export function startVisionLabServer(port: number = CONFIG.VISION_LAB_PORT): voi
   });
 }
 
+```
+
+`vision-lab-server.ts` ends here — no top-level call to `startVisionLabServer()`. Create the thin entrypoint separately, `src/vision-lab-main.ts`:
+
+```typescript
+import { startVisionLabServer } from './vision-lab-server.js';
+
 startVisionLabServer();
 ```
 
-Note: unlike `src/index.ts` (the composition root dispatching `scan`/`mcp`/web from one entrypoint), this file is always run directly via its own npm script (`tsx src/vision-lab-server.ts`), never imported elsewhere as a library — so it starts the server unconditionally at the bottom, same pattern as how `src/index.ts` unconditionally calls `main()`.
+This is the file the npm script runs directly (never imported by anything else, so its unconditional call is safe — same reasoning as `src/index.ts` calling `main()` unconditionally). `vision-lab-server.test.ts` imports `vision-lab-server.ts` instead, which has no side effect on import.
 
 Add to `package.json`'s `"scripts"` block (after `"mcp"`):
 
 ```json
-    "vision:dev": "tsx src/vision-lab-server.ts",
+    "vision:dev": "tsx src/vision-lab-main.ts",
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -1165,7 +1172,7 @@ Expected: PASS, all 4 tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/vision-lab-server.ts src/vision-lab-server.test.ts package.json
+git add src/vision-lab-server.ts src/vision-lab-server.test.ts src/vision-lab-main.ts package.json
 git commit -m "feat(vision-lab): add standalone Vision Lab server on port 3179"
 ```
 
