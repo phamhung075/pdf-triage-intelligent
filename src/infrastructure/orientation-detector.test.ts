@@ -21,9 +21,15 @@ vi.mock('tesseract.js', () => ({
   OEM: { TESSERACT_ONLY: 0, LSTM_ONLY: 1, TESSERACT_LSTM_COMBINED: 2, DEFAULT: 3 },
 }));
 
+const { paddleOcrDetectOrientationMock } = vi.hoisted(() => ({ paddleOcrDetectOrientationMock: vi.fn() }));
+vi.mock('./paddleocr-client.js', () => ({ paddleOcrDetectOrientation: paddleOcrDetectOrientationMock }));
+
 beforeEach(() => {
   vi.resetAllMocks();
   createWorkerMock.mockResolvedValue({ detect: detectMock });
+  // Default: simulate "no local PaddleOCR service running" — the existing tests below
+  // continue exercising the Tesseract OSD fallback path exactly as before this mock was added.
+  paddleOcrDetectOrientationMock.mockRejectedValue(new Error('PaddleOCR server is unavailable'));
 });
 
 describe('detectOrientationCascade', () => {
@@ -95,5 +101,21 @@ describe('detectOrientationCascade', () => {
     expect(result.source).toBe('ocr-tiebreaker');
     expect(result.rotationDegrees).toBe(270);
     expect(result.ocrDegrees).toBeNull();
+  });
+
+  it('uses PaddleOCR as the tiebreaker and skips Tesseract OSD when it succeeds', async () => {
+    parseExifOrientationMock.mockReturnValue(3);
+    exifOrientationToDegreesMock.mockReturnValue(180);
+    detectOrientationMock.mockResolvedValue({ rotationDegrees: 0, raw: '{"rotationDegrees":0}' });
+    paddleOcrDetectOrientationMock.mockResolvedValue({ rotationDegrees: 90, confidence: 0.97 });
+
+    const { detectOrientationCascade } = await import('./orientation-detector.js');
+    const result = await detectOrientationCascade(Buffer.from('x'));
+
+    expect(result.source).toBe('ocr-tiebreaker');
+    expect(result.rotationDegrees).toBe(90);
+    expect(result.ocrDegrees).toBe(90);
+    expect(result.ocrConfidence).toBe(0.97);
+    expect(detectMock).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { createWorker, OEM } from 'tesseract.js';
 import { detectOrientation as detectOrientationViaVisionModel } from './vision-client.js';
 import { parseExifOrientation, exifOrientationToDegrees } from '../domain/exif-orientation.js';
+import { paddleOcrDetectOrientation } from './paddleocr-client.js';
 
 // worker.detect() (Tesseract's Orientation & Script Detection) requires the Legacy engine
 // (OEM.TESSERACT_ONLY) plus the dedicated 'osd' trained-data pack — the default LSTM-only
@@ -35,6 +36,25 @@ export interface OrientationDetectionResult {
 
 const VALID_ROTATIONS = [0, 90, 180, 270];
 
+// Tries PaddleOCR's document-orientation classifier first (generally more robust on real
+// phone photos); falls back to Tesseract OSD only if the PaddleOCR service call fails — an
+// availability fallback, not a second opinion.
+async function getOcrOrientationTiebreaker(
+  imageBuffer: Buffer
+): Promise<{ ocrDegrees: 0 | 90 | 180 | 270 | null; ocrConfidence: number | null }> {
+  try {
+    const { rotationDegrees, confidence } = await paddleOcrDetectOrientation(imageBuffer);
+    return { ocrDegrees: rotationDegrees, ocrConfidence: confidence };
+  } catch (err: any) {
+    const worker = await getSharedOsdWorker();
+    const { data } = await worker.detect(imageBuffer);
+    const rawOcrDegrees = data.orientation_degrees;
+    const ocrDegrees = (typeof rawOcrDegrees === 'number' && VALID_ROTATIONS.includes(rawOcrDegrees) ? rawOcrDegrees : null) as 0 | 90 | 180 | 270 | null;
+    const ocrConfidence = typeof data.orientation_confidence === 'number' ? data.orientation_confidence : null;
+    return { ocrDegrees, ocrConfidence };
+  }
+}
+
 // Cascades three independent orientation signals, cheapest/least-reliable first: EXIF metadata
 // (instant, but sometimes wrong or absent — a real phone photo surfaced exactly this), the
 // minicpm-v4.6 vision model (also sometimes wrong on its own, as the same photo proved), and
@@ -60,11 +80,7 @@ export async function detectOrientationCascade(imageBuffer: Buffer): Promise<Ori
     };
   }
 
-  const worker = await getSharedOsdWorker();
-  const { data } = await worker.detect(imageBuffer);
-  const rawOcrDegrees = data.orientation_degrees;
-  const ocrDegrees = (typeof rawOcrDegrees === 'number' && VALID_ROTATIONS.includes(rawOcrDegrees) ? rawOcrDegrees : null) as 0 | 90 | 180 | 270 | null;
-  const ocrConfidence = typeof data.orientation_confidence === 'number' ? data.orientation_confidence : null;
+  const { ocrDegrees, ocrConfidence } = await getOcrOrientationTiebreaker(imageBuffer);
 
   return {
     rotationDegrees: ocrDegrees !== null ? ocrDegrees : modelDegrees,
