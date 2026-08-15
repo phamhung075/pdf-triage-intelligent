@@ -2,8 +2,15 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { CONFIG, BASE_DIR } from './infrastructure/settings.js';
-import { runVisionPipeline } from './application/image-to-pdf.js';
+import { runOrientStep, runCropStep, runEnhanceStep, runExtractStep } from './application/image-to-pdf.js';
 import { logger } from './infrastructure/logger.js';
+
+const STEP_FUNCTIONS = {
+  1: runOrientStep,
+  2: runCropStep,
+  3: runEnhanceStep,
+  4: runExtractStep,
+} as const;
 
 export function createVisionLabApp(): express.Express {
   const app = express();
@@ -23,19 +30,28 @@ export function createVisionLabApp(): express.Express {
     }));
   }
 
-  app.post('/api/vision/diagnose-image', async (req, res) => {
-    const { imageBase64 } = req.body || {};
-    if (!imageBase64 || typeof imageBase64 !== 'string') {
-      logger.warn('VISION_LAB', 'Rejected diagnose-image request: imageBase64 missing or not a string');
-      res.status(400).json({ error: 'imageBase64 (string) is required' });
+  // One stateless endpoint per pipeline step, parameterized by `step` — the client tracks
+  // which buffer to send as inputImageBase64 on each call (the original upload for step 1,
+  // the previous step's chosen output for steps 2-4). No server-side session state.
+  app.post('/api/vision/diagnose-step', async (req, res) => {
+    const { step, inputImageBase64 } = req.body || {};
+    if (![1, 2, 3, 4].includes(step)) {
+      logger.warn('VISION_LAB', 'Rejected diagnose-step request: step must be 1, 2, 3, or 4', { step });
+      res.status(400).json({ error: 'step must be 1, 2, 3, or 4' });
+      return;
+    }
+    if (!inputImageBase64 || typeof inputImageBase64 !== 'string') {
+      logger.warn('VISION_LAB', 'Rejected diagnose-step request: inputImageBase64 missing or not a string');
+      res.status(400).json({ error: 'inputImageBase64 (string) is required' });
       return;
     }
     try {
-      const buffer = Buffer.from(imageBase64, 'base64');
-      const steps = await runVisionPipeline(buffer);
-      res.json({ steps });
+      const buffer = Buffer.from(inputImageBase64, 'base64');
+      const stepFn = STEP_FUNCTIONS[step as 1 | 2 | 3 | 4];
+      const result = await stepFn(buffer);
+      res.json({ result });
     } catch (err: any) {
-      logger.error('VISION_LAB', 'diagnose-image request failed', { error: err.message });
+      logger.error('VISION_LAB', 'diagnose-step request failed', { step, error: err.message });
       res.status(500).json({ error: err.message });
     }
   });
