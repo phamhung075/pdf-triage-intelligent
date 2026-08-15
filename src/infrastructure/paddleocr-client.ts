@@ -12,40 +12,60 @@ const VALID_ROTATIONS = [0, 90, 180, 270];
 // with backoff instead, ~15s total before giving up.
 const SPAWN_RETRY_DELAYS_MS = [2000, 3000, 5000, 5000];
 
-let serverReadyPromise: Promise<boolean> | null = null;
+let serverReadyPromise: Promise<boolean> | null = null; // memoized only on success
+let spawnAttempted = false; // whether the exec+poll sequence has been tried this process lifetime
 
 async function checkHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/health`);
+    const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/health`, { signal: AbortSignal.timeout(2000) });
     return res.ok;
   } catch {
     return false;
   }
 }
 
+async function attemptEnsure(): Promise<boolean> {
+  if (await checkHealth()) return true;
+  if (spawnAttempted) {
+    // Already tried to auto-spawn once this process lifetime — don't repeat exec+poll
+    // (which costs ~15s and, on Windows with no Python installed, repeatedly hits the
+    // python.exe App Execution Alias stub). Just report not-ready from the fresh health
+    // check above; a later call will notice quickly and cheaply once the service is up.
+    return false;
+  }
+  spawnAttempted = true;
+  try {
+    const { exec } = await import('child_process');
+    exec(CONFIG.PADDLEOCR_SPAWN_CMD, { windowsHide: true });
+  } catch (err: any) {
+    console.error('Failed to auto-spawn PaddleOCR server:', err.message);
+    return false;
+  }
+  for (const delay of SPAWN_RETRY_DELAYS_MS) {
+    await new Promise(r => setTimeout(r, delay));
+    if (await checkHealth()) return true;
+  }
+  return false;
+}
+
+function buildImageForm(imageBuffer: Buffer): FormData {
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(imageBuffer)]), 'image.png');
+  return form;
+}
+
 // Mirrors ensureOllamaModel()'s health-check-then-spawn-then-retry shape in ollama-client.ts.
-// Memoized per process lifetime — once confirmed ready, later calls skip the health check
-// entirely (see the "memoizes a successful result" test).
+// Memoized per process lifetime once confirmed ready (later calls skip the health check
+// entirely — see the "memoizes a successful result" test). A failure is NOT memoized (so a
+// service that comes up later is noticed on the next call), but the exec+poll spawn attempt
+// itself only ever runs once (see `spawnAttempted` above) — later calls after a failure just
+// do one cheap health re-check instead of repeating the full ~15s sequence.
 export async function ensurePaddleOcrServer(): Promise<boolean> {
   if (serverReadyPromise) return serverReadyPromise;
-  const promise = (async () => {
-    if (await checkHealth()) return true;
-    try {
-      const { exec } = await import('child_process');
-      exec(CONFIG.PADDLEOCR_SPAWN_CMD, { windowsHide: true });
-    } catch (err: any) {
-      console.error('Failed to auto-spawn PaddleOCR server:', err.message);
-      return false;
-    }
-    for (const delay of SPAWN_RETRY_DELAYS_MS) {
-      await new Promise(r => setTimeout(r, delay));
-      if (await checkHealth()) return true;
-    }
-    return false;
-  })();
-  serverReadyPromise = promise;
+  const promise = attemptEnsure();
+  serverReadyPromise = promise; // shared by concurrent callers while this attempt is in flight
   const ready = await promise;
-  if (!ready) serverReadyPromise = null; // don't permanently pin a transient failure — retry fresh on the next call
+  if (!ready) serverReadyPromise = null;
   return ready;
 }
 
@@ -53,23 +73,24 @@ export async function paddleOcrRecognize(imageBuffer: Buffer): Promise<string> {
   const ready = await ensurePaddleOcrServer();
   if (!ready) throw new Error('PaddleOCR server is unavailable');
 
-  const form = new FormData();
-  form.append('file', new Blob([new Uint8Array(imageBuffer)]), 'image.png');
+  const form = buildImageForm(imageBuffer);
 
-  const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/ocr`, { method: 'POST', body: form });
+  const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/ocr`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) });
   if (!res.ok) throw new Error(`PaddleOCR /ocr returned ${res.status}`);
   const data: any = await res.json();
-  return typeof data.text === 'string' ? data.text : '';
+  if (typeof data.text !== 'string') {
+    throw new Error('PaddleOCR /ocr returned an unexpected response shape (missing text field)');
+  }
+  return data.text;
 }
 
 export async function paddleOcrDetectOrientation(imageBuffer: Buffer): Promise<PaddleOcrOrientationResult> {
   const ready = await ensurePaddleOcrServer();
   if (!ready) throw new Error('PaddleOCR server is unavailable');
 
-  const form = new FormData();
-  form.append('file', new Blob([new Uint8Array(imageBuffer)]), 'image.png');
+  const form = buildImageForm(imageBuffer);
 
-  const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/orientation`, { method: 'POST', body: form });
+  const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/orientation`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) });
   if (!res.ok) throw new Error(`PaddleOCR /orientation returned ${res.status}`);
   const data: any = await res.json();
   if (!VALID_ROTATIONS.includes(data.rotation_degrees)) {
