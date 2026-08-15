@@ -345,15 +345,20 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
 
   // Image files (.png, .jpg, .jpeg, .webp, .bmp, .tiff)
   if (['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff'].includes(ext)) {
-    logger.info('PDF_PARSER', `Running Tesseract OCR for image file '${filename}'...`);
+    logger.info('PDF_PARSER', `Running OCR for image file '${filename}'...`);
     let ocrText = '';
     try {
-      const worker = await createWorker('fra+eng');
-      const ret = await worker.recognize(fileBuffer);
-      ocrText = ret.data.text || '';
-      await worker.terminate();
-    } catch (ocrErr: any) {
-      logger.warn('PDF_PARSER', `Tesseract OCR failed for image ${filename}: ${ocrErr.message}`);
+      ocrText = await paddleOcrRecognize(fileBuffer);
+    } catch (paddleErr: any) {
+      logger.debug('PDF_PARSER', `PaddleOCR unavailable for image ${filename}, falling back to Tesseract: ${paddleErr.message}`);
+      try {
+        const worker = await createWorker('fra+eng');
+        const ret = await worker.recognize(fileBuffer);
+        ocrText = ret.data.text || '';
+        await worker.terminate();
+      } catch (ocrErr: any) {
+        logger.warn('PDF_PARSER', `Tesseract OCR failed for image ${filename}: ${ocrErr.message}`);
+      }
     }
     const cleaned = cleanExtractedText(ocrText, filename);
     return {

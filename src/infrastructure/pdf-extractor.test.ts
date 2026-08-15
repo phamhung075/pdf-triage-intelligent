@@ -159,6 +159,46 @@ describe('extractPDFContent — 3-tier fallback pipeline', () => {
   }, 60_000);
 });
 
+describe('extractPDFContent — standalone image files', () => {
+  it('uses PaddleOCR text for a standalone image file when the service succeeds', async () => {
+    paddleOcrRecognizeMock.mockResolvedValue('PADDLEOCR-IMAGE-MARKER');
+
+    const canvas = createCanvas(200, 100);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, 200, 100);
+    const pngBytes = canvas.toBuffer('image/png');
+    const filePath = writeTempPdf(pngBytes, 'standalone.png');
+    try {
+      const result = await extractPDFContent(filePath);
+      expect(result.raw_text).toContain('PADDLEOCR-IMAGE-MARKER');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('falls back to Tesseract for a standalone image file when the PaddleOCR service fails', async () => {
+    paddleOcrRecognizeMock.mockRejectedValue(new Error('PaddleOCR server is unavailable'));
+
+    const canvas = createCanvas(500, 260);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, 500, 260);
+    ctx.fillStyle = '#000000';
+    ctx.font = 'bold 72px sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText('HELLO WORLD', 20, 90);
+    const pngBytes = canvas.toBuffer('image/png');
+    const filePath = writeTempPdf(pngBytes, 'standalone-fallback.png');
+    try {
+      const result = await extractPDFContent(filePath);
+      expect(result.raw_text.toUpperCase()).toContain('HELLO');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  }, 60_000);
+});
+
 describe('parseWithPdfjs', () => {
   it('returns an empty string instead of throwing on a non-PDF buffer', async () => {
     const text = await parseWithPdfjs(Buffer.from('not a pdf at all'));
