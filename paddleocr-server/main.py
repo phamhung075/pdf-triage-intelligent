@@ -3,9 +3,13 @@
 Run with: python main.py
 See README.md for one-time dependency setup.
 """
+import logging
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 
 import paddleocr_engine
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -21,6 +25,7 @@ async def ocr_endpoint(file: UploadFile = File(...)):
     try:
         text = paddleocr_engine.recognize_text(image_bytes)
     except Exception as exc:
+        logger.exception("OCR failed")
         raise HTTPException(status_code=500, detail=str(exc))
     return {"text": text}
 
@@ -31,6 +36,7 @@ async def orientation_endpoint(file: UploadFile = File(...)):
     try:
         result = paddleocr_engine.detect_orientation(image_bytes)
     except Exception as exc:
+        logger.exception("Orientation detection failed")
         raise HTTPException(status_code=500, detail=str(exc))
     return result
 
