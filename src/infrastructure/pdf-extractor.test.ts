@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import { createCanvas } from '@napi-rs/canvas';
-import { extractPDFContent, safePdfParse, parseWithPdfjs, ocrPdfImages, encodeToBMP } from './pdf-extractor.js';
+import { extractPDFContent, safePdfParse, parseWithPdfjs, ocrPdfImages, encodeToBMP, ocrImageBufferBothEngines } from './pdf-extractor.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -56,6 +56,18 @@ async function buildImageOnlyPdf(word: string): Promise<Buffer> {
   const img = await pdfDoc.embedPng(pngBytes);
   page.drawImage(img, { x: 0, y: 0, width: 500, height: 260 });
   return Buffer.from(await pdfDoc.save());
+}
+
+async function buildTextImagePng(word: string): Promise<Buffer> {
+  const canvas = createCanvas(500, 260);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, 500, 260);
+  ctx.fillStyle = '#000000';
+  ctx.font = 'bold 72px sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.fillText(word, 20, 90);
+  return canvas.toBuffer('image/png');
 }
 
 // Large enough that the raw RGB buffer (width*height*3 bytes) trips tesseract.js's Node
@@ -252,4 +264,28 @@ describe('encodeToBMP', () => {
     const pixelDataOffset = bmp.readUInt32LE(10);
     expect(bmp.length - pixelDataOffset).toBe(4);
   });
+});
+
+describe('ocrImageBufferBothEngines', () => {
+  it("returns both engines' text when both succeed", async () => {
+    paddleOcrRecognizeMock.mockResolvedValue('PADDLE-TEXT');
+    const png = await buildTextImagePng('HELLO WORLD');
+
+    const result = await ocrImageBufferBothEngines(png);
+
+    expect(result.paddleOcr).toEqual({ text: 'PADDLE-TEXT' });
+    expect('text' in result.tesseract).toBe(true);
+    expect((result.tesseract as { text: string }).text.toUpperCase()).toContain('HELLO');
+  }, 60_000);
+
+  it("returns an error shape for PaddleOCR without blocking Tesseract's real result", async () => {
+    paddleOcrRecognizeMock.mockRejectedValue(new Error('PaddleOCR server is unavailable'));
+    const png = await buildTextImagePng('HELLO WORLD');
+
+    const result = await ocrImageBufferBothEngines(png);
+
+    expect(result.paddleOcr).toEqual({ error: 'PaddleOCR server is unavailable' });
+    expect('text' in result.tesseract).toBe(true);
+    expect((result.tesseract as { text: string }).text.toUpperCase()).toContain('HELLO');
+  }, 60_000);
 });

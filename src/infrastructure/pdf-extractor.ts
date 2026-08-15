@@ -160,6 +160,34 @@ async function ocrPageBuffer(pngBuf: Buffer): Promise<string> {
   }
 }
 
+// Runs PaddleOCR and Tesseract independently (via Promise.allSettled) rather than falling back
+// from one to the other — used only by the Vision Lab diagnostic pipeline, which needs both
+// engines' raw output to let a developer compare them side by side. Production OCR
+// (ocrPdfPagesWithCanvas, extractPDFContent's image branch) doesn't use this: it only needs one
+// good result, so it uses the fallback pattern above instead of paying for both engines on
+// every real document.
+export async function ocrImageBufferBothEngines(pngBuf: Buffer): Promise<{
+  paddleOcr: { text: string } | { error: string };
+  tesseract: { text: string } | { error: string };
+}> {
+  const [paddleResult, tesseractResult] = await Promise.allSettled([
+    paddleOcrRecognize(pngBuf),
+    (async () => {
+      const worker = await getSharedTesseractWorker();
+      const res = await worker.recognize(pngBuf);
+      return res?.data?.text || '';
+    })(),
+  ]);
+  const toOutcome = (result: PromiseSettledResult<string>): { text: string } | { error: string } =>
+    result.status === 'fulfilled'
+      ? { text: result.value }
+      : { error: result.reason instanceof Error ? result.reason.message : String(result.reason) };
+  return {
+    paddleOcr: toOutcome(paddleResult),
+    tesseract: toOutcome(tesseractResult),
+  };
+}
+
 // Fallback 2: High-fidelity Canvas Page Rendering + OCR (for scanned photos, sliced images, & vector path PDFs)
 export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promise<string> {
   try {
