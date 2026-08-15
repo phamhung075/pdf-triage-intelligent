@@ -7,6 +7,7 @@ import { createCanvas } from '@napi-rs/canvas';
 import { createWorker } from 'tesseract.js';
 import { logger } from './logger.js';
 import { cleanExtractedText } from '../domain/pdf-text.js';
+import { paddleOcrRecognize } from './paddleocr-client.js';
 
 export interface ExtractedPDF {
   checksum: string;
@@ -145,7 +146,21 @@ export async function getSharedTesseractWorker(): Promise<any> {
   return sharedTesseractWorkerPromise;
 }
 
-// Fallback 2: High-fidelity Canvas Page Rendering + Tesseract.js OCR (for scanned photos, sliced images, & vector path PDFs)
+// Tries PaddleOCR first (better accuracy on real scanned/photographed documents); falls back
+// to the local Tesseract worker only if the PaddleOCR service call fails — an availability
+// fallback, not a quality cascade (only one good text result is needed here).
+async function ocrPageBuffer(pngBuf: Buffer): Promise<string> {
+  try {
+    return await paddleOcrRecognize(pngBuf);
+  } catch (err: any) {
+    logger.debug('PDF_PARSER', `PaddleOCR unavailable, falling back to Tesseract: ${err.message}`);
+    const worker = await getSharedTesseractWorker();
+    const res = await worker.recognize(pngBuf);
+    return res?.data?.text || '';
+  }
+}
+
+// Fallback 2: High-fidelity Canvas Page Rendering + OCR (for scanned photos, sliced images, & vector path PDFs)
 export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promise<string> {
   try {
     const loadingTask = (pdfjsLib as any).getDocument({
@@ -157,8 +172,6 @@ export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promi
     const ocrTexts: string[] = [];
     const numPages = Math.min(doc.numPages, maxPages);
 
-    const worker = await getSharedTesseractWorker();
-
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       try {
         const page = await doc.getPage(pageNum);
@@ -168,9 +181,9 @@ export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promi
         await page.render({ canvasContext: context, viewport }).promise;
         const pngBuf = canvas.toBuffer('image/png');
 
-        const res = await worker.recognize(pngBuf);
-        if (res && res.data && res.data.text && res.data.text.trim().length > 10) {
-          ocrTexts.push(res.data.text.trim());
+        const text = await ocrPageBuffer(pngBuf);
+        if (text && text.trim().length > 10) {
+          ocrTexts.push(text.trim());
         }
       } catch (pageErr: any) {
         logger.debug('PDF_PARSER', `Canvas OCR failed on page ${pageNum}: ${pageErr.message}`);

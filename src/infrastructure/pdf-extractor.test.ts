@@ -1,10 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import { createCanvas } from '@napi-rs/canvas';
 import { extractPDFContent, safePdfParse, parseWithPdfjs, ocrPdfImages, encodeToBMP } from './pdf-extractor.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+
+const { paddleOcrRecognizeMock } = vi.hoisted(() => ({ paddleOcrRecognizeMock: vi.fn() }));
+vi.mock('./paddleocr-client.js', () => ({ paddleOcrRecognize: paddleOcrRecognizeMock }));
+
+beforeEach(() => {
+  paddleOcrRecognizeMock.mockReset();
+  // Default: simulate "no local PaddleOCR service running", which is also what actually
+  // happens in this test environment — every existing OCR test below continues exercising
+  // the real Tesseract fallback path exactly as before this mock was added.
+  paddleOcrRecognizeMock.mockRejectedValue(new Error('PaddleOCR server is unavailable'));
+});
 
 async function buildTextPdf(text: string): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
@@ -113,6 +124,19 @@ describe('extractPDFContent — 3-tier fallback pipeline', () => {
       const result = await extractPDFContent(filePath);
       expect(result.raw_text.startsWith('[OCR Extracted Text]')).toBe(true);
       expect(result.raw_text.toUpperCase()).toContain('HELLO');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  }, 60_000);
+
+  it('uses PaddleOCR text when the service succeeds for a scanned PDF (Tier 3)', async () => {
+    paddleOcrRecognizeMock.mockResolvedValue('PADDLEOCR-PRIMARY-PATH-MARKER');
+
+    const bytes = await buildImageOnlyPdf('HELLO WORLD');
+    const filePath = writeTempPdf(bytes, 'scanned-paddleocr.pdf');
+    try {
+      const result = await extractPDFContent(filePath);
+      expect(result.raw_text).toContain('PADDLEOCR-PRIMARY-PATH-MARKER');
     } finally {
       fs.unlinkSync(filePath);
     }
