@@ -17,118 +17,209 @@
   .step img { max-width: 100%; border-radius: 4px; border: 1px solid #334155; }
   .step pre { background: #020617; padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; color: #94a3b8; }
   .step .error { color: #f87171; font-weight: bold; }
+  .step .markdown-preview { background: #1e293b; padding: 1rem; border-radius: 4px; line-height: 1.6; }
+  .step .markdown-preview :first-child { margin-top: 0; }
+  .step .markdown-preview :last-child { margin-bottom: 0; }
+  .step .candidates { margin: 0.75rem 0; display: flex; gap: 1rem; flex-wrap: wrap; }
+  .step .candidates label { font-size: 0.9rem; cursor: pointer; }
+  .step .candidate-error { color: #f87171; font-size: 0.85rem; }
 </style>
 </head>
 <body>
 <h1>Vision Lab — Image to PDF Diagnostic</h1>
-<p class="sub">Upload one phone photo of a document, run the pipeline, inspect every step.</p>
+<p class="sub">Upload one phone photo of a document, step through the pipeline, inspect every step and compare candidates.</p>
 
 <input type="file" id="fileInput" accept="image/*">
 <br>
-<button id="runBtn" disabled>Run Pipeline</button>
+<button id="nextBtn" disabled>Next</button>
 
 <div id="status"></div>
 <div id="steps"></div>
 
+<script src="js/vendor/marked.js"></script>
 <script>
 const fileInput = document.getElementById('fileInput');
-const runBtn = document.getElementById('runBtn');
+const nextBtn = document.getElementById('nextBtn');
 const statusEl = document.getElementById('status');
 const stepsEl = document.getElementById('steps');
-let selectedFile = null;
+
+let currentStep = 0;         // last step number successfully run (0 = not started)
+let inputForNextStep = null; // base64 to send as inputImageBase64 on the next click
 
 fileInput.addEventListener('change', () => {
-  selectedFile = fileInput.files[0] || null;
-  runBtn.disabled = !selectedFile;
+  const file = fileInput.files[0];
   statusEl.textContent = '';
   statusEl.classList.remove('error');
   stepsEl.innerHTML = '';
+  currentStep = 0;
+  inputForNextStep = null;
+  nextBtn.disabled = true;
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = reader.result;
+    const commaIdx = result.indexOf(',');
+    const base64 = result.substring(commaIdx + 1);
+    inputForNextStep = base64;
+    renderOriginalStep(base64);
+    nextBtn.disabled = false;
+  };
+  reader.readAsDataURL(file);
 });
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result;
-      const commaIdx = result.indexOf(',');
-      resolve(result.substring(commaIdx + 1));
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+function renderOriginalStep(base64) {
+  const div = document.createElement('div');
+  div.className = 'step';
+  const title = document.createElement('h2');
+  title.textContent = 'Step 0: original';
+  div.appendChild(title);
+  const img = document.createElement('img');
+  img.src = `data:image/png;base64,${base64}`;
+  div.appendChild(img);
+  stepsEl.appendChild(div);
 }
 
-function renderSteps(steps) {
-  stepsEl.innerHTML = '';
-  for (const step of steps) {
-    const div = document.createElement('div');
-    div.className = 'step';
-
-    const title = document.createElement('h2');
-    const durationText = typeof step.durationMs === 'number' ? ` — ${step.durationMs}ms` : '';
-    title.textContent = `Step ${step.step}: ${step.label}${durationText}`;
-    div.appendChild(title);
-
-    if (step.error) {
-      const errEl = document.createElement('div');
-      errEl.className = 'error';
-      errEl.textContent = `Error: ${step.error}`;
-      div.appendChild(errEl);
-    }
-
-    if (step.imageBase64) {
-      const img = document.createElement('img');
-      img.src = `data:image/png;base64,${step.imageBase64}`;
-      div.appendChild(img);
-    }
-
-    if (step.modelRaw) {
+function renderCandidateInto(container, candidate) {
+  container.innerHTML = '';
+  if (candidate.error) {
+    const errEl = document.createElement('div');
+    errEl.className = 'candidate-error';
+    errEl.textContent = `Error: ${candidate.error}`;
+    container.appendChild(errEl);
+    return;
+  }
+  if (typeof candidate.imageBase64 === 'string') {
+    const img = document.createElement('img');
+    img.src = `data:image/png;base64,${candidate.imageBase64}`;
+    container.appendChild(img);
+    return;
+  }
+  if (typeof candidate.text === 'string') {
+    if (candidate.label === 'markdown') {
+      const mdDiv = document.createElement('div');
+      mdDiv.className = 'markdown-preview';
+      mdDiv.innerHTML = window.marked.parse(candidate.text);
+      container.appendChild(mdDiv);
+    } else {
       const pre = document.createElement('pre');
-      pre.textContent = `Model response:\n${step.modelRaw}`;
-      div.appendChild(pre);
+      pre.textContent = candidate.text;
+      container.appendChild(pre);
     }
-
-    if (step.meta) {
-      const pre = document.createElement('pre');
-      pre.textContent = `Meta: ${JSON.stringify(step.meta, null, 2)}`;
-      div.appendChild(pre);
-    }
-
-    stepsEl.appendChild(div);
   }
 }
 
-runBtn.addEventListener('click', async () => {
-  if (!selectedFile) return;
-  runBtn.disabled = true;
+function renderStepResult(result) {
+  const div = document.createElement('div');
+  div.className = 'step';
+
+  const title = document.createElement('h2');
+  const durationText = typeof result.durationMs === 'number' ? ` — ${result.durationMs}ms` : '';
+  title.textContent = `Step ${result.step}: ${result.label}${durationText}`;
+  div.appendChild(title);
+
+  if (result.error) {
+    const errEl = document.createElement('div');
+    errEl.className = 'error';
+    errEl.textContent = `Error: ${result.error}`;
+    div.appendChild(errEl);
+    stepsEl.appendChild(div);
+    return;
+  }
+
+  const contentContainer = document.createElement('div');
+
+  if (result.candidates && result.candidates.length > 0) {
+    const candidatesEl = document.createElement('div');
+    candidatesEl.className = 'candidates';
+    const groupName = `candidates-step-${result.step}`;
+    let defaultCandidate = null;
+    result.candidates.forEach((candidate) => {
+      const label = document.createElement('label');
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = groupName;
+      radio.checked = candidate.chosen;
+      radio.addEventListener('change', () => renderCandidateInto(contentContainer, candidate));
+      label.appendChild(radio);
+      label.append(` ${candidate.label}${candidate.chosen ? ' (chosen)' : ''}`);
+      candidatesEl.appendChild(label);
+      if (candidate.chosen) defaultCandidate = candidate;
+    });
+    div.appendChild(candidatesEl);
+    div.appendChild(contentContainer);
+    if (defaultCandidate) renderCandidateInto(contentContainer, defaultCandidate);
+  } else {
+    div.appendChild(contentContainer);
+    if (result.imageBase64) {
+      const img = document.createElement('img');
+      img.src = `data:image/png;base64,${result.imageBase64}`;
+      contentContainer.appendChild(img);
+    } else if (result.markdown) {
+      const mdDiv = document.createElement('div');
+      mdDiv.className = 'markdown-preview';
+      mdDiv.innerHTML = window.marked.parse(result.markdown);
+      contentContainer.appendChild(mdDiv);
+    }
+  }
+
+  if (result.modelRaw) {
+    const pre = document.createElement('pre');
+    pre.textContent = `Model response:\n${result.modelRaw}`;
+    div.appendChild(pre);
+  }
+
+  if (result.meta) {
+    const pre = document.createElement('pre');
+    pre.textContent = `Meta: ${JSON.stringify(result.meta, null, 2)}`;
+    div.appendChild(pre);
+  }
+
+  stepsEl.appendChild(div);
+}
+
+nextBtn.addEventListener('click', async () => {
+  if (currentStep >= 4 || inputForNextStep === null) return;
+  const stepToRun = currentStep + 1;
+  nextBtn.disabled = true;
   statusEl.classList.remove('error');
-  statusEl.textContent = 'Running pipeline...';
-  stepsEl.innerHTML = '';
+  statusEl.textContent = `Running step ${stepToRun}...`;
 
   try {
-    const imageBase64 = await fileToBase64(selectedFile);
-    const res = await fetch('/api/vision/diagnose-image', {
+    const res = await fetch('/api/vision/diagnose-step', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64 }),
+      body: JSON.stringify({ step: stepToRun, inputImageBase64: inputForNextStep }),
     });
     let data;
     try {
       data = await res.json();
     } catch (parseErr) {
-      // Non-JSON body (e.g. Express's HTML error page for a 413 over the body-size limit).
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
     if (!res.ok) {
       throw new Error(data.error || `HTTP ${res.status}`);
     }
-    statusEl.textContent = `Done — ${data.steps.length} steps.`;
-    renderSteps(data.steps);
+
+    renderStepResult(data.result);
+    currentStep = stepToRun;
+
+    if (data.result.error) {
+      statusEl.textContent = `Step ${stepToRun} failed — see panel above.`;
+      nextBtn.disabled = true;
+      return;
+    }
+
+    if (typeof data.result.imageBase64 === 'string' && data.result.imageBase64) {
+      inputForNextStep = data.result.imageBase64;
+    }
+
+    statusEl.textContent = currentStep < 4 ? `Step ${stepToRun} done.` : 'Pipeline complete.';
+    nextBtn.disabled = currentStep >= 4;
   } catch (err) {
     statusEl.classList.add('error');
     statusEl.textContent = `Error: ${err.message}`;
-  } finally {
-    runBtn.disabled = false;
+    nextBtn.disabled = false;
   }
 });
 </script>
