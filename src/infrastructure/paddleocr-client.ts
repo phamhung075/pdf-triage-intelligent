@@ -54,7 +54,7 @@ export async function paddleOcrRecognize(imageBuffer: Buffer): Promise<string> {
   if (!ready) throw new Error('PaddleOCR server is unavailable');
 
   const form = new FormData();
-  form.append('file', new Blob([imageBuffer]), 'image.png');
+  form.append('file', new Blob([new Uint8Array(imageBuffer)]), 'image.png');
 
   const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/ocr`, { method: 'POST', body: form });
   if (!res.ok) throw new Error(`PaddleOCR /ocr returned ${res.status}`);
@@ -67,7 +67,7 @@ export async function paddleOcrDetectOrientation(imageBuffer: Buffer): Promise<P
   if (!ready) throw new Error('PaddleOCR server is unavailable');
 
   const form = new FormData();
-  form.append('file', new Blob([imageBuffer]), 'image.png');
+  form.append('file', new Blob([new Uint8Array(imageBuffer)]), 'image.png');
 
   const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/orientation`, { method: 'POST', body: form });
   if (!res.ok) throw new Error(`PaddleOCR /orientation returned ${res.status}`);
