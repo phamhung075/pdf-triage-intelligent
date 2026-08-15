@@ -33,6 +33,19 @@ Only `qwen3.5:9b` is supported for `OLLAMA_MODEL`. Legacy models are purged; do 
 
 Standalone diagnostic server (`src/vision-lab-server.ts`, `npm run vision:dev`), separate process and port from the main app.
 
+## PaddleOCR
+
+| Key                    | Source          | Default                              |
+| ---------------------- | ---------------- | ------------------------------------ |
+| `PADDLEOCR_HOST`       | env › default    | `http://127.0.0.1:8871`              |
+| `PADDLEOCR_SPAWN_CMD`  | env › default    | `python paddleocr-server/main.py`    |
+
+Standalone local OCR service (`paddleocr-server/`, Python/FastAPI), auto-spawned by
+`ensurePaddleOcrServer()` in `src/infrastructure/paddleocr-client.ts` if unreachable. Used as
+the primary OCR engine in `pdf-extractor.ts` and the orientation tiebreaker in
+`orientation-detector.ts`, with Tesseract kept as an availability fallback if this service
+isn't reachable. See `paddleocr-server/README.md` for one-time setup.
+
 ## `settings.json` shape
 
 ```json
@@ -48,7 +61,7 @@ Written by `updateConfig()`; reloaded on every scan via `reloadConfigFromDisk()`
 
 ## Environment variables
 
-`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PORT`, `VISION_LAB_PORT`.
+`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PORT`, `VISION_LAB_PORT`, `PADDLEOCR_HOST`, `PADDLEOCR_SPAWN_CMD`.
 
 Loaded from `.env` via `dotenv` when the process starts.
 

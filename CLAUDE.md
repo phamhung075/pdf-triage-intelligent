@@ -125,6 +125,7 @@ pdf_triage/
 │       ├── zip-builder.ts             # pure-TS ZIP archive builder (no native deps) — PDF package export + bulk Markdown export
 │       ├── ollama-client.ts
 │       ├── vision-client.ts           # detectOrientation/detectCropBox — Ollama calls against CONFIG.OLLAMA_VISION_MODEL
+│       ├── paddleocr-client.ts        # paddleOcrRecognize/paddleOcrDetectOrientation — HTTP client for paddleocr-server/, auto-spawns it if unreachable
 │       ├── image-processor.ts         # @napi-rs/canvas ops: rotateImage, cropImage, applyBrightnessContrast, applySharpen
 │       ├── pdf-extractor.ts
 │       ├── pdf-scanner.ts
@@ -138,6 +139,7 @@ pdf_triage/
 │       └── mcp/mcp-server.ts
 ├── public/                    # UI — public/ts/ (source) compiled to public/js/ (served), public/scss/ (source) compiled to public/style.css (served), public/js/vendor/ (marked.js, vendored not CDN)
 │   └── test-image-to-pdf.html # standalone Vision Lab diagnostic page (served by vision-lab-server.ts, not the main app)
+├── paddleocr-server/           # standalone Python/FastAPI OCR service (PaddleOCR) — separate process, see paddleocr-server/README.md
 ├── social/                    # gitignored — LinkedIn/marketing drafts, not project source
 └── logs/triage_debug.log
 ```
