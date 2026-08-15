@@ -65,3 +65,7 @@ scratch/
 
 # Social media drafts/posts about the project (personal, not project source)
 social/
+
+# Python (paddleocr-server)
+paddleocr-server/__pycache__/
+paddleocr-server/.pytest_cache/
