@@ -1,17 +1,22 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 
-// Unlike image-to-pdf.test.ts (which mocks both neighbors), this file mocks ONLY the two
-// network/model-calling seams — orientation-detector (which itself wraps the real Ollama call
-// plus a Tesseract OSD fallback) and vision-client's detectCropBox (Ollama) — and lets the REAL
-// image-processor.ts run against a real synthetic PNG, to prove runVisionPipeline actually
-// composes with real canvas operations (rotate/crop/enhance), not just with mocks that happen to
-// satisfy the interface.
+// Unlike image-to-pdf.test.ts (which mocks every neighbor), this file mocks ONLY the things
+// that themselves wrap real Ollama/PaddleOCR/Tesseract calls (the two cascades, the both-engines
+// OCR function, and the markdown conversion) and lets the REAL image-processor.ts run against a
+// real synthetic PNG, to prove the step functions actually compose with real canvas operations
+// (rotate/crop/enhance), not just with mocks that happen to satisfy the interface.
 const { detectOrientationCascadeMock } = vi.hoisted(() => ({ detectOrientationCascadeMock: vi.fn() }));
 vi.mock('../infrastructure/orientation-detector.js', () => ({ detectOrientationCascade: detectOrientationCascadeMock }));
 
-const { detectCropBoxMock } = vi.hoisted(() => ({ detectCropBoxMock: vi.fn() }));
-vi.mock('../infrastructure/vision-client.js', () => ({ detectCropBox: detectCropBoxMock }));
+const { detectCropBoxCascadeMock } = vi.hoisted(() => ({ detectCropBoxCascadeMock: vi.fn() }));
+vi.mock('../infrastructure/crop-detector.js', () => ({ detectCropBoxCascade: detectCropBoxCascadeMock }));
+
+const { ocrImageBufferBothEnginesMock } = vi.hoisted(() => ({ ocrImageBufferBothEnginesMock: vi.fn() }));
+vi.mock('../infrastructure/pdf-extractor.js', () => ({ ocrImageBufferBothEngines: ocrImageBufferBothEnginesMock }));
+
+const { convertRawTextToZeroLossMarkdownMock } = vi.hoisted(() => ({ convertRawTextToZeroLossMarkdownMock: vi.fn() }));
+vi.mock('./classify-document.js', () => ({ convertRawTextToZeroLossMarkdown: convertRawTextToZeroLossMarkdownMock }));
 
 async function makeTestPng(w: number, h: number): Promise<Buffer> {
   const canvas = createCanvas(w, h);
@@ -23,8 +28,8 @@ async function makeTestPng(w: number, h: number): Promise<Buffer> {
   return canvas.toBuffer('image/png');
 }
 
-describe('runVisionPipeline (real image-processor)', () => {
-  it('composes with real rotate/crop/enhance operations end-to-end and produces decodable images at every step', async () => {
+describe('vision-lab step functions (real image-processor)', () => {
+  it('compose with real rotate/crop/enhance operations end-to-end and produce decodable images at every step', async () => {
     detectOrientationCascadeMock.mockResolvedValue({
       rotationDegrees: 90,
       exifDegrees: null,
@@ -34,29 +39,43 @@ describe('runVisionPipeline (real image-processor)', () => {
       ocrConfidence: null,
       source: 'exif+model-agree',
     });
-    detectCropBoxMock.mockResolvedValue({ cropBox: { x: 5, y: 5, width: 50, height: 40 }, raw: '{"cropBox":{"x":5,"y":5,"width":50,"height":40}}' });
+    detectCropBoxCascadeMock.mockResolvedValue({
+      cropBox: { x: 5, y: 5, width: 50, height: 40 },
+      modelCropBox: { x: 5, y: 5, width: 50, height: 40 },
+      modelRaw: '{"cropBox":{"x":5,"y":5,"width":50,"height":40}}',
+      floodCropBox: null,
+      source: 'model-flood-agree',
+    });
+    ocrImageBufferBothEnginesMock.mockResolvedValue({
+      paddleOcr: { text: 'mock extracted text' },
+      tesseract: { text: 'mock extracted text' },
+    });
+    convertRawTextToZeroLossMarkdownMock.mockResolvedValue('# Mock Markdown');
 
     const buf = await makeTestPng(100, 80);
-    const { runVisionPipeline } = await import('./image-to-pdf.js');
-    const steps = await runVisionPipeline(buf);
+    const { runOrientStep, runCropStep, runEnhanceStep, runExtractStep } = await import('./image-to-pdf.js');
 
-    expect(steps.map(s => s.label)).toEqual(['original', 'oriented', 'cropped', 'enhanced']);
-
-    for (const step of steps) {
-      expect(step.error).toBeUndefined();
-      expect(step.imageBase64.length).toBeGreaterThan(0);
-      const img = await loadImage(Buffer.from(step.imageBase64, 'base64'));
-      expect(img.width).toBeGreaterThan(0);
-      expect(img.height).toBeGreaterThan(0);
-    }
-
-    // Rotation swaps width/height (90 deg on 100x80), crop narrows it further.
-    const orientedImg = await loadImage(Buffer.from(steps[1].imageBase64, 'base64'));
+    const orientResult = await runOrientStep(buf);
+    expect(orientResult.error).toBeUndefined();
+    const orientedImg = await loadImage(Buffer.from(orientResult.imageBase64, 'base64'));
     expect(orientedImg.width).toBe(80);
     expect(orientedImg.height).toBe(100);
 
-    const croppedImg = await loadImage(Buffer.from(steps[2].imageBase64, 'base64'));
+    const cropResult = await runCropStep(Buffer.from(orientResult.imageBase64, 'base64'));
+    expect(cropResult.error).toBeUndefined();
+    const croppedImg = await loadImage(Buffer.from(cropResult.imageBase64, 'base64'));
     expect(croppedImg.width).toBe(50);
     expect(croppedImg.height).toBe(40);
+
+    const enhanceResult = await runEnhanceStep(Buffer.from(cropResult.imageBase64, 'base64'));
+    expect(enhanceResult.error).toBeUndefined();
+    expect(enhanceResult.imageBase64.length).toBeGreaterThan(0);
+    const enhancedImg = await loadImage(Buffer.from(enhanceResult.imageBase64, 'base64'));
+    expect(enhancedImg.width).toBeGreaterThan(0);
+    expect(enhancedImg.height).toBeGreaterThan(0);
+
+    const extractResult = await runExtractStep(Buffer.from(enhanceResult.imageBase64, 'base64'));
+    expect(extractResult.error).toBeUndefined();
+    expect(extractResult.markdown).toBe('# Mock Markdown');
   });
 });
