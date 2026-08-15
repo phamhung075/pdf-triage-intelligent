@@ -103,6 +103,34 @@ describe('config.ts', () => {
       else process.env.VISION_LAB_PORT = original;
     });
 
+    it('defaults PADDLEOCR_HOST to http://127.0.0.1:8871 with no env override', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      const original = process.env.PADDLEOCR_HOST;
+      delete process.env.PADDLEOCR_HOST;
+      const { CONFIG } = await import('./settings.js');
+      expect(CONFIG.PADDLEOCR_HOST).toBe('http://127.0.0.1:8871');
+      if (original !== undefined) process.env.PADDLEOCR_HOST = original;
+    });
+
+    it('reads PADDLEOCR_HOST from an env override', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      const original = process.env.PADDLEOCR_HOST;
+      process.env.PADDLEOCR_HOST = 'http://127.0.0.1:9999';
+      const { CONFIG } = await import('./settings.js');
+      expect(CONFIG.PADDLEOCR_HOST).toBe('http://127.0.0.1:9999');
+      if (original === undefined) delete process.env.PADDLEOCR_HOST;
+      else process.env.PADDLEOCR_HOST = original;
+    });
+
+    it('defaults PADDLEOCR_SPAWN_CMD to "python paddleocr-server/main.py" with no env override', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      const original = process.env.PADDLEOCR_SPAWN_CMD;
+      delete process.env.PADDLEOCR_SPAWN_CMD;
+      const { CONFIG } = await import('./settings.js');
+      expect(CONFIG.PADDLEOCR_SPAWN_CMD).toBe('python paddleocr-server/main.py');
+      if (original !== undefined) process.env.PADDLEOCR_SPAWN_CMD = original;
+    });
+
     it('defaults PERSONAL_NAME_DENYLIST to an empty array when settings.json has none', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(false);
       const { CONFIG } = await import('./settings.js');

@@ -97,6 +97,8 @@ export const CONFIG = {
   OLLAMA_EMBED_MODEL: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
   OLLAMA_VISION_MODEL: sanitizeOllamaVisionModel(process.env.OLLAMA_VISION_MODEL),
   VISION_LAB_PORT: parseInt(process.env.VISION_LAB_PORT || '3179', 10),
+  PADDLEOCR_HOST: process.env.PADDLEOCR_HOST || 'http://127.0.0.1:8871',
+  PADDLEOCR_SPAWN_CMD: process.env.PADDLEOCR_SPAWN_CMD || 'python paddleocr-server/main.py',
 
   PORT: parseInt(process.env.PORT || '3971', 10),
   // Security default: bind to localhost only. This server has no authentication — binding to
