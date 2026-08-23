@@ -100,6 +100,8 @@ Ensure Ollama is running, then start the web server in your terminal:
 npm run dev
 ```
 
+> **OCR service**: text recognition uses a small local **PaddleOCR** service (`paddleocr-server/`, Python + FastAPI on port `8871`). The app **auto-spawns it** on first use, so there is usually nothing to do — see [`paddleocr-server/README.md`](paddleocr-server/README.md) for the one-time dependency install. If Python or the dependencies are missing, OCR silently falls back to the bundled `Tesseract.js`, so the app keeps working with slightly lower text quality.
+
 ### 2. Open the Dashboard in Browser
 Navigate to **`http://localhost:3971`** in Google Chrome, Microsoft Edge, Firefox, or Safari.
 
@@ -191,6 +193,7 @@ Smart PDF Triage runs 100% locally on your computer using Node.js, Electron, SQL
 | **System RAM** | **8 GB RAM** |
 | **Graphics (GPU)** | Integrated Graphics — *CPU fallback supported by Ollama* |
 | **Free Storage** | **10 GB available SSD space** (5.5 GB for Qwen 3.5 9B model + 4.5 GB for app & PDF database) |
+| **Python** *(optional)* | 3.10+ — powers the local PaddleOCR service. Without it the app falls back to `Tesseract.js` automatically. |
 
 #### 🚀 Recommended System Requirements (GPU / AI Accelerated Mode)
 | Component | Requirement |

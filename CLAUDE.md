@@ -4,7 +4,9 @@ This file is loaded first by Claude Code. Everything else lives in `docs/`.
 
 ## What this project is
 
-Local-first **PDF Triage & Agentic Registry** — TypeScript + Node.js + Express + SQLite (+FTS5) + Ollama Qwen 3.5. Watches `__raws`, extracts text, classifies each PDF, writes SQLite + JSON registry mirrors, moves the file to a canonical `__archive/<category>/<subcategory>/<YYYY>/` folder, and pushes SSE updates to a web dashboard. Also exposes MCP tools for external agents.
+Local-first **PDF Triage & Agentic Registry** — TypeScript + Node.js + Express + SQLite (+FTS5) + Ollama Qwen 3.5. Watches `__raws`, extracts text, classifies each document, writes SQLite + JSON registry mirrors, moves the file to a canonical `__archive/<category>/<subcategory>/<YYYY>/` folder, and pushes SSE updates to a web dashboard. Also exposes MCP tools for external agents.
+
+Incoming **photos** (`.jpg/.png/.webp/.bmp/.tiff`) are not archived as images: they run through the vision pipeline (orient → crop → enhance → OCR) and are filed as single-page A4 PDFs — see `src/application/convert-image-document.ts`. OCR is **PaddleOCR first** (local FastAPI service in `paddleocr-server/`), with Tesseract.js as an availability fallback.
 
 Full overview: [docs/overview.md](docs/overview.md).
 
@@ -59,6 +61,9 @@ The plugin also ships `.claude/plugins/superpowers/docs/` — Superpowers' own d
 - **Never** accept `general`/`other`/`divers`/year as a final subcategory — BLOCK and keep in `__raws`.
 - **Only** Qwen 3.5 (`qwen3.5:9b`).
 - **Toast** for all UI feedback, never `alert()`.
+- **Never re-apply EXIF orientation.** `@napi-rs/canvas` and OpenCV (PaddleOCR) both apply the tag on decode, so buffers are EXIF-normalized once at the pipeline entry (`normalizeOrientation`) and `exifDegrees` is `null` by design. Treating the tag as a rotation still owed double-rotates the image.
+- **Never reintroduce a texture gate** in the crop detector. Measured on 16 real photos, the document interior is LESS textured than the background on 9 of them — the signal is inverted on half the corpus and cannot be fixed by re-thresholding. See the header of `src/domain/flood-crop.ts`.
+- **Never delete a source image before its PDF is on disk** (`convert-image-document.ts`). Conversion is an enhancement, never a gate: if it fails, triage the photo as-is rather than blocking a readable document.
 
 ## Repo layout
 
@@ -93,7 +98,7 @@ pdf_triage/
 │       └── superpowers/       # full obra/superpowers repo, cloned
 ├── src/
 │   ├── index.ts                       # composition root: dispatch default web, `scan`, `mcp`
-│   ├── vision-lab-server.ts           # Vision Lab standalone Express app: POST /api/vision/diagnose-image, own port
+│   ├── vision-lab-server.ts           # Vision Lab standalone Express app: POST /api/vision/diagnose-step, own port
 │   ├── vision-lab-main.ts             # Vision Lab entrypoint: calls startVisionLabServer() — `npm run vision:dev`
 │   ├── domain/                        # pure logic, zero I/O
 │   │   ├── document.schema.ts         # Zod schemas
