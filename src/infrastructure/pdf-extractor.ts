@@ -422,13 +422,14 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
     }
   }
 
-  // Step 3: High-fidelity Canvas Page Rendering & Offline Tesseract OCR
+  // Step 3: High-fidelity Canvas page rendering, then OCR via ocrPageBuffer — PaddleOCR first,
+  // Tesseract only as an availability fallback (see ocrPageBuffer).
   if (!raw_text || raw_text.length < 10) {
-    logger.info('PDF_PARSER', `No digital text layer found for '${filename}'. Running full-page Canvas render & Tesseract OCR...`);
+    logger.info('PDF_PARSER', `No digital text layer found for '${filename}'. Running full-page Canvas render & OCR (PaddleOCR, Tesseract fallback)...`);
     const ocrText = await ocrPdfPagesWithCanvas(fileBuffer);
     const cleanedOcr = cleanExtractedText(ocrText, filename);
     if (cleanedOcr && cleanedOcr.length >= 10) {
-      logger.info('PDF_PARSER', `Successfully extracted ${cleanedOcr.length} chars via Canvas Tesseract OCR!`, { filename });
+      logger.info('PDF_PARSER', `Successfully extracted ${cleanedOcr.length} chars via Canvas OCR`, { filename });
       raw_text = `[OCR Extracted Text]\n\n${cleanedOcr}`;
     }
   }

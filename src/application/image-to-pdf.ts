@@ -1,6 +1,6 @@
 import { detectOrientationCascade } from '../infrastructure/orientation-detector.js';
 import { detectCropBoxCascade } from '../infrastructure/crop-detector.js';
-import { rotateImage, cropImage, computeAutoLevelsForImage, applyBrightnessContrast, applySharpen } from '../infrastructure/image-processor.js';
+import { normalizeOrientation, rotateImage, cropImage, computeAutoLevelsForImage, applyBrightnessContrast, applySharpen } from '../infrastructure/image-processor.js';
 import { ocrImageBufferBothEngines } from '../infrastructure/pdf-extractor.js';
 import { AUTO_ADJUST_SHARPNESS } from '../domain/image-adjust.js';
 import { logger } from '../infrastructure/logger.js';
@@ -34,11 +34,22 @@ function errorMessage(err: unknown): string {
 // Step 1: orientation. Candidates cover every non-null signal the cascade considered (EXIF,
 // vision model, OCR tiebreaker) — selecting one in the UI is purely visual; the cascade's own
 // rotationDegrees always feeds step 2, regardless of what a developer looks at here.
+//
+// The `exif` candidate will normally be absent now: the buffer is EXIF-normalized before the
+// cascade runs, so there is no orientation tag left to read and exifDegrees comes back null. That
+// is deliberate, not a regression — see normalizeOrientation for why the tag must not be treated
+// as a rotation still owed.
 export async function runOrientStep(imageBuffer: Buffer): Promise<PipelineStepResult> {
   const start = Date.now();
   try {
-    const { rotationDegrees, exifDegrees, modelDegrees, modelRaw, ocrDegrees, ocrConfidence, source } = await detectOrientationCascade(imageBuffer);
-    const orientedBuffer = await rotateImage(imageBuffer, rotationDegrees);
+    // Normalize BEFORE anything measures orientation. Our decoders (canvas here, OpenCV inside the
+    // PaddleOCR service) already apply the EXIF Orientation tag, so the raw tag is not a rotation
+    // still owed — re-applying it turns an upright photo sideways. Normalizing first strips the tag
+    // and leaves every stage looking at identical pixels, so the cascade below measures only the
+    // rotation the photograph itself needs. See normalizeOrientation.
+    const normalizedBuffer = await normalizeOrientation(imageBuffer);
+    const { rotationDegrees, exifDegrees, modelDegrees, modelRaw, ocrDegrees, ocrConfidence, source } = await detectOrientationCascade(normalizedBuffer);
+    const orientedBuffer = await rotateImage(normalizedBuffer, rotationDegrees);
 
     const candidateDegrees: Array<{ label: string; degrees: 0 | 90 | 180 | 270 }> = [];
     if (exifDegrees !== null) candidateDegrees.push({ label: 'exif', degrees: exifDegrees });
@@ -49,7 +60,9 @@ export async function runOrientStep(imageBuffer: Buffer): Promise<PipelineStepRe
     for (const { label, degrees } of candidateDegrees) {
       const isChosen = degrees === rotationDegrees;
       try {
-        const buf = isChosen ? orientedBuffer : await rotateImage(imageBuffer, degrees);
+        // Rotate the NORMALIZED buffer, not the raw upload — otherwise the comparison views sit in
+        // a different pixel space than the chosen one and cannot be compared against it by eye.
+        const buf = isChosen ? orientedBuffer : await rotateImage(normalizedBuffer, degrees);
         candidates.push({ label, chosen: isChosen, imageBase64: buf.toString('base64'), meta: { rotationDegrees: degrees } });
       } catch (candidateErr) {
         candidates.push({ label, chosen: isChosen, meta: { rotationDegrees: degrees }, error: errorMessage(candidateErr) });

@@ -11,9 +11,10 @@ vi.mock('../infrastructure/crop-detector.js', () => ({
 }));
 
 const {
-  rotateImageMock, cropImageMock, computeAutoLevelsForImageMock,
+  normalizeOrientationMock, rotateImageMock, cropImageMock, computeAutoLevelsForImageMock,
   applyBrightnessContrastMock, applySharpenMock,
 } = vi.hoisted(() => ({
+  normalizeOrientationMock: vi.fn(),
   rotateImageMock: vi.fn(),
   cropImageMock: vi.fn(),
   computeAutoLevelsForImageMock: vi.fn(),
@@ -21,6 +22,7 @@ const {
   applySharpenMock: vi.fn(),
 }));
 vi.mock('../infrastructure/image-processor.js', () => ({
+  normalizeOrientation: normalizeOrientationMock,
   rotateImage: rotateImageMock,
   cropImage: cropImageMock,
   computeAutoLevelsForImage: computeAutoLevelsForImageMock,
@@ -40,9 +42,13 @@ vi.mock('./classify-document.js', () => ({
 
 beforeEach(() => {
   vi.resetAllMocks();
+  normalizeOrientationMock.mockResolvedValue(normalizedBuf);
 });
 
 const originalBuf = Buffer.from('original');
+// What normalizeOrientation hands back: the upload with the EXIF tag baked into its pixels and the
+// metadata dropped. Every orientation stage works from THIS, never from the raw upload.
+const normalizedBuf = Buffer.from('normalized');
 const orientedBuf = Buffer.from('oriented');
 const croppedBuf = Buffer.from('cropped');
 const leveledBuf = Buffer.from('leveled');
@@ -136,6 +142,36 @@ describe('runOrientStep', () => {
     const model = result.candidates!.find(c => c.label === 'model');
     expect(exif).toEqual({ label: 'exif', chosen: true, imageBase64: orientedBuf.toString('base64'), meta: { rotationDegrees: 90 } });
     expect(model).toEqual({ label: 'model', chosen: false, meta: { rotationDegrees: 0 }, error: 'rotate failed for candidate' });
+  });
+
+  // Regression guard for the bug that put 9 of 16 real photos upside down. Our decoders already
+  // apply the EXIF Orientation tag, so orientation must be measured and applied on the NORMALIZED
+  // buffer. If anything here starts reading the raw upload again, the EXIF rotation gets applied a
+  // second time and upright documents come out sideways.
+  it('normalizes EXIF before measuring orientation, and never rotates the raw upload', async () => {
+    detectOrientationCascadeMock.mockResolvedValue({
+      rotationDegrees: 90,
+      exifDegrees: null,
+      modelDegrees: 0,
+      modelRaw: '{"rotationDegrees":0}',
+      ocrDegrees: 90,
+      ocrConfidence: 0.9,
+      source: 'ocr-tiebreaker',
+    });
+    rotateImageMock.mockResolvedValue(orientedBuf);
+
+    const { runOrientStep } = await import('./image-to-pdf.js');
+    await runOrientStep(originalBuf);
+
+    expect(normalizeOrientationMock).toHaveBeenCalledWith(originalBuf);
+    // The cascade must judge the normalized pixels, not the raw file's metadata.
+    expect(detectOrientationCascadeMock).toHaveBeenCalledWith(normalizedBuf);
+    // Every rotation — the chosen one and each comparison candidate — works from the normalized
+    // buffer. The raw upload must never be rotated.
+    for (const call of rotateImageMock.mock.calls) {
+      expect(call[0]).toBe(normalizedBuf);
+    }
+    expect(rotateImageMock).not.toHaveBeenCalledWith(originalBuf, expect.anything());
   });
 });
 

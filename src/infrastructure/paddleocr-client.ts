@@ -12,6 +12,19 @@ const VALID_ROTATIONS = [0, 90, 180, 270];
 // with backoff instead, ~15s total before giving up.
 const SPAWN_RETRY_DELAYS_MS = [2000, 3000, 5000, 5000];
 
+// Text recognition is the slow one and it scales with how much text is on the page, not with the
+// file size: a dense French payslip measured 215s end-to-end on a CPU-only machine (192 text lines,
+// PP-OCRv5 detection + per-line recognition). The previous 120s budget was therefore shorter than a
+// normal result on ordinary hardware — PaddleOCR was aborted mid-inference on every dense document
+// and the caller silently fell back to Tesseract, so the better engine's output was never seen.
+// 300s leaves headroom above that measurement; Tesseract still backstops anything slower.
+const OCR_TIMEOUT_MS = 300_000;
+
+// Orientation runs a single small classifier over one downscaled image and returns in a couple of
+// seconds, so it keeps a much tighter budget — a slow answer here means the service is wedged, and
+// failing fast lets the caller fall back to Tesseract OSD instead of stalling the pipeline.
+const ORIENTATION_TIMEOUT_MS = 120_000;
+
 let serverReadyPromise: Promise<boolean> | null = null; // memoized only on success
 let spawnAttempted = false; // whether the exec+poll sequence has been tried this process lifetime
 
@@ -75,7 +88,7 @@ export async function paddleOcrRecognize(imageBuffer: Buffer): Promise<string> {
 
   const form = buildImageForm(imageBuffer);
 
-  const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/ocr`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) });
+  const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/ocr`, { method: 'POST', body: form, signal: AbortSignal.timeout(OCR_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`PaddleOCR /ocr returned ${res.status}`);
   const data: any = await res.json();
   if (typeof data.text !== 'string') {
@@ -90,7 +103,7 @@ export async function paddleOcrDetectOrientation(imageBuffer: Buffer): Promise<P
 
   const form = buildImageForm(imageBuffer);
 
-  const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/orientation`, { method: 'POST', body: form, signal: AbortSignal.timeout(120_000) });
+  const res = await fetch(`${CONFIG.PADDLEOCR_HOST}/orientation`, { method: 'POST', body: form, signal: AbortSignal.timeout(ORIENTATION_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`PaddleOCR /orientation returned ${res.status}`);
   const data: any = await res.json();
   if (!VALID_ROTATIONS.includes(data.rotation_degrees)) {

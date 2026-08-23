@@ -23,6 +23,9 @@
   .step .candidates { margin: 0.75rem 0; display: flex; gap: 1rem; flex-wrap: wrap; }
   .step .candidates label { font-size: 0.9rem; cursor: pointer; }
   .step .candidate-error { color: #f87171; font-size: 0.85rem; }
+#diagBox { margin: 8px 0; font-size: 12px; }
+#diag { margin: 4px 0 0; padding: 6px 8px; background: #10161f; border: 1px solid #2a3646;
+        max-height: 180px; overflow: auto; white-space: pre-wrap; font-size: 11px; line-height: 1.45; }
 </style>
 </head>
 <body>
@@ -32,14 +35,21 @@
 <input type="file" id="fileInput" accept="image/*">
 <br>
 <button id="nextBtn" disabled>Next</button>
+<button id="runAllBtn" disabled>Run all steps</button>
 
 <div id="status"></div>
+<details id="diagBox">
+  <summary>Diagnostics</summary>
+  <pre id="diag"></pre>
+</details>
 <div id="steps"></div>
 
 <script src="js/vendor/marked.js"></script>
 <script>
 const fileInput = document.getElementById('fileInput');
 const nextBtn = document.getElementById('nextBtn');
+const runAllBtn = document.getElementById('runAllBtn');
+const diagEl = document.getElementById('diag');
 const statusEl = document.getElementById('status');
 const stepsEl = document.getElementById('steps');
 
@@ -54,6 +64,8 @@ fileInput.addEventListener('change', () => {
   currentStep = 0;
   inputForNextStep = null;
   nextBtn.disabled = true;
+  runAllBtn.disabled = true;
+  diagEl.textContent = '';
   if (!file) return;
 
   const reader = new FileReader();
@@ -64,6 +76,8 @@ fileInput.addEventListener('change', () => {
     inputForNextStep = base64;
     renderOriginalStep(base64);
     nextBtn.disabled = false;
+    runAllBtn.disabled = false;
+    diag(`file loaded (${(base64.length / 1048576).toFixed(1)} MB), pipeline reset to step 0`);
   };
   reader.readAsDataURL(file);
 });
@@ -178,12 +192,24 @@ function renderStepResult(result) {
   stepsEl.appendChild(div);
 }
 
-nextBtn.addEventListener('click', async () => {
-  if (currentStep >= 4 || inputForNextStep === null) return;
+// One step-runner shared by both buttons. Returns true only when the pipeline actually advanced,
+// so "Run all steps" can stop on the first step that does not.
+//
+// The ordering here is load-bearing: pipeline state (currentStep / inputForNextStep) is committed
+// as soon as the server's result is in hand, BEFORE any DOM work. Rendering is presentation only
+// and gets its own error boundary. Previously rendering ran first, so an exception in it skipped
+// the state update and landed in the catch — which re-enabled the button — and the next click
+// re-ran the SAME step forever, filling the server log with successful step-1 calls.
+async function runOneStep() {
+  if (currentStep >= 4 || inputForNextStep === null) {
+    diag(`refused: currentStep=${currentStep}, hasInput=${inputForNextStep !== null}`);
+    return false;
+  }
   const stepToRun = currentStep + 1;
-  nextBtn.disabled = true;
+  setBusy(true);
   statusEl.classList.remove('error');
   statusEl.textContent = `Running step ${stepToRun}...`;
+  diag(`step ${stepToRun}: requesting (${(inputForNextStep.length / 1048576).toFixed(1)} MB in)`);
 
   try {
     const res = await fetch('/api/vision/diagnose-step', {
@@ -201,26 +227,80 @@ nextBtn.addEventListener('click', async () => {
       throw new Error(data.error || `HTTP ${res.status}`);
     }
 
-    renderStepResult(data.result);
+    const stepFailed = Boolean(data.result.error);
     currentStep = stepToRun;
+    if (!stepFailed && typeof data.result.imageBase64 === 'string' && data.result.imageBase64) {
+      inputForNextStep = data.result.imageBase64;
+    }
+    diag(`step ${stepToRun}: committed (currentStep=${currentStep}${stepFailed ? ', SERVER ERROR: ' + data.result.error : ''})`);
 
-    if (data.result.error) {
-      statusEl.textContent = `Step ${stepToRun} failed — see panel above.`;
-      nextBtn.disabled = true;
-      return;
+    try {
+      renderStepResult(data.result);
+    } catch (renderErr) {
+      diag(`step ${stepToRun}: RENDER FAILED — ${renderErr.message}`);
+      statusEl.classList.add('error');
+      statusEl.textContent = `Step ${stepToRun} ran, but could not be displayed: ${renderErr.message}`;
+      setBusy(false);
+      return !stepFailed;
     }
 
-    if (typeof data.result.imageBase64 === 'string' && data.result.imageBase64) {
-      inputForNextStep = data.result.imageBase64;
+    if (stepFailed) {
+      statusEl.textContent = `Step ${stepToRun} failed — see panel above.`;
+      setBusy(false);
+      nextBtn.disabled = true;
+      runAllBtn.disabled = true;
+      return false;
     }
 
     statusEl.textContent = currentStep < 4 ? `Step ${stepToRun} done.` : 'Pipeline complete.';
-    nextBtn.disabled = currentStep >= 4;
+    setBusy(false);
+    return true;
   } catch (err) {
+    // The step did NOT complete (network / HTTP / parse), so state is deliberately left untouched
+    // and this same step can be retried.
+    diag(`step ${stepToRun}: DID NOT COMPLETE — ${err.message}`);
     statusEl.classList.add('error');
-    statusEl.textContent = `Error: ${err.message}`;
-    nextBtn.disabled = false;
+    statusEl.textContent = `Error on step ${stepToRun}: ${err.message}`;
+    setBusy(false);
+    return false;
   }
+}
+
+// Mirrors every pipeline transition to an on-page panel as well as the console, so a failure can
+// be read off the page itself without opening DevTools.
+function diag(line) {
+  const t = new Date().toTimeString().slice(0, 8);
+  diagEl.textContent += `[${t}] ${line}
+`;
+  diagEl.scrollTop = diagEl.scrollHeight;
+  console.log('[VisionLab]', line);
+}
+
+// Both buttons drive the same pipeline, so they must be disabled and restored together — otherwise
+// a second click can start a step while one is already in flight.
+function setBusy(busy) {
+  if (busy) {
+    nextBtn.disabled = true;
+    runAllBtn.disabled = true;
+    return;
+  }
+  const done = currentStep >= 4;
+  nextBtn.disabled = done;
+  runAllBtn.disabled = done;
+}
+
+nextBtn.addEventListener('click', () => { runOneStep(); });
+
+runAllBtn.addEventListener('click', async () => {
+  diag(`run-all: starting from step ${currentStep + 1}`);
+  while (currentStep < 4) {
+    const advanced = await runOneStep();
+    if (!advanced) {
+      diag('run-all: stopped early');
+      return;
+    }
+  }
+  diag('run-all: pipeline complete');
 });
 </script>
 </body>

@@ -63,6 +63,7 @@ export function startVisionLabServer(port: number = CONFIG.VISION_LAB_PORT): voi
   const app = createVisionLabApp();
   const server = app.listen(port, CONFIG.HOST, () => {
     console.log(`Vision Lab server running at http://${CONFIG.HOST}:${port}`);
+    console.log(`Diagnostic page: http://${CONFIG.HOST}:${port}/test-image-to-pdf.html`);
   });
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
