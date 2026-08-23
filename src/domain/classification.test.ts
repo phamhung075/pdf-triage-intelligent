@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cleanAndParseJSON, matchEntityDictionary, buildEntityHintLine, isGroundedSubcategorySlug, ruleBasedClassify, preprocessRawText, normalizeSlug } from './classification.js';
+import { cleanAndParseJSON, matchEntityDictionary, buildEntityHintLine, isGroundedSubcategorySlug, ruleBasedClassify, preprocessRawText, normalizeSlug, reconcileDocumentDate } from './classification.js';
 import { EntityDictionary } from './document.schema.js';
 
 describe('normalizeSlug', () => {
@@ -328,5 +328,40 @@ describe('ruleBasedClassify', () => {
     const resTranscript = ruleBasedClassify('Official Academic Transcript Grade Report Bachelor of Science Degree', 'transcript.pdf', EMPTY_DICTIONARY, DEFAULT_PERSONAL_NAME_DENYLIST);
     expect(resTranscript.categorie).toBe('education');
     expect(resTranscript.subcategorie).toBe('releve_notes');
+  });
+});
+
+describe('reconcileDocumentDate', () => {
+  const NOW = new Date('2026-08-12T00:00:00');
+
+  it('corrects a future DD/MM/YYYY date to the titre year when it is an OCR two-digit-year misread (the doc #2472 bug)', () => {
+    const result = reconcileDocumentDate('30/11/2026', 'Bulletin de salaire - Novembre 2025', NOW);
+    expect(result.corrected).toBe(true);
+    expect(result.date).toBe('2025-11-30');
+    expect(result.reason).toMatch(/later than today/);
+  });
+
+  it('leaves a past date untouched, even if the titre mentions a different year', () => {
+    const result = reconcileDocumentDate('2026-06-30', 'Bulletin de salaire - Juin 2026', NOW);
+    expect(result.corrected).toBe(false);
+    expect(result.date).toBe('2026-06-30');
+  });
+
+  it('leaves a future date untouched when the titre has no extractable year', () => {
+    const result = reconcileDocumentDate('30/11/2026', 'Bulletin de salaire', NOW);
+    expect(result.corrected).toBe(false);
+    expect(result.date).toBe('30/11/2026');
+  });
+
+  it('leaves a future date untouched when the titre year would still be in the future', () => {
+    const result = reconcileDocumentDate('30/11/2099', 'Facture 2098', NOW);
+    expect(result.corrected).toBe(false);
+    expect(result.date).toBe('30/11/2099');
+  });
+
+  it('leaves an unparseable date string untouched', () => {
+    const result = reconcileDocumentDate('N/A', 'Bulletin de salaire - Novembre 2025', NOW);
+    expect(result.corrected).toBe(false);
+    expect(result.date).toBe('N/A');
   });
 });

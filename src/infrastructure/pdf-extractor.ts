@@ -6,7 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createCanvas } from '@napi-rs/canvas';
 import { createWorker } from 'tesseract.js';
 import { logger } from './logger.js';
-import { cleanExtractedText } from '../domain/pdf-text.js';
+import { cleanExtractedText, detectMidWordCapitalizationCorruption, type CorruptionSignal } from '../domain/pdf-text.js';
 
 export interface ExtractedPDF {
   checksum: string;
@@ -134,7 +134,7 @@ export async function getSharedTesseractWorker(): Promise<any> {
   if (!sharedTesseractWorkerPromise) {
     sharedTesseractWorkerPromise = (async () => {
       try {
-        const worker = await createWorker(['fra', 'eng']);
+        const worker = await createWorker(['fra', 'eng', 'vie']);
         return worker;
       } catch (err: any) {
         sharedTesseractWorkerPromise = null;
@@ -335,7 +335,7 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
     logger.info('PDF_PARSER', `Running Tesseract OCR for image file '${filename}'...`);
     let ocrText = '';
     try {
-      const worker = await createWorker('fra+eng');
+      const worker = await createWorker('fra+eng+vie');
       const ret = await worker.recognize(fileBuffer);
       ocrText = ret.data.text || '';
       await worker.terminate();
@@ -366,24 +366,83 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
     logger.warn('PDF_PARSER', `pdf-parse failed on ${filename}: ${err.message}`);
   }
 
-  // Step 2: Robust pdfjs-dist fallback parser for corrupted XRef tables
-  if (!raw_text || raw_text.length < 10) {
+  // Corruption guard: pdf-parse can silently return non-empty text from a PDF
+  // whose embedded font has no valid ToUnicode CMap — individual characters
+  // get substituted, producing garbled-but-nonempty text (e.g. "BANG cAN oor
+  // xf roAN" instead of "BẢNG CÂN ĐỐI KẾ TOÁN") that sails straight past the
+  // "< 10 clean chars" guard below because it isn't empty or short, it's just
+  // wrong. Detect that symptom here and treat it as an ADDITIONAL trigger for
+  // the same Step 2 / Step 3 fallback chain used for empty/short text — this
+  // is a separate trigger path alongside the existing guard, not a
+  // replacement for it. See src/domain/pdf-text.ts for the calibration notes.
+  let corruptionSignal: CorruptionSignal | null = null;
+  if (raw_text && raw_text.length >= 10) {
+    const signal = detectMidWordCapitalizationCorruption(raw_text);
+    if (signal.corrupted) {
+      corruptionSignal = signal;
+      logger.info(
+        'PDF_PARSER',
+        `Likely font/CMap corruption detected in pdf-parse output for '${filename}' — ` +
+        `window ratio ${signal.ratio.toFixed(2)} (${signal.matchCount} mid-word-capitalized tokens), ` +
+        `e.g. [${signal.sampleWords.join(', ')}]. Falling through to pdfjs-dist / OCR to try to recover clean text.`,
+        { filename }
+      );
+    }
+  }
+  const corruptedDigitalText = corruptionSignal ? raw_text : '';
+
+  // Step 2: Robust pdfjs-dist fallback parser for corrupted XRef tables (also
+  // triggered when Step 1 produced non-empty but likely-corrupted text).
+  if (!raw_text || raw_text.length < 10 || corruptionSignal) {
     const pdfjsText = await parseWithPdfjs(fileBuffer);
     const cleanedPdfjs = cleanExtractedText(pdfjsText, filename);
-    if (cleanedPdfjs && cleanedPdfjs.length >= 10) {
+    // Only apply the extra corruption re-check when we're on the
+    // corruption-triggered path — the plain empty/short-text path keeps its
+    // original, simpler acceptance criteria (length >= 10).
+    const pdfjsStillCorrupted = corruptionSignal ? detectMidWordCapitalizationCorruption(cleanedPdfjs).corrupted : false;
+    if (cleanedPdfjs && cleanedPdfjs.length >= 10 && !pdfjsStillCorrupted) {
       logger.info('PDF_PARSER', `Recovered ${cleanedPdfjs.length} chars using pdfjs-dist fallback parser`, { filename });
       raw_text = cleanedPdfjs;
+      corruptionSignal = null; // recovered clean text — no longer need to protect the original
+    } else if (corruptionSignal) {
+      logger.debug(
+        'PDF_PARSER',
+        `pdfjs-dist fallback for '${filename}' (corruption-triggered) produced ` +
+        `${cleanedPdfjs ? (pdfjsStillCorrupted ? 'still-corrupted' : 'too-short') : 'empty'} text ` +
+        `(${cleanedPdfjs.length} chars). Trying OCR next.`,
+        { filename }
+      );
     }
   }
 
   // Step 3: High-fidelity Canvas Page Rendering & Offline Tesseract OCR
-  if (!raw_text || raw_text.length < 10) {
-    logger.info('PDF_PARSER', `No digital text layer found for '${filename}'. Running full-page Canvas render & Tesseract OCR...`);
+  if (!raw_text || raw_text.length < 10 || corruptionSignal) {
+    logger.info('PDF_PARSER', `No usable digital text layer for '${filename}'. Running full-page Canvas render & Tesseract OCR...`, { filename });
     const ocrText = await ocrPdfPagesWithCanvas(fileBuffer);
     const cleanedOcr = cleanExtractedText(ocrText, filename);
     if (cleanedOcr && cleanedOcr.length >= 10) {
+      const recoveredFromCorruption = !!corruptionSignal;
       logger.info('PDF_PARSER', `Successfully extracted ${cleanedOcr.length} chars via Canvas Tesseract OCR!`, { filename });
       raw_text = `[OCR Extracted Text]\n\n${cleanedOcr}`;
+      corruptionSignal = null;
+      if (recoveredFromCorruption) {
+        logger.info('PDF_PARSER', `Corruption-triggered fallback chain RECOVERED clean text for '${filename}' via OCR.`, { filename });
+      }
+    } else if (corruptionSignal) {
+      // OCR also failed to produce usable text — keep the original
+      // corrupted-but-nonempty digital-layer text rather than discarding real
+      // content (do NOT weaken the "< 10 chars → block" guard: this text is
+      // non-empty, it just may render poorly downstream).
+      raw_text = corruptedDigitalText;
+      logger.warn(
+        'PDF_PARSER',
+        `Corruption-triggered fallback chain did NOT recover clean text for '${filename}' ` +
+        `(pdfjs-dist and OCR both failed/too-short). Keeping original corrupted-but-nonempty ` +
+        `pdf-parse text (${raw_text.length} chars) — downstream classification/markdown quality ` +
+        `may be degraded for this file.`,
+        { filename }
+      );
+      corruptionSignal = null;
     }
   }
 

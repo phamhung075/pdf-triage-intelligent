@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../infrastructure/settings.js';
-import { preprocessRawText } from './classification.js';
+import { preprocessRawText, formatLocalDate } from './classification.js';
 
 function loadPromptPart(filename: string, fallbackDefault: string): string {
   try {
@@ -38,18 +38,42 @@ Respond ONLY with raw JSON:
   return { system, user };
 }
 
-export function buildMarkdownConversionPrompt(chunkText: string): { system: string; user: string } {
+// Emitted by the model (per prompt rule 5 below) when a raw-text fragment is illegible /
+// doesn't resolve into coherent words in any language, instead of being fabricated. Exported so
+// convertRawTextToZeroLossMarkdown (src/application/classify-document.ts) can detect it in a
+// chunk's converted output for debug logging — see docs/agents/classification-expert.md.
+export const ILLEGIBLE_FRAGMENT_MARKER = '⚠️ [Illegible fragment — preserved as-is]';
+
+// Minimal cross-chunk continuity context (Problem B — chunk-blind table splitting): when the
+// previous chunk's converted Markdown ended mid-table, its detected header + separator row are
+// passed here so the next chunk knows to continue the same table instead of re-opening one.
+export interface MarkdownContinuationContext {
+  header: string;
+  separator: string;
+}
+
+export function buildMarkdownConversionPrompt(chunkText: string, continuationContext?: MarkdownContinuationContext): { system: string; user: string } {
   const template = loadPromptPart('micro_prompt_markdown.md', `Convert the following raw text chunk into clean, structured GitHub Flavored Markdown (GFM).
 STRICT RULES:
 1. ZERO CONTENT SKIPPING: Convert 100% of the raw text accurately into Markdown. Do NOT skip, omit, or summarize any words, numbers, amounts, or table rows.
 2. TABLES ARE FOR REPEATED ROWS ONLY: Use a GFM Markdown table only for genuinely tabular data with multiple rows sharing the same columns. Do NOT force a one-row table to hold several unrelated fields — list those as separate **Label:** Value lines instead.
-3. STRUCTURAL HEADINGS: Use #, ##, ### for headings, and **bold** for key-value labels. This chunk may be a fragment with no visibility into prior chunks — keep headings shallow.
+3. STRUCTURAL HEADINGS: Use #, ##, ### for headings, and **bold** for key-value labels. This chunk may be a fragment with no visibility into prior chunks (except for any CONTINUATION CONTEXT note below, if present) — keep headings shallow.
 4. NO CONVERSATIONAL COMMENTARY: Output ONLY the converted Markdown text.
-
+5. NEVER FABRICATE FROM PATTERN-RECOGNITION: If a fragment of the raw text is illegible or does not resolve into coherent words in ANY language (OCR noise, garbled encoding, random letter fragments), do NOT invent plausible-looking content and do NOT translate or interpret characters you cannot actually make out — even when the fragment's shape pattern-matches a well-known document type you recognize from training (e.g. a Vietnamese balance sheet, a French payslip). Recognizing the document TYPE is not license to fabricate that document type's usual field values. Instead, preserve the illegible fragment near-verbatim, or mark it clearly with a blockquote:
+> ${ILLEGIBLE_FRAGMENT_MARKER}
+followed by the raw fragment text.
+{{CONTINUATION_CONTEXT}}
 Raw Text Chunk:
 {{CHUNK_TEXT}}`);
 
-  const user = template.replace('{{CHUNK_TEXT}}', chunkText);
+  let continuationBlock = '';
+  if (continuationContext && continuationContext.header) {
+    continuationBlock = `\n⚠️ CONTINUATION CONTEXT: The previous chunk ended mid-table with this open table (header row: "${continuationContext.header}"; column separator: "${continuationContext.separator}"). If this chunk continues the same tabular data, output ONLY the continuing \`| cell | cell |\` rows — do NOT repeat the header/separator row and do NOT start a new table for the same data. If this chunk does not continue that table, ignore this note.\n`;
+  }
+
+  const user = template
+    .replace('{{CONTINUATION_CONTEXT}}', continuationBlock)
+    .replace('{{CHUNK_TEXT}}', chunkText);
   const system = "You are a high-precision document to Markdown converter. Output ONLY valid Markdown with zero skipping.";
   return { system, user };
 }
@@ -60,7 +84,8 @@ export function buildClassificationPrompt(
   rawText: string,
   previousError?: string,
   systemLanguage: 'FR' | 'EN' = 'FR',
-  entityHint?: { entity: string; docType?: string }
+  entityHint?: { entity: string; docType?: string },
+  now: Date = new Date()
 ): { system: string; user: string; textSnippetLength: number } {
   const cleanRawText = preprocessRawText(rawText);
   const textSnippet = cleanRawText.length > 4000 ? cleanRawText.substring(0, 4000) + '...' : cleanRawText;
@@ -79,7 +104,8 @@ export function buildClassificationPrompt(
 
   const contactRules = loadPromptPart('contact_rules.md', '');
   const classificationRules = loadPromptPart('classification_rules.md', '');
-  const formattingRules = loadPromptPart('formatting_rules.md', '');
+  const formattingRules = loadPromptPart('formatting_rules.md', '')
+    .replace(/\{\{CURRENT_DATE\}\}/g, formatLocalDate(now));
   const jsonSchema = loadPromptPart('json_schema_response.json', '');
 
   const systemTemplate = loadPromptPart(

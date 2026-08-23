@@ -515,6 +515,63 @@ export function extractRuleBasedContact(rawText: string): {
   return { contact_name: '', contact_email: '', contact_phone: '', contact_address: '', contact_website: '' };
 }
 
+// Formats a Date using its LOCAL calendar fields (not toISOString, which converts to UTC and
+// shifts "today" by a day for any timezone ahead of UTC — e.g. Europe/Paris at local midnight).
+export function formatLocalDate(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateParts(dateStr: string): { year: number; month: number; day: number } | null {
+  const str = (dateStr || '').trim();
+
+  const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return { year: +iso[1], month: +iso[2], day: +iso[3] };
+
+  const frLong = str.match(/^(\d{2})[/.\-](\d{2})[/.\-](\d{4})$/);
+  if (frLong) return { year: +frLong[3], month: +frLong[2], day: +frLong[1] };
+
+  const frShort = str.match(/^(\d{2})[/.\-](\d{2})[/.\-](\d{2})$/);
+  if (frShort) return { year: 2000 + +frShort[3], month: +frShort[2], day: +frShort[1] };
+
+  return null;
+}
+
+// Defense-in-depth guard for Step D's "date" field: the classification LLM occasionally
+// mis-derives a two-digit-year date from OCR-garbled source text (e.g. "30/11/26" read from a
+// printed "30/11/25"), producing a "date" later than today for an otherwise-past document. When
+// that happens AND the document's own titre states a different, non-future year (payslip titles
+// always carry the pay period's year — "Bulletin de salaire - Novembre 2025"), trust the titre's
+// year over the ambiguous digit. Declines to touch anything it isn't confident about (no titre
+// year found, titre year matches already, or the "corrected" date would itself land in the future).
+export function reconcileDocumentDate(rawDate: string, titre: string, now: Date = new Date()): { date: string; corrected: boolean; reason?: string } {
+  const parsed = parseDateParts(rawDate);
+  if (!parsed) return { date: rawDate, corrected: false };
+
+  const parsedTimestamp = new Date(parsed.year, parsed.month - 1, parsed.day).getTime();
+  if (parsedTimestamp <= now.getTime()) {
+    return { date: rawDate, corrected: false };
+  }
+
+  const titleYearMatch = (titre || '').match(/\b(20\d{2})\b/);
+  if (!titleYearMatch) return { date: rawDate, corrected: false };
+
+  const titleYear = parseInt(titleYearMatch[1], 10);
+  if (titleYear === parsed.year) return { date: rawDate, corrected: false };
+
+  const correctedTimestamp = new Date(titleYear, parsed.month - 1, parsed.day).getTime();
+  if (correctedTimestamp > now.getTime()) return { date: rawDate, corrected: false };
+
+  const correctedDate = `${titleYear}-${String(parsed.month).padStart(2, '0')}-${String(parsed.day).padStart(2, '0')}`;
+  return {
+    date: correctedDate,
+    corrected: true,
+    reason: `"${rawDate}" is later than today (${formatLocalDate(now)}); corrected year to ${titleYear} to match the titre's stated period`
+  };
+}
+
 export function buildCategoriesDescriptionStr(categoriesConfig: { categories: CategoryItem[] }, dictionary: EntityDictionary): string {
   return categoriesConfig.categories.map(c => {
     const subsStr = c.subcategories ? c.subcategories.map(s => s.id).join(', ') : 'none';

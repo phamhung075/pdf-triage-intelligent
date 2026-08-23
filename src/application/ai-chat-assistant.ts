@@ -2,6 +2,7 @@ import { getAllDocuments, DocumentRecord } from '../infrastructure/db/database.j
 import { requestTextChatCompletion } from '../infrastructure/ollama-client.js';
 import { handleMcpToolCall } from '../infrastructure/mcp/mcp-server.js';
 import { detectFileType } from '../domain/taxonomy.js';
+import { formatLocalDate } from '../domain/classification.js';
 import { logger } from '../infrastructure/logger.js';
 
 export interface ChatMessage {
@@ -83,9 +84,25 @@ export async function searchRelevantDocuments(userMessage: string): Promise<Docu
       return cat === 'bulletin_salaire' || title.includes('bulletin') || title.includes('salaire') || title.includes('paie');
     });
 
-    paySlips.sort((a, b) => parseDocDate(b.date) - parseDocDate(a.date));
+    // De-duplicate re-scanned copies of the same pay period (same month, possibly re-imported
+    // under a different filename/checksum) before ranking — otherwise two scans of the same
+    // month can occupy two of the limited "N most recent" slots and silently push a distinct,
+    // older-but-still-requested month out of the result (root cause of a user-reported "only 2 of
+    // 3 last months found" bug where duplicate April/May/June 2026 imports crowded the slice).
+    const byPeriod = new Map<string, DocumentRecord>();
+    for (const doc of paySlips) {
+      const ts = parseDocDate(doc.date);
+      const periodKey = ts ? new Date(ts).toISOString().slice(0, 7) : `no-date-${doc.id}`;
+      const existing = byPeriod.get(periodKey);
+      if (!existing || doc.id > existing.id) {
+        byPeriod.set(periodKey, doc);
+      }
+    }
+    const dedupedPaySlips = [...byPeriod.values()];
+
+    dedupedPaySlips.sort((a, b) => parseDocDate(b.date) - parseDocDate(a.date));
     const limit = requestedCount || 3;
-    return paySlips.slice(0, limit);
+    return dedupedPaySlips.slice(0, limit);
   }
 
   // General Intent scoring
@@ -135,7 +152,7 @@ export async function searchRelevantDocuments(userMessage: string): Promise<Docu
 /**
  * Builds system prompt for Qwen 3.5 AI with local document context.
  */
-export function buildPromptContext(userMessage: string, documents: DocumentRecord[]): { system: string; userPrompt: string } {
+export function buildPromptContext(userMessage: string, documents: DocumentRecord[], now: Date = new Date()): { system: string; userPrompt: string } {
   const docSummaries = documents.map(d => {
     const sub = d.subcategory ? `${d.category}/${d.subcategory}` : d.category;
     const fType = d.file_type || detectFileType(d.original_filename || d.title);
@@ -145,10 +162,12 @@ export function buildPromptContext(userMessage: string, documents: DocumentRecor
   const system = `Tu es un assistant archiviste IA local expert pour le tri et la préparation de dossiers administratifs (via outils MCP locaux).
 Ta mission est de répondre à la demande de l'utilisateur de manière synthétique et professionnelle en français.
 
+Nous sommes le ${formatLocalDate(now)}. Utilise cette date comme "aujourd'hui" pour toute expression temporelle relative dans la demande de l'utilisateur (ex: "les 3 derniers mois", "cette année", "le mois dernier") — calcule la période exacte à partir de cette date avant de comparer aux dates des documents fournis.
+
 Consignes strictes:
 1. Analyse les documents fournis ci-dessous (triés par pertinence et par date via les outils MCP).
 2. Sélectionne et liste EXACTEMENT les documents nécessaires qui répondent à la demande.
-3. Pour chaque document cité dans ta réponse, mentionne obligatoirement son identifiant sous la forme [Doc #ID: Titre] (exemple: [Doc #1810: Bulletin de Salaire - Décembre 2024]).
+3. Pour CHAQUE document listé ci-dessous qui fait partie de ta réponse, mentionne obligatoirement son identifiant sous la forme [Doc #ID: Titre] (exemple: [Doc #1810: Bulletin de Salaire - Décembre 2024]) — n'omets aucune citation, un document non cité sera considéré comme non inclus dans la réponse.
 4. Si des pièces obligatoires pour le dossier sont absentes de l'archive, indique-les sous "⚠️ Documents manquants suggérés".
 5. Réponds directement en texte clair Markdown sans balises JSON raw.`;
 
@@ -160,7 +179,7 @@ Consignes strictes:
 /**
  * Main chat handler: processes user query with MCP tool document retrieval & Qwen 3.5 completion.
  */
-export async function processChatQuery(userMessage: string, history: ChatMessage[] = []): Promise<ChatResponse> {
+export async function processChatQuery(userMessage: string, history: ChatMessage[] = [], now: Date = new Date()): Promise<ChatResponse> {
   logger.info('CHAT_ASSISTANT', `Processing web chat query via MCP tools: "${userMessage}"`);
 
   // Execute prepare_dossier MCP tool to retrieve documents
@@ -182,7 +201,7 @@ export async function processChatQuery(userMessage: string, history: ChatMessage
     matchedDocs = await searchRelevantDocuments(userMessage);
   }
 
-  const { system, userPrompt } = buildPromptContext(userMessage, matchedDocs);
+  const { system, userPrompt } = buildPromptContext(userMessage, matchedDocs, now);
 
   try {
     const aiResult = await requestTextChatCompletion(system, userPrompt);
@@ -196,10 +215,22 @@ export async function processChatQuery(userMessage: string, history: ChatMessage
       if (!isNaN(id)) citedDocIds.add(id);
     }
 
-    // Filter matchedDocuments to ONLY return documents cited by AI, or fallback to top candidates
+    // Filter matchedDocuments to ONLY return documents cited by AI, or fallback to top candidates.
+    // Trust the AI's narrower citation-based selection only when it cites at least half of what
+    // it was actually given (or, when the user asked for an explicit count, at least that many) —
+    // a small citation count against a much larger fuzzy-matched candidate set is deliberate
+    // curation, but under-citing an already-precise, small retrieval (e.g. a "3 last pay slips"
+    // query) is far more likely the model simply forgot to tag one in its prose than a deliberate
+    // exclusion. Silently dropping correctly-retrieved documents in that case was the root cause
+    // of a user-reported bug where a chat answer showed fewer documents than were actually found.
     let finalDocs = matchedDocs;
-    if (citedDocIds.size > 0) {
-      finalDocs = matchedDocs.filter(d => citedDocIds.has(d.id));
+    if (citedDocIds.size > 0 && matchedDocs.length > 0) {
+      const cited = matchedDocs.filter(d => citedDocIds.has(d.id));
+      const requestedCount = extractRequestedCount(userMessage);
+      const minExpected = requestedCount
+        ? Math.min(requestedCount, matchedDocs.length)
+        : Math.ceil(matchedDocs.length / 2);
+      finalDocs = cited.length >= minExpected ? cited : matchedDocs;
     }
 
     const formattedDocs = finalDocs.map(d => ({

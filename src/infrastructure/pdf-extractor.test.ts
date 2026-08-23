@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import { createCanvas } from '@napi-rs/canvas';
 import { extractPDFContent, safePdfParse, parseWithPdfjs, ocrPdfImages, encodeToBMP } from './pdf-extractor.js';
@@ -45,6 +45,43 @@ async function buildImageOnlyPdf(word: string): Promise<Buffer> {
   const img = await pdfDoc.embedPng(pngBytes);
   page.drawImage(img, { x: 0, y: 0, width: 500, height: 260 });
   return Buffer.from(await pdfDoc.save());
+}
+
+// A page with no text objects AND nothing legible drawn on it either — used to
+// make Step 2 (pdfjs-dist text extraction) return '' (no text layer at all,
+// same as buildImageOnlyPdf) AND Step 3 (Tesseract OCR) also fail to recognize
+// anything usable (<10 chars), so both corruption-triggered fallbacks are
+// exhausted.
+async function buildBlankImagePdf(): Promise<Buffer> {
+  const canvas = createCanvas(200, 120);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, 200, 120);
+  const pngBytes = canvas.toBuffer('image/png');
+
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([200, 120]);
+  const img = await pdfDoc.embedPng(pngBytes);
+  page.drawImage(img, { x: 0, y: 0, width: 200, height: 120 });
+  return Buffer.from(await pdfDoc.save());
+}
+
+// Real excerpt from doc id 2545 in pdf_triage.db (the confirmed bad-ToUnicode-CMap
+// case that motivated this fix), reproduced synthetically here with the same
+// calibrated shape as src/domain/pdf-text.test.ts's real-data fixture: short
+// filler words interspersed with mid-word-capitalized tokens ("cAn", "roAN",
+// "khAu", ...) at a density (12 matches / 100 words in one window) that clears
+// isLikelyCorruptedText's threshold. Used to drive Step 1 (pdf-parse) output
+// directly via mocking, since reproducing a genuinely broken embedded-font
+// ToUnicode CMap through pdf-lib is impractical for a unit-test fixture.
+function buildGarbledCorruptedText(): string {
+  const FILLER_WORDS = ['tai', 'lieu', 'ngan', 'hang', 'von', 'gia', 'tri', 'chi', 'phi', 'doanh', 'thu', 'loi', 'nhuan', 'tien', 'mat', 'thue', 'suat', 'ky', 'han', 'so'];
+  const CORRUPTED_TOKENS = ['cAn', 'roAN', 'khAu', 'hEu', 'liY', 'sAn', 'trA', 'tAi', 'vaY', 'dAu', 'ngiY', 'cAo'];
+  const words: string[] = [];
+  for (let i = 0; i < 100; i++) {
+    words.push(i % 8 === 0 ? CORRUPTED_TOKENS[(i / 8) % CORRUPTED_TOKENS.length] : FILLER_WORDS[i % FILLER_WORDS.length]);
+  }
+  return words.join(' ');
 }
 
 // Large enough that the raw RGB buffer (width*height*3 bytes) trips tesseract.js's Node
@@ -129,6 +166,83 @@ describe('extractPDFContent — 3-tier fallback pipeline', () => {
       // that execution reaches this point at all, having resolved instead of the process dying.
       const result = await extractPDFContent(filePath);
       expect(typeof result.raw_text).toBe('string');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  }, 60_000);
+});
+
+describe('extractPDFContent — corrupted-but-nonempty digital text (bad font ToUnicode CMap)', () => {
+  // These tests drive Step 1 (pdf-parse) output directly via vi.doMock, since
+  // reproducing a genuinely broken embedded-font ToUnicode CMap (the real
+  // doc-2545 bug) through pdf-lib is impractical for a unit-test fixture. Each
+  // test dynamically re-imports a fresh pdf-extractor module instance so the
+  // mock does not leak into the other (unmocked) tests in this file.
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.doUnmock('pdf-parse');
+    vi.resetModules();
+  });
+
+  it('falls through to OCR and recovers clean text when pdf-parse output is likely corrupted and pdfjs-dist has no text layer to offer', async () => {
+    const garbledText = buildGarbledCorruptedText();
+    vi.doMock('pdf-parse', () => ({
+      // safePdfParse() first checks `(pdfPkg as any).PDFParse` before falling
+      // back to a callable default export; Vitest's mock module proxy throws
+      // on access to an export the factory didn't declare, so PDFParse must
+      // be explicitly present (as undefined) to route through the intended
+      // `handler = pdfPkg.default` fallback path.
+      PDFParse: undefined,
+      default: async () => ({ text: garbledText, numpages: 1, info: {} })
+    }));
+    const { extractPDFContent: extractPDFContentFresh } = await import('./pdf-extractor.js');
+
+    // Image-only page: pdfjs-dist (Step 2) finds no text objects at all (empty,
+    // not corrupted), so the chain must continue to Step 3 OCR, which should
+    // recognize the clearly-rendered word. Reuses the exact phrase already
+    // proven reliable for this Tesseract/canvas environment in the sibling
+    // "falls through to offline Tesseract OCR" test above.
+    const bytes = await buildImageOnlyPdf('HELLO WORLD');
+    const filePath = writeTempPdf(bytes, 'corrupted-then-ocr.pdf');
+    try {
+      const result = await extractPDFContentFresh(filePath);
+      expect(result.raw_text.startsWith('[OCR Extracted Text]')).toBe(true);
+      expect(result.raw_text.toUpperCase()).toContain('HELLO');
+      // The garbled Step 1 text must NOT have been kept once OCR recovered something usable.
+      expect(result.raw_text).not.toContain('roAN');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  }, 60_000);
+
+  it('keeps the original corrupted-but-nonempty text when neither pdfjs-dist nor OCR can recover anything usable', async () => {
+    const garbledText = buildGarbledCorruptedText();
+    vi.doMock('pdf-parse', () => ({
+      // safePdfParse() first checks `(pdfPkg as any).PDFParse` before falling
+      // back to a callable default export; Vitest's mock module proxy throws
+      // on access to an export the factory didn't declare, so PDFParse must
+      // be explicitly present (as undefined) to route through the intended
+      // `handler = pdfPkg.default` fallback path.
+      PDFParse: undefined,
+      default: async () => ({ text: garbledText, numpages: 1, info: {} })
+    }));
+    const { extractPDFContent: extractPDFContentFresh } = await import('./pdf-extractor.js');
+
+    // Blank page: pdfjs-dist (Step 2) finds nothing, and OCR (Step 3) has
+    // nothing legible to recognize either — both fallbacks come up empty.
+    const bytes = await buildBlankImagePdf();
+    const filePath = writeTempPdf(bytes, 'corrupted-unrecoverable.pdf');
+    try {
+      const result = await extractPDFContentFresh(filePath);
+      // Golden Rule 3 ("< 10 clean chars -> block") must NOT have been
+      // triggered here: real (if garbled) content exists and must be kept,
+      // not discarded, when recovery fails.
+      expect(result.raw_text.length).toBeGreaterThanOrEqual(10);
+      expect(result.raw_text.startsWith('[OCR Extracted Text]')).toBe(false);
+      expect(result.raw_text).toContain('roAN');
+      expect(result.raw_text).toBe(garbledText);
     } finally {
       fs.unlinkSync(filePath);
     }

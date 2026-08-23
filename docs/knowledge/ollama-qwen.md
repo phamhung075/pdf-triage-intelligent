@@ -48,6 +48,7 @@ If any of these fail → fall back to `ruleBasedClassify()` and construct a `Doc
 After parse, the code corrects:
 - If `categorie` is `personal`/`other` or `subcategorie` is `general`, re-run the rule-based classifier and merge in.
 - If AI returned `correspondence` but the filename smells like tax, prefer the rule-based `administrative`.
+- Defense-in-depth date guard: if `date` is in the future relative to today and looks like an OCR two-digit-year misread that contradicts the year stated in `titre` (e.g. "30/11/26" misread from "30/11/25"), `reconcileDocumentDate()` (`src/domain/classification.ts`) corrects `date` back to the titre's year and logs a warning. This backstops the prompt-level guard below — the future-dated value would otherwise sort a document as newer than it is anywhere `date` drives ordering (e.g. `ai-chat-assistant.ts`'s "N last pay slips" queries).
 
 ## Dynamic taxonomy update
 
@@ -59,6 +60,8 @@ Before returning `validated`:
 ## The system prompt
 
 Encodes the entire [classification-flow](../workflows/classification-flow.md). Any change to the priority order must be mirrored there and in `ruleBasedClassify()` — the two must stay logically aligned.
+
+`buildClassificationPrompt()` (`src/domain/prompt.ts`) also takes a `now: Date` (default `new Date()`) and injects `{{CURRENT_DATE}}` — formatted by `formatLocalDate()` using local calendar fields, not `toISOString()`, to avoid a UTC-shift date-off-by-one for timezones ahead of UTC — into `prompts/formatting_rules.md`. This grounds the model in today's date so it can reject an ambiguous two-digit-year date that would land in the future or contradict the document's stated period, and reminds it not to conflate the document's own issuance date (`date`) with a validity/expiration date (`expiry_date`).
 
 ## `previousError` retry
 
