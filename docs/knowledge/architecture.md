@@ -11,10 +11,16 @@ src/
 │   ├── prompt.ts                         # Qwen system/user prompt building
 │   ├── classification-resolution.ts      # refineClassification, resolveCategory, resolveSubcategory
 │   ├── taxonomy.ts                       # isYearString, isForbiddenSubcategory, computeCanonicalPath, isPathInsideDir
-│   └── pdf-text.ts                       # cleanExtractedText
+│   ├── pdf-text.ts                       # cleanExtractedText
+│   ├── pdf-page-fit.ts                   # fitImageToA4 — pure page geometry for photo→PDF pages
+│   ├── flood-crop.ts                     # barrier-map document-boundary detector + crop admissibility (pure)
+│   ├── image-adjust.ts                   # auto-levels / sharpen math
+│   └── exif-orientation.ts               # EXIF Orientation tag parsing
 ├── application/
 │   ├── classify-document.ts              # classifyPDFText (orchestrator)
 │   ├── triage-scan.ts                    # runTriageScan
+│   ├── convert-image-document.ts         # convertImageToPdf — photo → archivable A4 PDF + its OCR text
+│   ├── image-to-pdf.ts                   # Vision Lab steps: runOrientStep/runCropStep/runEnhanceStep/runExtractStep
 │   ├── repair-registry.ts                # repairRegistry
 │   ├── relocalize-document.ts            # relocalizeFileIfNeeded, moveBackToRaws, reclassifyAndRelocalizeDocument
 │   ├── clear-registry.ts                 # clearRegistryAndMoveArchiveToRaws
@@ -96,8 +102,13 @@ restructuring).
 
 1. `infrastructure/http/web-server.ts` boots, static-serves `public/`, opens SSE endpoints, starts the 10 s auto-watcher.
 2. Auto-watcher calls `runTriageScan(broadcast)` (`application/triage-scan.ts`) when `__raws` has PDFs.
-3. `runTriageScan` walks `__raws`, for each PDF:
+3. `runTriageScan` walks `__raws`, for each PDF **or photo**:
+   - **Photos only** — `convertImageToPdf()` (`application/convert-image-document.ts`) runs the vision pipeline
+     (orient → crop → enhance → extract), writes an A4 PDF beside the photo, deletes the photo once that PDF is on disk,
+     and returns `{pdfPath, checksum, rawText}`. `originalPath` is re-pointed at the PDF, and extraction below is skipped
+     because the text is already in hand — otherwise the same page would be OCR'd twice.
    - `extractPDFContent()` (`infrastructure/pdf-extractor.ts`) → `{checksum, raw_text, numpages, info}`.
+     OCR is PaddleOCR-first (`infrastructure/paddleocr-client.ts` → local FastAPI service), Tesseract as availability fallback.
    - Dedup check via `getDocumentByChecksum(checksum)`.
    - `classifyPDFText()` (`application/classify-document.ts`) → validated `DocumentMetadata`.
    - `insertDocumentRecord()` → SQLite + FTS5.

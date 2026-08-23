@@ -10,12 +10,14 @@ An intelligent, privacy-first PDF classification, entity extraction, and automat
 
 ```mermaid
 flowchart TD
-    A[📥 Drop PDF into input_dir] --> B[⏱️ 10s Auto-Scan Watcher Detects File]
-    B --> C[📄 3-Tier Text Extraction & SHA256 Checksum]
+    A[📥 Drop PDF or photo into input_dir] --> B[⏱️ 10s Auto-Scan Watcher Detects File]
+    B -->|📷 Photo| P["🖼️ Vision Pipeline: orient → crop → enhance → OCR"]
+    P --> Q[📄 Archivable A4 PDF + extracted text]
+    B -->|📄 PDF| C[📄 3-Tier Text Extraction & SHA256 Checksum]
     C -->|Tier 1: Digital PDF| D[pdf-parse Stream]
     C -->|Tier 2: Corrupted XRef| E[pdfjs-dist Repair]
-    C -->|Tier 3: Scanned / Vector PDF| F["Canvas Render + Tesseract OCR"]
-    D & E & F --> G[🧠 Local Qwen 3.5 AI / Rule Classifier]
+    C -->|Tier 3: Scanned / Vector PDF| F["Canvas Render + PaddleOCR (Tesseract fallback)"]
+    D & E & F & Q --> G[🧠 Local Qwen 3.5 AI / Rule Classifier]
     G --> H[🔍 Grounding Verification Check]
     H -->|✅ Valid & Grounded Entity| I[💾 Auto-Register Subcategory in .categories.private.json]
     H -->|❌ Ungrounded or Generic| J[📁 Move to input_dir/.blocked_files]
@@ -26,12 +28,22 @@ flowchart TD
 ```
 
 ### 1. Automated Background Monitoring
-The backend runs a **10-second non-blocking auto-scan watcher** monitoring your `input_dir` (e.g. `./input` or `__raws`). Any new PDF dropped into the input folder is detected automatically.
+The backend runs a **10-second non-blocking auto-scan watcher** monitoring your `input_dir` (e.g. `./input` or `__raws`). Any new PDF **or photo** dropped into the input folder is detected automatically — phone photos of documents (`.jpg`, `.png`, `.webp`, `.bmp`, `.tiff`) are converted to PDFs before triage (see below).
 
 ### 2. 3-Tiered PDF Extraction & Fallback Pipeline
 - **Tier 1 — Standard PDF Parse**: Fast text stream extraction for native digital PDFs.
 - **Tier 2 — `pdfjs-dist` Stream Repair**: Automatically repairs corrupted cross-reference tables (`bad XRef entry`) from web portal downloads.
-- **Tier 3 — High-Fidelity Canvas Rasterization & Tesseract OCR**: Renders full PDF pages onto an in-memory 2D Canvas via `@napi-rs/canvas` and executes offline **Tesseract.js OCR**, capturing vector path PDFs (e.g. Tax Notices & Government Statements), sliced image strips, scanned passports, and paper receipts without memory errors.
+- **Tier 3 — High-Fidelity Canvas Rasterization & OCR**: Renders full PDF pages onto an in-memory 2D Canvas via `@napi-rs/canvas` and runs offline OCR — **PaddleOCR** first (materially better on real scanned and photographed documents), falling back to **Tesseract.js** only when the local PaddleOCR service is unreachable. Captures vector path PDFs (e.g. Tax Notices & Government Statements), sliced image strips, scanned passports, and paper receipts without memory errors.
+
+### 2b. Photo → Archivable PDF (Vision Pipeline)
+A photographed document is not an archivable document, so photos are converted before they ever reach the classifier:
+
+1. **Orient** — corrects rotation from EXIF-normalized pixels, using PaddleOCR's document-orientation classifier with the vision model as backup.
+2. **Crop** — detects the page against its background and crops the desk away. If the document already fills the frame (scans, close-ups, re-runs), the crop is **vetoed** rather than cutting into the page.
+3. **Enhance** — auto-levels and sharpening, used **only** to help OCR read the page.
+4. **Extract** — OCR + markdown conversion.
+
+The archived PDF holds the **cropped, natural-toned** page (not the enhanced one, whose hard contrast can crush faint stamps and signatures) on a single A4 page. The original photo is deleted **only after** the PDF is confirmed on disk, and every stage degrades safely — a failed crop still yields an upright PDF, a failed OCR still archives the page.
 
 ### 3. Duplicate & Blocked File Relocation
 - **Duplicates**: Files matching existing database checksums are safely relocated to `input_dir/.duplicates_files/` with automatic collision handling (`filename_dup1.pdf`).
@@ -122,7 +134,8 @@ Navigate to **`http://localhost:3971`** in Google Chrome, Microsoft Edge, Firefo
 - 📄 **HTML5 Canvas Web PDF Reader**: Embedded Mozilla PDF.js viewer page (`viewer.html`) for instant, high-definition inline page viewing without download dialogs.
 - 🌐 **Multi-Language Support (EN & FR)**: Full internationalization for English and French UI labels, category display names, and AI prompt outputs.
 - ✏️ **Intelligent Automatic Document Renaming**: Converts generic scanner dumps and temporary files (e.g. `QPtmp001.PDF`) into standardized, descriptive filenames (e.g. `2023-07-31_AcmeCorp_Pay_Slip_July.pdf`).
-- 🖼️ **Full-Page Canvas Rasterization & Offline OCR**: Automatically extracts text from scanned photos, passports, sliced images, and vector path PDFs using `@napi-rs/canvas` and `Tesseract.js`.
+- 🖼️ **Full-Page Canvas Rasterization & Offline OCR**: Automatically extracts text from scanned photos, passports, sliced images, and vector path PDFs using `@napi-rs/canvas` with **PaddleOCR** (offline, `Tesseract.js` fallback).
+- 📷 **Phone Photos Become PDFs**: Drop a photo of a document and it is auto-oriented, cropped to the page, OCR'd and filed as a clean single-page A4 PDF alongside your other documents.
 - 🏢 **Multi-Tenant & Generic Architecture**: Built for Individuals, Families, Freelancers, SMBs, and Enterprise Corporations. Zero hardcoded personal names.
 - 🧾 **Dual Invoice Triage**: Automatically distinguishes between **Client Sales Invoices** (`factures_clients`) and **Supplier Purchase Invoices** (`invoices`).
 - 💳 **Payment Status Tracking**: Automatically extracts payment signals and tags invoices as `PAID` or `UNPAID / PENDING`.
@@ -157,7 +170,8 @@ If you do want to expose the dashboard beyond your own machine (e.g. to reach it
 - **AI / LLM**: Ollama (`qwen3.5:9b`), Local Embeddings (`nomic-embed-text`)
 - **Agent Integration**: Model Context Protocol server (`@modelcontextprotocol/sdk`)
 - **Database**: SQLite3 with WAL Mode & FTS5 Full-Text Search
-- **PDF Extraction**: `pdf-parse`, `pdfjs-dist`, `@napi-rs/canvas`, `Tesseract.js` (Offline OCR)
+- **PDF Extraction**: `pdf-parse`, `pdfjs-dist`, `@napi-rs/canvas`, **PaddleOCR** (offline, local FastAPI service) with `Tesseract.js` fallback
+- **Photo → PDF**: `pdf-lib` + `@napi-rs/canvas` (orientation, crop, enhancement)
 - **Desktop Shell**: Electron, Electron-Builder
 - **Testing & Build**: Vitest, ESBuild, TypeScript Compiler (`tsc`)
 
@@ -167,7 +181,7 @@ If you do want to expose the dashboard beyond your own machine (e.g. to reach it
 
 ### 💻 System Requirements
 
-Smart PDF Triage runs 100% locally on your computer using Node.js, Electron, SQLite, `@napi-rs/canvas`, `Tesseract.js` (offline OCR), and local AI LLMs via **Ollama**.
+Smart PDF Triage runs 100% locally on your computer using Node.js, Electron, SQLite, `@napi-rs/canvas`, **PaddleOCR** and `Tesseract.js` (both offline OCR), and local AI LLMs via **Ollama**.
 
 #### 🔹 Minimum System Requirements (CPU Mode)
 | Component | Requirement |

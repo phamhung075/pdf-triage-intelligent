@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Vision Lab — Image to PDF Diagnostic</title>
+<style>
+  body { font-family: sans-serif; padding: 2rem; background: #1e293b; color: #f8fafc; max-width: 900px; margin: 0 auto; }
+  h1 { margin-bottom: 0.25rem; }
+  p.sub { color: #94a3b8; margin-top: 0; }
+  input[type="file"] { margin: 1rem 0; }
+  button { padding: 0.7rem 1.4rem; font-size: 1rem; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 6px; }
+  button:disabled { background: #475569; cursor: not-allowed; }
+  #status { margin: 1rem 0; color: #4ade80; white-space: pre-wrap; font-family: monospace; }
+  #status.error { color: #f87171; }
+  .step { background: #0f172a; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+  .step h2 { margin-top: 0; font-size: 1.1rem; }
+  .step img { max-width: 100%; border-radius: 4px; border: 1px solid #334155; }
+  .step pre { background: #020617; padding: 0.75rem; border-radius: 4px; overflow-x: auto; font-size: 0.85rem; color: #94a3b8; }
+  .step .error { color: #f87171; font-weight: bold; }
+  .step .markdown-preview { background: #1e293b; padding: 1rem; border-radius: 4px; line-height: 1.6; }
+  .step .markdown-preview :first-child { margin-top: 0; }
+  .step .markdown-preview :last-child { margin-bottom: 0; }
+  .step .candidates { margin: 0.75rem 0; display: flex; gap: 1rem; flex-wrap: wrap; }
+  .step .candidates label { font-size: 0.9rem; cursor: pointer; }
+  .step .candidate-error { color: #f87171; font-size: 0.85rem; }
+#diagBox { margin: 8px 0; font-size: 12px; }
+#diag { margin: 4px 0 0; padding: 6px 8px; background: #10161f; border: 1px solid #2a3646;
+        max-height: 180px; overflow: auto; white-space: pre-wrap; font-size: 11px; line-height: 1.45; }
+</style>
+</head>
+<body>
+<h1>Vision Lab — Image to PDF Diagnostic</h1>
+<p class="sub">Upload one phone photo of a document, step through the pipeline, inspect every step and compare candidates.</p>
+
+<input type="file" id="fileInput" accept="image/*">
+<br>
+<button id="nextBtn" disabled>Next</button>
+<button id="runAllBtn" disabled>Run all steps</button>
+
+<div id="status"></div>
+<details id="diagBox">
+  <summary>Diagnostics</summary>
+  <pre id="diag"></pre>
+</details>
+<div id="steps"></div>
+
+<script src="js/vendor/marked.js"></script>
+<script>
+const fileInput = document.getElementById('fileInput');
+const nextBtn = document.getElementById('nextBtn');
+const runAllBtn = document.getElementById('runAllBtn');
+const diagEl = document.getElementById('diag');
+const statusEl = document.getElementById('status');
+const stepsEl = document.getElementById('steps');
+
+let currentStep = 0;         // last step number successfully run (0 = not started)
+let inputForNextStep = null; // base64 to send as inputImageBase64 on the next click
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  statusEl.textContent = '';
+  statusEl.classList.remove('error');
+  stepsEl.innerHTML = '';
+  currentStep = 0;
+  inputForNextStep = null;
+  nextBtn.disabled = true;
+  runAllBtn.disabled = true;
+  diagEl.textContent = '';
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = reader.result;
+    const commaIdx = result.indexOf(',');
+    const base64 = result.substring(commaIdx + 1);
+    inputForNextStep = base64;
+    renderOriginalStep(base64);
+    nextBtn.disabled = false;
+    runAllBtn.disabled = false;
+    diag(`file loaded (${(base64.length / 1048576).toFixed(1)} MB), pipeline reset to step 0`);
+  };
+  reader.readAsDataURL(file);
+});
+
+function renderOriginalStep(base64) {
+  const div = document.createElement('div');
+  div.className = 'step';
+  const title = document.createElement('h2');
+  title.textContent = 'Step 0: original';
+  div.appendChild(title);
+  const img = document.createElement('img');
+  img.src = `data:image/png;base64,${base64}`;
+  div.appendChild(img);
+  stepsEl.appendChild(div);
+}
+
+function renderCandidateInto(container, candidate) {
+  container.innerHTML = '';
+  if (candidate.error) {
+    const errEl = document.createElement('div');
+    errEl.className = 'candidate-error';
+    errEl.textContent = `Error: ${candidate.error}`;
+    container.appendChild(errEl);
+    return;
+  }
+  if (typeof candidate.imageBase64 === 'string') {
+    const img = document.createElement('img');
+    img.src = `data:image/png;base64,${candidate.imageBase64}`;
+    container.appendChild(img);
+    return;
+  }
+  if (typeof candidate.text === 'string') {
+    if (candidate.label === 'markdown') {
+      const mdDiv = document.createElement('div');
+      mdDiv.className = 'markdown-preview';
+      mdDiv.innerHTML = window.marked.parse(candidate.text);
+      container.appendChild(mdDiv);
+    } else {
+      const pre = document.createElement('pre');
+      pre.textContent = candidate.text;
+      container.appendChild(pre);
+    }
+  }
+}
+
+function renderStepResult(result) {
+  const div = document.createElement('div');
+  div.className = 'step';
+
+  const title = document.createElement('h2');
+  const durationText = typeof result.durationMs === 'number' ? ` — ${result.durationMs}ms` : '';
+  title.textContent = `Step ${result.step}: ${result.label}${durationText}`;
+  div.appendChild(title);
+
+  if (result.error) {
+    const errEl = document.createElement('div');
+    errEl.className = 'error';
+    errEl.textContent = `Error: ${result.error}`;
+    div.appendChild(errEl);
+    stepsEl.appendChild(div);
+    return;
+  }
+
+  const contentContainer = document.createElement('div');
+
+  if (result.candidates && result.candidates.length > 0) {
+    const candidatesEl = document.createElement('div');
+    candidatesEl.className = 'candidates';
+    const groupName = `candidates-step-${result.step}`;
+    let defaultCandidate = null;
+    result.candidates.forEach((candidate) => {
+      const label = document.createElement('label');
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = groupName;
+      radio.checked = candidate.chosen;
+      radio.addEventListener('change', () => renderCandidateInto(contentContainer, candidate));
+      label.appendChild(radio);
+      label.append(` ${candidate.label}${candidate.chosen ? ' (chosen)' : ''}`);
+      candidatesEl.appendChild(label);
+      if (candidate.chosen) defaultCandidate = candidate;
+    });
+    div.appendChild(candidatesEl);
+    div.appendChild(contentContainer);
+    if (defaultCandidate) renderCandidateInto(contentContainer, defaultCandidate);
+  } else {
+    div.appendChild(contentContainer);
+    if (result.imageBase64) {
+      const img = document.createElement('img');
+      img.src = `data:image/png;base64,${result.imageBase64}`;
+      contentContainer.appendChild(img);
+    } else if (result.markdown) {
+      const mdDiv = document.createElement('div');
+      mdDiv.className = 'markdown-preview';
+      mdDiv.innerHTML = window.marked.parse(result.markdown);
+      contentContainer.appendChild(mdDiv);
+    }
+  }
+
+  if (result.modelRaw) {
+    const pre = document.createElement('pre');
+    pre.textContent = `Model response:\n${result.modelRaw}`;
+    div.appendChild(pre);
+  }
+
+  if (result.meta) {
+    const pre = document.createElement('pre');
+    pre.textContent = `Meta: ${JSON.stringify(result.meta, null, 2)}`;
+    div.appendChild(pre);
+  }
+
+  stepsEl.appendChild(div);
+}
+
+// One step-runner shared by both buttons. Returns true only when the pipeline actually advanced,
+// so "Run all steps" can stop on the first step that does not.
+//
+// The ordering here is load-bearing: pipeline state (currentStep / inputForNextStep) is committed
+// as soon as the server's result is in hand, BEFORE any DOM work. Rendering is presentation only
+// and gets its own error boundary. Previously rendering ran first, so an exception in it skipped
+// the state update and landed in the catch — which re-enabled the button — and the next click
+// re-ran the SAME step forever, filling the server log with successful step-1 calls.
+async function runOneStep() {
+  if (currentStep >= 4 || inputForNextStep === null) {
+    diag(`refused: currentStep=${currentStep}, hasInput=${inputForNextStep !== null}`);
+    return false;
+  }
+  const stepToRun = currentStep + 1;
+  setBusy(true);
+  statusEl.classList.remove('error');
+  statusEl.textContent = `Running step ${stepToRun}...`;
+  diag(`step ${stepToRun}: requesting (${(inputForNextStep.length / 1048576).toFixed(1)} MB in)`);
+
+  try {
+    const res = await fetch('/api/vision/diagnose-step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ step: stepToRun, inputImageBase64: inputForNextStep }),
+    });
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    if (!res.ok) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    const stepFailed = Boolean(data.result.error);
+    currentStep = stepToRun;
+    if (!stepFailed && typeof data.result.imageBase64 === 'string' && data.result.imageBase64) {
+      inputForNextStep = data.result.imageBase64;
+    }
+    diag(`step ${stepToRun}: committed (currentStep=${currentStep}${stepFailed ? ', SERVER ERROR: ' + data.result.error : ''})`);
+
+    try {
+      renderStepResult(data.result);
+    } catch (renderErr) {
+      diag(`step ${stepToRun}: RENDER FAILED — ${renderErr.message}`);
+      statusEl.classList.add('error');
+      statusEl.textContent = `Step ${stepToRun} ran, but could not be displayed: ${renderErr.message}`;
+      setBusy(false);
+      return !stepFailed;
+    }
+
+    if (stepFailed) {
+      statusEl.textContent = `Step ${stepToRun} failed — see panel above.`;
+      setBusy(false);
+      nextBtn.disabled = true;
+      runAllBtn.disabled = true;
+      return false;
+    }
+
+    statusEl.textContent = currentStep < 4 ? `Step ${stepToRun} done.` : 'Pipeline complete.';
+    setBusy(false);
+    return true;
+  } catch (err) {
+    // The step did NOT complete (network / HTTP / parse), so state is deliberately left untouched
+    // and this same step can be retried.
+    diag(`step ${stepToRun}: DID NOT COMPLETE — ${err.message}`);
+    statusEl.classList.add('error');
+    statusEl.textContent = `Error on step ${stepToRun}: ${err.message}`;
+    setBusy(false);
+    return false;
+  }
+}
+
+// Mirrors every pipeline transition to an on-page panel as well as the console, so a failure can
+// be read off the page itself without opening DevTools.
+function diag(line) {
+  const t = new Date().toTimeString().slice(0, 8);
+  diagEl.textContent += `[${t}] ${line}
+`;
+  diagEl.scrollTop = diagEl.scrollHeight;
+  console.log('[VisionLab]', line);
+}
+
+// Both buttons drive the same pipeline, so they must be disabled and restored together — otherwise
+// a second click can start a step while one is already in flight.
+function setBusy(busy) {
+  if (busy) {
+    nextBtn.disabled = true;
+    runAllBtn.disabled = true;
+    return;
+  }
+  const done = currentStep >= 4;
+  nextBtn.disabled = done;
+  runAllBtn.disabled = done;
+}
+
+nextBtn.addEventListener('click', () => { runOneStep(); });
+
+runAllBtn.addEventListener('click', async () => {
+  diag(`run-all: starting from step ${currentStep + 1}`);
+  while (currentStep < 4) {
+    const advanced = await runOneStep();
+    if (!advanced) {
+      diag('run-all: stopped early');
+      return;
+    }
+  }
+  diag('run-all: pipeline complete');
+});
+</script>
+</body>
+</html>

@@ -93,6 +93,8 @@ pdf_triage/
 │       └── superpowers/       # full obra/superpowers repo, cloned
 ├── src/
 │   ├── index.ts                       # composition root: dispatch default web, `scan`, `mcp`
+│   ├── vision-lab-server.ts           # Vision Lab standalone Express app: POST /api/vision/diagnose-image, own port
+│   ├── vision-lab-main.ts             # Vision Lab entrypoint: calls startVisionLabServer() — `npm run vision:dev`
 │   ├── domain/                        # pure logic, zero I/O
 │   │   ├── document.schema.ts         # Zod schemas
 │   │   ├── classification.ts          # ruleBasedClassify, cleanAndParseJSON, entity matching, normalizeSlug
@@ -100,6 +102,8 @@ pdf_triage/
 │   │   ├── classification-resolution.ts  # refine/resolve category & subcategory, entity-priority override
 │   │   ├── taxonomy.ts                # isForbiddenSubcategory, computeCanonicalPath
 │   │   ├── pdf-text.ts                # cleanExtractedText
+│   │   ├── pdf-page-fit.ts            # fitImageToA4 — pure page geometry for photo-to-PDF pages
+│   │   ├── image-adjust.ts            # pure auto-levels/sharpen math for the Vision Lab pipeline (ported from pdf-awesome)
 │   │   ├── model/                     # ⚠️ NOT WIRED IN — orphaned DDD entities from an incomplete refactor,
 │   │   │                              #   never imported by index.ts/web-server.ts. Dead code, not the real architecture.
 │   │   └── repositories/              # ⚠️ NOT WIRED IN — same orphaned refactor (interface definitions only)
@@ -107,6 +111,8 @@ pdf_triage/
 │   │   ├── classify-document.ts       # classifyPDFText orchestrator (Step A entity + Step C markdown + Step D classify)
 │   │   ├── triage-scan.ts             # runTriageScan — the real, live-wired scan pipeline
 │   │   ├── ai-chat-assistant.ts       # local chat assistant grounded in the document registry (via MCP prepare_dossier)
+│   │   ├── image-to-pdf.ts            # Vision Lab step functions: runOrientStep/runCropStep/runEnhanceStep/runExtractStep
+│   │   ├── convert-image-document.ts  # convertImageToPdf — photo in __raws -> archivable A4 PDF + its OCR text (used by triage-scan)
 │   │   ├── repair-registry.ts
 │   │   ├── relocalize-document.ts
 │   │   ├── clear-registry.ts
@@ -120,6 +126,9 @@ pdf_triage/
 │       ├── manual-decisions-store.ts  # manual_decisions.json read/write (user feedback log, gitignored)
 │       ├── zip-builder.ts             # pure-TS ZIP archive builder (no native deps) — PDF package export + bulk Markdown export
 │       ├── ollama-client.ts
+│       ├── vision-client.ts           # detectOrientation/detectCropBox — Ollama calls against CONFIG.OLLAMA_VISION_MODEL
+│       ├── paddleocr-client.ts        # paddleOcrRecognize/paddleOcrDetectOrientation — HTTP client for paddleocr-server/, auto-spawns it if unreachable
+│       ├── image-processor.ts         # @napi-rs/canvas ops: rotateImage, cropImage, applyBrightnessContrast, applySharpen
 │       ├── pdf-extractor.ts
 │       ├── pdf-scanner.ts
 │       ├── pid-lock.ts
@@ -131,6 +140,8 @@ pdf_triage/
 │       ├── di/container.ts            # ⚠️ NOT WIRED IN — orphaned DI container, only imported by the orphaned DocumentController
 │       └── mcp/mcp-server.ts
 ├── public/                    # UI — public/ts/ (source) compiled to public/js/ (served), public/scss/ (source) compiled to public/style.css (served), public/js/vendor/ (marked.js, vendored not CDN)
+│   └── test-image-to-pdf.html # standalone Vision Lab diagnostic page (served by vision-lab-server.ts, not the main app)
+├── paddleocr-server/           # standalone Python/FastAPI OCR service (PaddleOCR) — separate process, see paddleocr-server/README.md
 ├── social/                    # gitignored — LinkedIn/marketing drafts, not project source
 └── logs/triage_debug.log
 ```
@@ -140,6 +151,7 @@ pdf_triage/
 - `npm run dev` / `npm start` — dev server (web + SSE + 10s auto-watcher). **User runs this, not Claude.**
 - `npm run scan` — one-shot triage scan.
 - `npm run mcp` — MCP stdio server.
+- `npm run vision:dev` — standalone Vision Lab diagnostic server (port `3179`), run independently of `npm run dev`.
 - `npm run build` — `build:css` + `tsc` (backend) + `tsc -p tsconfig.frontend.json` (frontend).
 - `npm run build:css` — compile `public/scss/style.scss` → `public/style.css`.
 - `npm run watch:css` — `sass --watch` for local SCSS development.

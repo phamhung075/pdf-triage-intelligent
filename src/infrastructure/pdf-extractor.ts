@@ -7,6 +7,7 @@ import { createCanvas } from '@napi-rs/canvas';
 import { createWorker } from 'tesseract.js';
 import { logger } from './logger.js';
 import { cleanExtractedText, detectMidWordCapitalizationCorruption, type CorruptionSignal } from '../domain/pdf-text.js';
+import { paddleOcrRecognize } from './paddleocr-client.js';
 
 export interface ExtractedPDF {
   checksum: string;
@@ -145,7 +146,49 @@ export async function getSharedTesseractWorker(): Promise<any> {
   return sharedTesseractWorkerPromise;
 }
 
-// Fallback 2: High-fidelity Canvas Page Rendering + Tesseract.js OCR (for scanned photos, sliced images, & vector path PDFs)
+// Tries PaddleOCR first (better accuracy on real scanned/photographed documents); falls back
+// to the local Tesseract worker only if the PaddleOCR service call fails — an availability
+// fallback, not a quality cascade (only one good text result is needed here).
+async function ocrPageBuffer(pngBuf: Buffer): Promise<string> {
+  try {
+    return await paddleOcrRecognize(pngBuf);
+  } catch (err: any) {
+    logger.debug('PDF_PARSER', `PaddleOCR unavailable, falling back to Tesseract: ${err.message}`);
+    const worker = await getSharedTesseractWorker();
+    const res = await worker.recognize(pngBuf);
+    return res?.data?.text || '';
+  }
+}
+
+// Runs PaddleOCR and Tesseract independently (via Promise.allSettled) rather than falling back
+// from one to the other — used only by the Vision Lab diagnostic pipeline, which needs both
+// engines' raw output to let a developer compare them side by side. Production OCR
+// (ocrPdfPagesWithCanvas, extractPDFContent's image branch) doesn't use this: it only needs one
+// good result, so it uses the fallback pattern above instead of paying for both engines on
+// every real document.
+export async function ocrImageBufferBothEngines(pngBuf: Buffer): Promise<{
+  paddleOcr: { text: string } | { error: string };
+  tesseract: { text: string } | { error: string };
+}> {
+  const [paddleResult, tesseractResult] = await Promise.allSettled([
+    paddleOcrRecognize(pngBuf),
+    (async () => {
+      const worker = await getSharedTesseractWorker();
+      const res = await worker.recognize(pngBuf);
+      return res?.data?.text || '';
+    })(),
+  ]);
+  const toOutcome = (result: PromiseSettledResult<string>): { text: string } | { error: string } =>
+    result.status === 'fulfilled'
+      ? { text: result.value }
+      : { error: result.reason instanceof Error ? result.reason.message : String(result.reason) };
+  return {
+    paddleOcr: toOutcome(paddleResult),
+    tesseract: toOutcome(tesseractResult),
+  };
+}
+
+// Fallback 2: High-fidelity Canvas Page Rendering + OCR (for scanned photos, sliced images, & vector path PDFs)
 export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promise<string> {
   try {
     const loadingTask = (pdfjsLib as any).getDocument({
@@ -157,8 +200,6 @@ export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promi
     const ocrTexts: string[] = [];
     const numPages = Math.min(doc.numPages, maxPages);
 
-    const worker = await getSharedTesseractWorker();
-
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       try {
         const page = await doc.getPage(pageNum);
@@ -168,9 +209,9 @@ export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promi
         await page.render({ canvasContext: context, viewport }).promise;
         const pngBuf = canvas.toBuffer('image/png');
 
-        const res = await worker.recognize(pngBuf);
-        if (res && res.data && res.data.text && res.data.text.trim().length > 10) {
-          ocrTexts.push(res.data.text.trim());
+        const text = await ocrPageBuffer(pngBuf);
+        if (text && text.trim().length > 10) {
+          ocrTexts.push(text.trim());
         }
       } catch (pageErr: any) {
         logger.debug('PDF_PARSER', `Canvas OCR failed on page ${pageNum}: ${pageErr.message}`);
@@ -332,15 +373,22 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
 
   // Image files (.png, .jpg, .jpeg, .webp, .bmp, .tiff)
   if (['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff'].includes(ext)) {
-    logger.info('PDF_PARSER', `Running Tesseract OCR for image file '${filename}'...`);
+    logger.info('PDF_PARSER', `Running OCR for image file '${filename}'...`);
     let ocrText = '';
     try {
-      const worker = await createWorker('fra+eng+vie');
-      const ret = await worker.recognize(fileBuffer);
-      ocrText = ret.data.text || '';
-      await worker.terminate();
-    } catch (ocrErr: any) {
-      logger.warn('PDF_PARSER', `Tesseract OCR failed for image ${filename}: ${ocrErr.message}`);
+      ocrText = await paddleOcrRecognize(fileBuffer);
+    } catch (paddleErr: any) {
+      logger.debug('PDF_PARSER', `PaddleOCR unavailable for image ${filename}, falling back to Tesseract: ${paddleErr.message}`);
+      try {
+        // Keeps the fra+eng+vie language set: the fallback must not be able to read FEWER
+        // languages than it did before PaddleOCR was put in front of it.
+        const worker = await createWorker('fra+eng+vie');
+        const ret = await worker.recognize(fileBuffer);
+        ocrText = ret.data.text || '';
+        await worker.terminate();
+      } catch (ocrErr: any) {
+        logger.warn('PDF_PARSER', `Tesseract OCR failed for image ${filename}: ${ocrErr.message}`);
+      }
     }
     const cleaned = cleanExtractedText(ocrText, filename);
     return {
@@ -415,14 +463,16 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
     }
   }
 
-  // Step 3: High-fidelity Canvas Page Rendering & Offline Tesseract OCR
+  // Step 3: High-fidelity Canvas page rendering, then OCR via ocrPageBuffer — PaddleOCR first,
+  // Tesseract only as an availability fallback (see ocrPageBuffer). Also runs when the digital
+  // text layer parsed but looks corrupted, not only when it is missing.
   if (!raw_text || raw_text.length < 10 || corruptionSignal) {
-    logger.info('PDF_PARSER', `No usable digital text layer for '${filename}'. Running full-page Canvas render & Tesseract OCR...`, { filename });
+    logger.info('PDF_PARSER', `No usable digital text layer for '${filename}'. Running full-page Canvas render & OCR (PaddleOCR, Tesseract fallback)...`, { filename });
     const ocrText = await ocrPdfPagesWithCanvas(fileBuffer);
     const cleanedOcr = cleanExtractedText(ocrText, filename);
     if (cleanedOcr && cleanedOcr.length >= 10) {
       const recoveredFromCorruption = !!corruptionSignal;
-      logger.info('PDF_PARSER', `Successfully extracted ${cleanedOcr.length} chars via Canvas Tesseract OCR!`, { filename });
+      logger.info('PDF_PARSER', `Successfully extracted ${cleanedOcr.length} chars via Canvas OCR`, { filename });
       raw_text = `[OCR Extracted Text]\n\n${cleanedOcr}`;
       corruptionSignal = null;
       if (recoveredFromCorruption) {

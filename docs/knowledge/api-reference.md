@@ -66,6 +66,16 @@ Exposed over stdio when `npm run mcp`. Same DB as the web server; do not run bot
 | `trigger_triage`           | `{}`                                     | Run a scan (no SSE — MCP is stdio) |
 | `list_categories`          | `{}`                                     | Return full `categories.json`    |
 
+## Vision Lab (standalone server, separate port)
+
+Source: `src/vision-lab-server.ts`. Not part of the main app — its own Express process, own port (`CONFIG.VISION_LAB_PORT`, default `3179`), started independently via `npm run vision:dev`. Serves the diagnostic page `public/test-image-to-pdf.html` and this one route.
+
+| Method | Route                        | Description                                                        |
+| ------ | ---------------------------- | -------------------------------------------------------------------|
+| POST   | `/api/vision/diagnose-image` | Body `{ imageBase64: string }` → `{ steps: PipelineStep[] }` or `{ error: string }` |
+
+Runs the 4-step diagnostic pipeline (`src/application/image-to-pdf.ts`, `runVisionPipeline`) against the local `minicpm-v4.6` Ollama vision model: `original` (input as-is) → `oriented` (rotation detected + applied) → `cropped` (document bounds detected + applied) → `enhanced` (auto brightness/contrast + sharpen). A step that throws records an `error` and the pipeline stops there.
+
 ## Error contract
 
 All routes return JSON. Errors: `4xx` with `{ error: string }`. Zod validation failures surface as 400 with the Zod message.

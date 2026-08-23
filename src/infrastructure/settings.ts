@@ -50,6 +50,19 @@ function sanitizeOllamaModel(model: unknown): string {
   return ALLOWED_OLLAMA_MODEL;
 }
 
+// Same lock-down pattern as ALLOWED_OLLAMA_MODEL above, but for the separate vision model
+// used by the Vision Lab image-to-PDF pipeline (orientation/crop detection) — a distinct
+// concern from text classification, so it gets its own pinned value rather than overloading
+// OLLAMA_MODEL / Golden Rule #14.
+const ALLOWED_OLLAMA_VISION_MODEL = 'minicpm-v4.6:latest';
+function sanitizeOllamaVisionModel(model: unknown): string {
+  if (model === ALLOWED_OLLAMA_VISION_MODEL) return ALLOWED_OLLAMA_VISION_MODEL;
+  if (model) {
+    console.warn(`Ignoring unsupported OLLAMA_VISION_MODEL env value '${model}' (only '${ALLOWED_OLLAMA_VISION_MODEL}' is supported by the Vision Lab pipeline) — falling back to '${ALLOWED_OLLAMA_VISION_MODEL}'.`);
+  }
+  return ALLOWED_OLLAMA_VISION_MODEL;
+}
+
 // Default set of owner/household name tokens (lowercase) that must never be accepted as
 // a subcategory — see PERSONAL_NAME_DENYLIST usage in domain/classification.ts. Fully configurable via settings.json.
 const DEFAULT_PERSONAL_NAME_DENYLIST: string[] = [];
@@ -82,6 +95,10 @@ export const CONFIG = {
   OLLAMA_HOST: customSettings.ollama_host || process.env.OLLAMA_HOST || 'http://127.0.0.1:11434',
   OLLAMA_MODEL: sanitizeOllamaModel(customSettings.ollama_model || process.env.OLLAMA_MODEL),
   OLLAMA_EMBED_MODEL: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
+  OLLAMA_VISION_MODEL: sanitizeOllamaVisionModel(process.env.OLLAMA_VISION_MODEL),
+  VISION_LAB_PORT: parseInt(process.env.VISION_LAB_PORT || '3179', 10),
+  PADDLEOCR_HOST: process.env.PADDLEOCR_HOST || 'http://127.0.0.1:8871',
+  PADDLEOCR_SPAWN_CMD: process.env.PADDLEOCR_SPAWN_CMD || 'python paddleocr-server/main.py',
 
   PORT: parseInt(process.env.PORT || '3971', 10),
   // Security default: bind to localhost only. This server has no authentication — binding to

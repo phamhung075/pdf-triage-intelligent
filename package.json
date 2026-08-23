@@ -11,6 +11,7 @@
     "dist:exe": "node scripts/build-exe.mjs",
     "scan": "tsx src/index.ts scan",
     "mcp": "tsx src/index.ts mcp",
+    "vision:dev": "tsx src/vision-lab-main.ts",
     "build": "npm run build:css && tsc && tsc -p tsconfig.frontend.json",
     "build:css": "sass public/scss/style.scss public/style.css --no-source-map",
     "watch:css": "sass --watch public/scss/style.scss:public/style.css",
