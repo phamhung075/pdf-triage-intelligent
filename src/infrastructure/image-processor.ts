@@ -26,6 +26,23 @@ export async function normalizeOrientation(imageBuffer: Buffer): Promise<Buffer>
   return canvas.toBuffer('image/png');
 }
 
+// Re-encodes any decodable image as JPEG at the given quality.
+//
+// Two reasons this exists. pdf-lib can only embed JPEG and PNG, so .webp/.bmp/.tiff uploads have to
+// be normalised before they can be placed on a page at all. And for a photograph JPEG is far
+// smaller than PNG — the pipeline's intermediate buffers are PNG (lossless, right for repeated
+// processing), but a full-resolution PNG page makes a multi-megabyte archive file for no benefit
+// once processing is finished.
+//
+// NOTE the quality units: @napi-rs/canvas takes JPEG quality as 0-100, NOT 0-1. Passing 0.92 here
+// silently encodes at quality 1 and produces unreadable garbage.
+export async function encodeJpeg(imageBuffer: Buffer, quality: number): Promise<Buffer> {
+  const img = await loadImage(imageBuffer);
+  const canvas = createCanvas(img.width, img.height);
+  canvas.getContext('2d').drawImage(img, 0, 0);
+  return canvas.toBuffer('image/jpeg', quality);
+}
+
 export async function rotateImage(imageBuffer: Buffer, degrees: 0 | 90 | 180 | 270): Promise<Buffer> {
   if (degrees === 0) return imageBuffer;
   const img = await loadImage(imageBuffer);

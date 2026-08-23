@@ -4,6 +4,7 @@ import { CONFIG, ensureDirectoriesExist, reloadConfigFromDisk } from '../infrast
 import { acquireScanLock } from './scan-lock.js';
 import { getPDFsRecursively } from '../infrastructure/pdf-scanner.js';
 import { extractPDFContent } from '../infrastructure/pdf-extractor.js';
+import { convertImageToPdf, isImageFile, type ConvertedImageDocument } from './convert-image-document.js';
 import {
   getDocumentByChecksum,
   insertDocumentRecord,
@@ -76,9 +77,13 @@ export async function runTriageScan(onProgress?: (event: TriageProgressEvent) =>
   const totalFiles = pdfFilePaths.length;
   const items: TriageResultItem[] = [];
 
-  for (const originalPath of pdfFilePaths) {
+  for (const incomingPath of pdfFilePaths) {
     scannedCount++;
-    const file = path.basename(originalPath);
+    // Both are re-pointed at the generated PDF when the incoming file is a photograph, so that
+    // everything downstream — blocking, dedup, the DB record, the archive move — operates on the
+    // artifact that is actually kept rather than on a source image that no longer exists.
+    let originalPath = incomingPath;
+    let file = path.basename(originalPath);
 
     try {
       const docLog = logger.forDocument(file);
@@ -115,7 +120,26 @@ export async function runTriageScan(onProgress?: (event: TriageProgressEvent) =>
         message: 'Extracting content layer from file...'
       });
 
-      const { checksum, raw_text } = await extractPDFContent(originalPath);
+      // A photograph is not an archivable document: run the vision pipeline over it, keep the
+      // resulting PDF in its place, and reuse the text that pipeline already read. Doing this here
+      // rather than inside extractPDFContent keeps extraction free of side effects, and means the
+      // fresh PDF is never handed straight back to the OCR path that just produced it.
+      let converted: ConvertedImageDocument | null = null;
+      if (isImageFile(originalPath)) {
+        try {
+          converted = await convertImageToPdf(originalPath);
+          originalPath = converted.pdfPath;
+          file = path.basename(originalPath);
+        } catch (convErr: any) {
+          // Conversion is an enhancement, not a gate. The photo is untouched on this path, so fall
+          // through and triage it exactly as before rather than blocking a readable document.
+          docLog.warn('TRIAGE', `Image-to-PDF conversion failed, triaging the photo as-is: ${convErr.message}`, { filename: file });
+        }
+      }
+
+      const { checksum, raw_text } = converted
+        ? { checksum: converted.checksum, raw_text: converted.rawText }
+        : await extractPDFContent(originalPath);
 
       const cleanText = (raw_text || '').trim();
       if (!cleanText || cleanText.length < 10) {

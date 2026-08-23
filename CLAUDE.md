@@ -102,6 +102,7 @@ pdf_triage/
 │   │   ├── classification-resolution.ts  # refine/resolve category & subcategory, entity-priority override
 │   │   ├── taxonomy.ts                # isForbiddenSubcategory, computeCanonicalPath
 │   │   ├── pdf-text.ts                # cleanExtractedText
+│   │   ├── pdf-page-fit.ts            # fitImageToA4 — pure page geometry for photo-to-PDF pages
 │   │   ├── image-adjust.ts            # pure auto-levels/sharpen math for the Vision Lab pipeline (ported from pdf-awesome)
 │   │   ├── model/                     # ⚠️ NOT WIRED IN — orphaned DDD entities from an incomplete refactor,
 │   │   │                              #   never imported by index.ts/web-server.ts. Dead code, not the real architecture.
@@ -110,7 +111,8 @@ pdf_triage/
 │   │   ├── classify-document.ts       # classifyPDFText orchestrator (Step A entity + Step C markdown + Step D classify)
 │   │   ├── triage-scan.ts             # runTriageScan — the real, live-wired scan pipeline
 │   │   ├── ai-chat-assistant.ts       # local chat assistant grounded in the document registry (via MCP prepare_dossier)
-│   │   ├── image-to-pdf.ts            # runVisionPipeline — Vision Lab orchestrator: original/oriented/cropped/enhanced steps
+│   │   ├── image-to-pdf.ts            # Vision Lab step functions: runOrientStep/runCropStep/runEnhanceStep/runExtractStep
+│   │   ├── convert-image-document.ts  # convertImageToPdf — photo in __raws -> archivable A4 PDF + its OCR text (used by triage-scan)
 │   │   ├── repair-registry.ts
 │   │   ├── relocalize-document.ts
 │   │   ├── clear-registry.ts
