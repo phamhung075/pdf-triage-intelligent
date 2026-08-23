@@ -54,7 +54,7 @@ The plugin also ships `.claude/plugins/superpowers/docs/` — Superpowers' own d
 ## Operating rules (short list — full list in Golden Rules)
 
 - **Think first**, read code before editing, no guessing paths or fields.
-- **Never** run `npm run dev` yourself — always instruct the user to run/restart it in their terminal.
+- **Never** run `npm run dev` yourself — always instruct the user to run/restart it in their terminal. (If a stale process from another directory/worktree still holds the port, the dev server now auto-takes-over — see Golden Rule #2 / [docs/knowledge/architecture.md](docs/knowledge/architecture.md#server-startup-and-port-takeover).)
 - **Never** scan outside `CONFIG.INPUT_DIR` (`__raws`).
 - **Every mutation** broadcasts SSE.
 - **Every category/subcategory** is auto-created (in `.categories.private.json`, never in the committed `categories.json`) **before** moving the file — see `categories-store.ts`.

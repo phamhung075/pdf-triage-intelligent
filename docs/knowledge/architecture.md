@@ -1,5 +1,58 @@
 # 🏛️ Architecture
 
+## Document flow
+
+How one file moves from `__raws` to `__archive`, verified against `application/triage-scan.ts`, `application/convert-image-document.ts`, `application/classify-document.ts`, `domain/classification-resolution.ts`, and `domain/taxonomy.ts`. See [triage-pipeline](../workflows/triage-pipeline.md) for the numbered step-by-step version this diagram summarizes.
+
+```mermaid
+flowchart TD
+    A["File dropped into <code>__raws</code>"] --> B{"10s auto-watcher tick,<br/>manual Scan button, or <code>npm run scan</code>"}
+    B --> C["runTriageScan walks __raws,<br/>one file at a time"]
+    C --> D{"Image file?<br/>.jpg/.png/.webp/.bmp/.tiff"}
+
+    D -- yes --> V1["Vision pipeline (convertImageToPdf):<br/>orient → crop → enhance → extract"]
+    V1 --> V2["Archivable single-page A4 PDF<br/>+ OCR text already in memory"]
+    V2 --> G{"clean text ≥ 10 chars?"}
+
+    D -- "no (PDF)" --> E["extractPDFContent"]
+    E --> E1["Tier 1: pdf-parse<br/>digital text layer"]
+    E1 -- text found --> G
+    E1 -- corrupt/empty --> E2["Tier 2: pdfjs-dist<br/>XRef repair"]
+    E2 -- text found --> G
+    E2 -- still empty --> E3["Tier 3: Canvas render + OCR<br/>PaddleOCR first, Tesseract fallback"]
+    E3 --> G
+
+    G -- no --> BLOCK1["BLOCK — NO_TEXT_EXTRACTED<br/>upsertBlockedFile, kept in __raws"]
+    G -- yes --> H{"checksum already<br/>in SQLite?"}
+    H -- yes --> SKIP["SKIPPED_DUPLICATE"]
+    H -- no --> I["Step A — entity + doc-type extraction (Qwen)"]
+    I --> J["Step C — chunked raw text →<br/>zero-loss GFM markdown (Qwen)"]
+    J --> K["Step D — classify + summary +<br/>metadata, Step A entity as hint (Qwen)"]
+    K -- "Ollama unhealthy / request failed /<br/>invalid JSON" --> RB["ruleBasedClassify —<br/>regex + entity_dictionary.json fallback"]
+    K -- success --> L
+    RB --> L["refineClassification"]
+    L --> M["resolveCategory —<br/>match or auto-create category"]
+    M --> N["resolveSubcategory —<br/>match or auto-create subcategory"]
+    N --> O{"subcategory empty /<br/>general / other / divers /<br/>year-string?"}
+    O -- yes --> BLOCK2["BLOCK — NO_SUBCATEGORY<br/>upsertBlockedFile, kept in __raws"]
+    O -- no --> P["Auto-create category/subcategory in<br/>.categories.private.json BEFORE move"]
+    P --> Q["insertDocumentRecord —<br/>SQLite + FTS5, status PENDING"]
+    Q --> R["relocalizeFileIfNeeded — move file to<br/>__archive/&lt;category&gt;/&lt;subcategory&gt;/&lt;YYYY&gt;/"]
+    R --> S["updateDocumentRecord —<br/>new_path, status MOVED"]
+    S --> T["syncJSONRegistry —<br/>mirror SQLite → registry.json"]
+
+    BLOCK1 --> SSE["SSE broadcast:<br/>FILE_FAILED / FILE_COMPLETED / SCAN_COMPLETED"]
+    BLOCK2 --> SSE
+    SKIP --> SSE
+    T --> SSE
+    SSE --> DASH["Dashboard live-updates<br/>via /api/triage/events"]
+```
+
+Notes:
+- The image branch (orient → crop → enhance → extract, `application/image-to-pdf.ts`) feeds into the **same** classification path as PDFs from `G` onward — a photo is never classified differently from a scanned document, only converted first.
+- `BLOCK1`/`BLOCK2` are terminal: no DB row, no move, no auto-create. The file stays in `__raws` and is skipped on future ticks via the `blocked_files` skip-cache until it changes (see [triage-pipeline](../workflows/triage-pipeline.md)).
+- Golden Rule #4 is enforced at node `O`.
+
 ## Module map
 
 ```
@@ -33,7 +86,7 @@ src/
 │   ├── ollama-client.ts                  # ensureOllamaModel, checkModelCanGenerate, generateEmbedding
 │   ├── pdf-extractor.ts                  # extractPDFContent() + SHA-256 checksum
 │   ├── pdf-scanner.ts                    # getPDFsRecursively, getAllFilesRecursively
-│   ├── pid-lock.ts                       # shared PID-lock-file helper
+│   ├── pid-lock.ts                       # shared PID-lock-file helper + killProcessOnPort (cross-directory port takeover)
 │   ├── json-registry.ts                  # SQLite → registry.json mirror
 │   ├── db/database.ts                    # SQLite open, schema init, CRUD, FTS5
 │   ├── http/web-server.ts                # Express + SSE + REST + 10s watcher
@@ -97,6 +150,15 @@ without mocking `fs`/`CONFIG`/Ollama — see
 `docs/superpowers/specs/2026-07-31-test-harness-design.md` (Phase 1) and
 `docs/superpowers/specs/2026-07-31-ddd-restructure-design.md` (Phase 2, this
 restructuring).
+
+## Server startup and port takeover
+
+Two independent layers guard `startWebServer` (`http/web-server.ts`) and `startVisionLabServer` (`vision-lab-server.ts`) against colliding with another running instance. They catch two different failure modes and are not redundant with each other:
+
+1. **Same-directory single-instance lock** — `acquireSingleInstanceLock()` in `web-server.ts`, built on `readActiveLockHolder`/`acquireProcessLock` from `infrastructure/pid-lock.ts`. Writes this process's PID to `<BASE_DIR>/.server.lock` and refuses to start a second instance from the *same* `BASE_DIR` (e.g. a stale `tsx watch` child that hasn't exited yet, still running alongside a freshly spawned one). Each directory has its own `.server.lock`, so this lock is blind to a stale instance running from a *different* directory (e.g. a git worktree) — even one still squatting on the same TCP port. Unchanged by the port-takeover work; still Vision-Lab-agnostic (`startVisionLabServer` doesn't call it).
+2. **Cross-directory / OS-level port takeover** — `killProcessOnPort(port)`, new in `infrastructure/pid-lock.ts`. `startWebServer`/`startVisionLabServer` each split into a `startXServer` + `attemptListen(port, allowTakeover)` pair. On `EADDRINUSE`, `attemptListen` calls `killProcessOnPort(port)` — which shells out to `netstat -ano -p tcp` to find the PID `LISTENING` on the port and force-kills it via `taskkill /PID <pid> /F` (Windows only) — waits ~500ms for the OS to release the socket, then retries binding exactly once, with takeover disabled on that retry so a port that genuinely can't be freed fails fast instead of looping. This layer always kills whatever holds the port, with **no check** that it's a previous instance of this same app — a deliberate simplicity tradeoff, not an oversight (see `docs/superpowers/specs/2026-08-24-dev-server-port-takeover-design.md`).
+
+Why both layers exist: a worktree-launched instance kept running and squatted on the dev port; every later `npm run dev` from `main` silently failed to start (layer 1 can't see the cross-directory conflict) while a user unknowingly kept looking at the stale instance's dashboard — wrong `BASE_DIR`, near-empty data, looked like "all documents lost" when nothing had actually been touched. Layer 2 closes that gap by making the newer `npm run dev` win automatically instead of requiring a manual PID hunt.
 
 ## Data flow (steady state)
 

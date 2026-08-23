@@ -14,7 +14,7 @@ Scan **ONLY** inside `CONFIG.INPUT_DIR` (`__raws`). Never walk parents, siblings
 
 ## 2. Server control
 
-**NEVER** run `npm run dev` yourself. Always instruct the user to run/restart it in their own terminal.
+**NEVER** run `npm run dev` yourself. Always instruct the user to run/restart it in their own terminal. If a stale process (e.g. from a different worktree) still holds the port, the dev server now auto-kills it and retries once — see [Server startup and port takeover](./architecture.md#server-startup-and-port-takeover) — this doesn't change who runs the command.
 
 ## 3. No-text guard
 
