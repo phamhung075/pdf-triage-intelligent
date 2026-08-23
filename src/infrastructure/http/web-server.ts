@@ -18,7 +18,7 @@ import { getPDFsRecursively } from '../pdf-scanner.js';
 import { isForbiddenSubcategory, isPathInsideDir } from '../../domain/taxonomy.js';
 import { logger, getRecentLogs, getGroupedSessionLogs, logEmitter } from '../logger.js';
 import { UpdateDocumentSchema, SystemSettingsSchema, CategoriesConfigSchema } from '../../domain/document.schema.js';
-import { readActiveLockHolder, acquireProcessLock } from '../pid-lock.js';
+import { readActiveLockHolder, acquireProcessLock, killProcessOnPort } from '../pid-lock.js';
 import { getManualDecisions } from '../manual-decisions-store.js';
 import { PDFDocument } from 'pdf-lib';
 import { getTaskState, startTask, updateTaskProgress, finishTask, failTask, setTaskBroadcaster, resetTaskState } from './task-state.js';
@@ -1295,16 +1295,37 @@ function acquireSingleInstanceLock(): void {
 
 export function startWebServer(port: number = CONFIG.PORT): void {
   acquireSingleInstanceLock();
+  attemptListen(port, true);
+}
+
+// Splits out from startWebServer so the EADDRINUSE handler can retry with a fresh app/server
+// after killing whatever held the port. allowTakeover is false on the retry so a port that's
+// still unavailable after the kill attempt (e.g. held by something taskkill couldn't remove)
+// fails fast instead of looping forever.
+function attemptListen(port: number, allowTakeover: boolean): void {
   const app = createWebServer();
   const server = app.listen(port, CONFIG.HOST, () => {
     console.log(`Web Dashboard is running at http://${CONFIG.HOST}:${port} [Hot Reload Active 🔥]`);
   });
-  server.on('error', (err: NodeJS.ErrnoException) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`Port ${port} is already in use — another process may already be bound to it. Exiting instead of running a zombie instance.`);
-    } else {
+  server.on('error', async (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EADDRINUSE') {
       console.error('Web server failed to start:', err.message);
+      process.exit(1);
+      return;
     }
-    process.exit(1);
+    if (!allowTakeover) {
+      console.error(`Port ${port} is still in use after a takeover attempt — exiting.`);
+      process.exit(1);
+      return;
+    }
+    console.warn(`Port ${port} is already in use — attempting to take over from the previous instance...`);
+    const killed = await killProcessOnPort(port);
+    if (!killed) {
+      console.error(`Port ${port} is in use, but no process could be found to free it.`);
+      process.exit(1);
+      return;
+    }
+    console.warn(`Killed the process holding port ${port}. Retrying...`);
+    setTimeout(() => attemptListen(port, false), 500);
   });
 }

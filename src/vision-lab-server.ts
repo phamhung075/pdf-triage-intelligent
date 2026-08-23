@@ -4,6 +4,7 @@ import fs from 'fs';
 import { CONFIG, BASE_DIR } from './infrastructure/settings.js';
 import { runOrientStep, runCropStep, runEnhanceStep, runExtractStep } from './application/image-to-pdf.js';
 import { logger } from './infrastructure/logger.js';
+import { killProcessOnPort } from './infrastructure/pid-lock.js';
 
 const STEP_FUNCTIONS = {
   1: runOrientStep,
@@ -60,17 +61,37 @@ export function createVisionLabApp(): express.Express {
 }
 
 export function startVisionLabServer(port: number = CONFIG.VISION_LAB_PORT): void {
+  attemptListen(port, true);
+}
+
+// Splits out from startVisionLabServer so the EADDRINUSE handler can retry with a fresh
+// app/server after killing whatever held the port. allowTakeover is false on the retry so a
+// port that's still unavailable after the kill attempt fails fast instead of looping forever.
+function attemptListen(port: number, allowTakeover: boolean): void {
   const app = createVisionLabApp();
   const server = app.listen(port, CONFIG.HOST, () => {
     console.log(`Vision Lab server running at http://${CONFIG.HOST}:${port}`);
     console.log(`Diagnostic page: http://${CONFIG.HOST}:${port}/test-image-to-pdf.html`);
   });
-  server.on('error', (err: NodeJS.ErrnoException) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`Port ${port} is already in use — another process may already be bound to it.`);
-    } else {
+  server.on('error', async (err: NodeJS.ErrnoException) => {
+    if (err.code !== 'EADDRINUSE') {
       console.error('Vision Lab server failed to start:', err.message);
+      process.exit(1);
+      return;
     }
-    process.exit(1);
+    if (!allowTakeover) {
+      console.error(`Port ${port} is still in use after a takeover attempt — exiting.`);
+      process.exit(1);
+      return;
+    }
+    console.warn(`Port ${port} is already in use — attempting to take over from the previous instance...`);
+    const killed = await killProcessOnPort(port);
+    if (!killed) {
+      console.error(`Port ${port} is in use, but no process could be found to free it.`);
+      process.exit(1);
+      return;
+    }
+    console.warn(`Killed the process holding port ${port}. Retrying...`);
+    setTimeout(() => attemptListen(port, false), 500);
   });
 }
