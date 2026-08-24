@@ -70,6 +70,16 @@ export const SystemSettingsSchema = z.object({
   personal_name_denylist: z.array(z.string()).optional()
 });
 
+// Nullable optional-string fields: Qwen frequently returns an explicit JSON `null` (not an
+// absent key) for a field that doesn't apply to this document type (e.g. `expiry_date` on a
+// bank statement, `iban` on a payslip). Plain `z.string().optional()` only tolerates `undefined`
+// — an explicit `null` fails validation with "Expected string, received null", which threw
+// DocumentMetadataSchema.parse() into classify-document.ts's catch block, discarding the whole
+// Step A/C/D result and silently downgrading the document to the generic rule-based fallback
+// classifier (often landing it in .blocked_files). `.nullable()` + a transform normalizes
+// null/undefined to the same "" default a real absent field already got.
+const nullableOptionalString = z.string().nullable().optional().transform((v) => v ?? "");
+
 export const DocumentMetadataSchema = z.object({
   thinking: z.string().optional().default(""),
   titre: z.string().min(1, "Titre est requis"),
@@ -80,16 +90,16 @@ export const DocumentMetadataSchema = z.object({
   summary: z.string().default(""),
   tags: z.array(z.string()).default([]),
   markdown_content: z.string().default(""),
-  total_amount: z.string().optional().default(""),
-  vat_amount: z.string().optional().default(""),
-  siren: z.string().optional().default(""),
-  iban: z.string().optional().default(""),
-  expiry_date: z.string().optional().default(""),
-  contact_name: z.string().optional().default(""),
-  contact_email: z.string().optional().default(""),
-  contact_phone: z.string().optional().default(""),
-  contact_address: z.string().optional().default(""),
-  contact_website: z.string().optional().default(""),
+  total_amount: nullableOptionalString,
+  vat_amount: nullableOptionalString,
+  siren: nullableOptionalString,
+  iban: nullableOptionalString,
+  expiry_date: nullableOptionalString,
+  contact_name: nullableOptionalString,
+  contact_email: nullableOptionalString,
+  contact_phone: nullableOptionalString,
+  contact_address: nullableOptionalString,
+  contact_website: nullableOptionalString,
   other: z.record(z.string(), z.any()).optional().default({})
 });
 

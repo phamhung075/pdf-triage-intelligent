@@ -36,6 +36,40 @@ describe('DocumentMetadataSchema', () => {
     expect(result.markdown_content).toBe('');
     expect(result.other).toEqual({});
   });
+
+  // Regression test: Qwen frequently returns an explicit JSON `null` (not an absent key) for a
+  // field that doesn't apply to this document type (e.g. expiry_date on a bank statement, iban
+  // on a payslip). Before the nullableOptionalString fix, this threw "Expected string, received
+  // null" out of DocumentMetadataSchema.parse(), which classify-document.ts's catch block turned
+  // into a silent downgrade to the generic rule-based fallback classifier for the whole document
+  // — confirmed against a real production log entry for a BNP Paribas bank statement.
+  it('normalizes an explicit null on an optional string field to "" instead of throwing', () => {
+    const input = {
+      titre: 'Relevé de compte', categorie: 'bank',
+      total_amount: null, vat_amount: null, siren: null, iban: null, expiry_date: null,
+      contact_name: null, contact_email: null, contact_phone: null,
+      contact_address: null, contact_website: null,
+    };
+    const result = DocumentMetadataSchema.parse(input);
+    expect(result.total_amount).toBe('');
+    expect(result.vat_amount).toBe('');
+    expect(result.siren).toBe('');
+    expect(result.iban).toBe('');
+    expect(result.expiry_date).toBe('');
+    expect(result.contact_name).toBe('');
+    expect(result.contact_email).toBe('');
+    expect(result.contact_phone).toBe('');
+    expect(result.contact_address).toBe('');
+    expect(result.contact_website).toBe('');
+  });
+
+  it('still accepts a real string value on those same fields', () => {
+    const result = DocumentMetadataSchema.parse({
+      titre: 'Facture', categorie: 'invoices', iban: 'FR7630001007941234567890185', expiry_date: '2027-01-01',
+    });
+    expect(result.iban).toBe('FR7630001007941234567890185');
+    expect(result.expiry_date).toBe('2027-01-01');
+  });
 });
 
 describe('SystemSettingsSchema', () => {
