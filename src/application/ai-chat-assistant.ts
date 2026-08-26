@@ -1,9 +1,10 @@
-import { getAllDocuments, DocumentRecord } from '../infrastructure/db/database.js';
+import { getAllDocuments, searchDocumentsFts, DocumentRecord } from '../infrastructure/db/database.js';
 import { requestTextChatCompletion } from '../infrastructure/ollama-client.js';
-import { handleMcpToolCall } from '../infrastructure/mcp/mcp-server.js';
 import { detectFileType } from '../domain/taxonomy.js';
 import { formatLocalDate } from '../domain/classification.js';
 import { logger } from '../infrastructure/logger.js';
+import { buildFtsMatchExpression, relaxQuery, type StructuredQuery } from '../domain/chat-query.js';
+import { planQuery } from './chat-query-planner.js';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -59,7 +60,7 @@ function extractRequestedCount(userMessage: string): number | null {
 
   if (/\b(trois|three)\b/i.test(lower)) return 3;
   if (/\b(deux|two)\b/i.test(lower)) return 2;
-  if (/\b(un|une|single|last|dernier|dernière)\b/i.test(lower)) return 1;
+  if (/\b(single|last|dernier|dernière)\b/i.test(lower)) return 1;
 
   return null;
 }
@@ -73,37 +74,6 @@ export async function searchRelevantDocuments(userMessage: string): Promise<Docu
 
   const lower = userMessage.toLowerCase().trim();
   const requestedCount = extractRequestedCount(userMessage);
-
-  // Pay Slip Intent: strict filtering to category 'bulletin_salaire'
-  const isPaySlipQuery = lower.includes('fiche de paie') || lower.includes('bulletin de salaire') || lower.includes('bulletin de paie') || lower.includes('pay slip');
-  if (isPaySlipQuery) {
-    const paySlips = allDocs.filter(d => {
-      const cat = (d.category || '').toLowerCase();
-      const title = (d.title || '').toLowerCase();
-      if (title.includes('relevé de compte') || title.includes('cheques postaux') || title.includes('banque')) return false;
-      return cat === 'bulletin_salaire' || title.includes('bulletin') || title.includes('salaire') || title.includes('paie');
-    });
-
-    // De-duplicate re-scanned copies of the same pay period (same month, possibly re-imported
-    // under a different filename/checksum) before ranking — otherwise two scans of the same
-    // month can occupy two of the limited "N most recent" slots and silently push a distinct,
-    // older-but-still-requested month out of the result (root cause of a user-reported "only 2 of
-    // 3 last months found" bug where duplicate April/May/June 2026 imports crowded the slice).
-    const byPeriod = new Map<string, DocumentRecord>();
-    for (const doc of paySlips) {
-      const ts = parseDocDate(doc.date);
-      const periodKey = ts ? new Date(ts).toISOString().slice(0, 7) : `no-date-${doc.id}`;
-      const existing = byPeriod.get(periodKey);
-      if (!existing || doc.id > existing.id) {
-        byPeriod.set(periodKey, doc);
-      }
-    }
-    const dedupedPaySlips = [...byPeriod.values()];
-
-    dedupedPaySlips.sort((a, b) => parseDocDate(b.date) - parseDocDate(a.date));
-    const limit = requestedCount || 3;
-    return dedupedPaySlips.slice(0, limit);
-  }
 
   // General Intent scoring
   const queryTokens = lower
@@ -150,6 +120,86 @@ export async function searchRelevantDocuments(userMessage: string): Promise<Docu
 }
 
 /**
+ * Pay-slip-only period key: `null` for anything else, so `dedupeByPeriod` leaves non-pay-slip
+ * documents alone.
+ */
+function paySlipPeriodKey(doc: DocumentRecord): string | null {
+  if ((doc.category || '').toLowerCase() !== 'bulletin_salaire') return null;
+  const ts = parseDocDate(doc.date);
+  return ts ? new Date(ts).toISOString().slice(0, 7) : `no-date-${doc.id}`;
+}
+
+/**
+ * Collapses re-scanned copies of the same pay period, keeping the most recently imported.
+ *
+ * Two imports of the same month must not occupy two of the limited result slots and push a
+ * distinct, still-requested month out — the user-reported "only 2 of my 3 last months" bug.
+ *
+ * Scoped to pay slips on purpose: they are inherently one-per-month-per-employer, so two in one
+ * month means a re-scan. No other document type carries that guarantee — five invoices in March
+ * are five invoices, and collapsing them by month would be a worse bug than the one this fixes.
+ * Input order is preserved; callers rank before calling.
+ */
+export function dedupeByPeriod(docs: DocumentRecord[]): DocumentRecord[] {
+  const winnerIdByPeriod = new Map<string, number>();
+  for (const doc of docs) {
+    const key = paySlipPeriodKey(doc);
+    if (key === null) continue;
+    const current = winnerIdByPeriod.get(key);
+    if (current === undefined || doc.id > current) winnerIdByPeriod.set(key, doc.id);
+  }
+  return docs.filter(doc => {
+    const key = paySlipPeriodKey(doc);
+    return key === null || winnerIdByPeriod.get(key) === doc.id;
+  });
+}
+
+/**
+ * The retrieval entry point: plan the query, run it through BM25, relax it if it found nothing.
+ *
+ * The old token scorer survives only as the last resort — when FTS5 is unavailable, when the
+ * MATCH throws, or when the ladder is exhausted. It is no longer the primary path.
+ */
+export async function retrieveDocuments(userMessage: string, now: Date = new Date()): Promise<DocumentRecord[]> {
+  try {
+    const plan = await planQuery(userMessage, now);
+
+    // A number the user actually typed ("les 3 derniers") beats the model re-deriving it. The same
+    // resolved value feeds citation pruning below, so retrieval and pruning cannot disagree about
+    // how many documents were asked for — that disagreement is what silently dropped documents before.
+    const limit = extractRequestedCount(userMessage) ?? plan.limit ?? 10;
+    const filters = {
+      category: plan.category,
+      subcategory: plan.subcategory,
+      dateFrom: plan.dateFrom,
+      dateTo: plan.dateTo,
+    };
+
+    let current: StructuredQuery | null = plan;
+    while (current) {
+      const matchExpr = buildFtsMatchExpression(current);
+      if (!matchExpr) break;
+      try {
+        const hits = await searchDocumentsFts(matchExpr, filters, limit);
+        if (hits.length > 0) return hits;
+      } catch (err: any) {
+        logger.warn('CHAT_ASSISTANT', `FTS5 search failed (${err?.message}); using the token scorer.`);
+        break;
+      }
+      current = relaxQuery(current);
+    }
+  } catch (err: any) {
+    // processChatQuery does not wrap this call in its own try/catch, so anything thrown here
+    // propagates straight to the HTTP route and surfaces as a search error to the user — exactly
+    // what the "never surface a search error" constraint forbids. Degrade the same way an FTS5
+    // failure does instead of letting a planning failure escape.
+    logger.warn('CHAT_ASSISTANT', `Query planning failed (${err?.message}); using the token scorer.`);
+  }
+
+  return searchRelevantDocuments(userMessage);
+}
+
+/**
  * Builds system prompt for Qwen 3.5 AI with local document context.
  */
 export function buildPromptContext(userMessage: string, documents: DocumentRecord[], now: Date = new Date()): { system: string; userPrompt: string } {
@@ -182,24 +232,7 @@ Consignes strictes:
 export async function processChatQuery(userMessage: string, history: ChatMessage[] = [], now: Date = new Date()): Promise<ChatResponse> {
   logger.info('CHAT_ASSISTANT', `Processing web chat query via MCP tools: "${userMessage}"`);
 
-  // Execute prepare_dossier MCP tool to retrieve documents
-  let matchedDocs: DocumentRecord[] = [];
-  try {
-    const mcpRes = await handleMcpToolCall('prepare_dossier', { dossierType: userMessage });
-    if (mcpRes && mcpRes.content && mcpRes.content[0] && mcpRes.content[0].text) {
-      const parsed = JSON.parse(mcpRes.content[0].text);
-      if (parsed && Array.isArray(parsed.documents)) {
-        matchedDocs = parsed.documents;
-      }
-    }
-  } catch (mcpErr: any) {
-    logger.warn('CHAT_ASSISTANT', `MCP prepare_dossier fallback to searchRelevantDocuments: ${mcpErr.message}`);
-    matchedDocs = await searchRelevantDocuments(userMessage);
-  }
-
-  if (matchedDocs.length === 0) {
-    matchedDocs = await searchRelevantDocuments(userMessage);
-  }
+  let matchedDocs = dedupeByPeriod(await retrieveDocuments(userMessage, now));
 
   const { system, userPrompt } = buildPromptContext(userMessage, matchedDocs, now);
 

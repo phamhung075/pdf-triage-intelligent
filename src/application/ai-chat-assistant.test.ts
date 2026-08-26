@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { searchRelevantDocuments, buildPromptContext, processChatQuery } from './ai-chat-assistant.js';
+import { searchRelevantDocuments, buildPromptContext, processChatQuery, retrieveDocuments, dedupeByPeriod } from './ai-chat-assistant.js';
 import * as dbModule from '../infrastructure/db/database.js';
 import * as ollamaModule from '../infrastructure/ollama-client.js';
+import * as plannerModule from './chat-query-planner.js';
 
 vi.mock('../infrastructure/db/database.js', async () => {
   const actual = await vi.importActual('../infrastructure/db/database.js') as any;
   return {
     ...actual,
-    getAllDocuments: vi.fn()
+    getAllDocuments: vi.fn(),
+    searchDocumentsFts: vi.fn()
   };
 });
 
@@ -15,6 +17,8 @@ vi.mock('../infrastructure/ollama-client.js', () => ({
   requestClassificationCompletion: vi.fn(),
   requestTextChatCompletion: vi.fn()
 }));
+
+vi.mock('./chat-query-planner.js', () => ({ planQuery: vi.fn() }));
 
 describe('ai-chat-assistant', () => {
   const mockDocs: any[] = [
@@ -80,6 +84,14 @@ describe('ai-chat-assistant', () => {
   });
 
   it('processChatQuery calls Ollama and returns answer with exact cited documents', async () => {
+    // Retrieval now runs through the planned BM25 pipeline rather than the old MCP/search-relevant
+    // fallback, so give it a plan and FTS5 result that resolve to the same two pay slips the old
+    // isPaySlipQuery branch used to narrow to. This test's subject is citation filtering, not
+    // retrieval — the assertions below are unchanged.
+    (plannerModule.planQuery as any).mockResolvedValue({
+      docTypes: ['bulletin de salaire', 'fiche de paie'], entities: [], keywords: [], notTerms: []
+    });
+    (dbModule.searchDocumentsFts as any).mockResolvedValue([mockDocs[2], mockDocs[1]]); // ids 3, 2
     (ollamaModule.requestTextChatCompletion as any).mockResolvedValue({
       response: 'Voici votre bulletin : [Doc #3: Bulletin de Salaire Juin 2026]'
     });
@@ -111,9 +123,12 @@ describe('ai-chat-assistant', () => {
     expect(res.matchedDocuments.map((d: any) => d.id).sort()).toEqual([2, 3, 4]);
   });
 
-  it('searchRelevantDocuments de-duplicates re-scanned copies of the same pay period before applying the top-N limit', async () => {
-    (dbModule.getAllDocuments as any).mockResolvedValue([
-      ...mockDocs,
+  it('dedupeByPeriod de-duplicates re-scanned copies of the same pay period, keeping the newest scan', () => {
+    // The behaviour this test protects moved from searchRelevantDocuments's deleted pay-slip
+    // branch into the standalone, exported dedupeByPeriod — same fixture, same expectations.
+    const paySlipsWithDuplicate = [
+      mockDocs[1], // id 2, May 2026
+      mockDocs[2], // id 3, June 2026
       { // a re-scanned duplicate of the June 2026 slip (id 3) under a different filename/checksum
         id: 5, checksum: 'abc5-dup', title: 'BULLETIN DE SALAIRE JUIN 2026', category: 'bulletin_salaire',
         subcategory: 'acme_corp', date: '2026-06-30', summary: 'duplicate scan', total_amount: '2450.00',
@@ -125,9 +140,9 @@ describe('ai-chat-assistant', () => {
         original_filename: '2026-04-30_AcmeCorp_Bulletin.pdf',
         new_path: 'C:\\archive\\bulletin_salaire\\acme_corp\\2026\\2026-04-30_AcmeCorp_Bulletin.pdf'
       }
-    ]);
+    ];
 
-    const results = await searchRelevantDocuments('3 derniers fiche de paie');
+    const results = dedupeByPeriod(paySlipsWithDuplicate);
     // Without de-dup, the two June 2026 copies (ids 3 and 5) would occupy 2 of the 3 slots and
     // push April (id 6) out even though it's a distinct month that should be included.
     expect(results.length).toBe(3);
@@ -137,5 +152,118 @@ describe('ai-chat-assistant', () => {
     // The newest copy of the duplicated June slip (id 5) wins over the older one (id 3).
     expect(results.map(d => d.id)).not.toContain(3);
     expect(results.map(d => d.id)).toContain(5);
+  });
+
+  it('dedupeByPeriod preserves input order and leaves non-pay-slip documents untouched, even within the same month', () => {
+    const march1 = { id: 10, category: 'housing', date: '2024-03-05', title: 'Invoice A' } as any;
+    const march2 = { id: 11, category: 'housing', date: '2024-03-20', title: 'Invoice B' } as any;
+    const juneOld = { id: 20, category: 'bulletin_salaire', date: '2026-06-30', title: 'Bulletin Juin (old scan)' } as any;
+    const juneRescan = { id: 21, category: 'bulletin_salaire', date: '2026-06-15', title: 'Bulletin Juin (re-scan)' } as any;
+    const may = { id: 22, category: 'bulletin_salaire', date: '2026-05-31', title: 'Bulletin Mai' } as any;
+
+    const results = dedupeByPeriod([march1, march2, juneOld, juneRescan, may]);
+
+    // Two invoices in the same month are two invoices, not a duplicate scan — both survive.
+    expect(results.map(d => d.id)).toContain(10);
+    expect(results.map(d => d.id)).toContain(11);
+    // The re-scanned pay slip (higher id) wins over the original scan for the same period.
+    expect(results.map(d => d.id)).not.toContain(20);
+    expect(results.map(d => d.id)).toContain(21);
+    // Input order is preserved — results come back BM25-ranked, and dedup must not reorder them.
+    expect(results.map(d => d.id)).toEqual([10, 11, 21, 22]);
+  });
+});
+
+describe('retrieveDocuments', () => {
+  const mockedPlan = () => plannerModule.planQuery as any;
+  const mockedFts = () => dbModule.searchDocumentsFts as any;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    // The last-resort token scorer calls getAllDocuments; give it an empty archive by default so
+    // only the tests that care about the fallback have to think about it.
+    (dbModule.getAllDocuments as any).mockResolvedValue([]);
+  });
+
+  it('runs the compiled expression through FTS5 and returns its ranked rows', async () => {
+    mockedPlan().mockResolvedValue({ docTypes: ['rib'], entities: ['credit mutuel'], keywords: [], notTerms: [] });
+    mockedFts().mockResolvedValue([{ id: 4280, title: 'RIB' }]);
+
+    const docs = await retrieveDocuments('RIB credit mutuel');
+
+    expect(mockedFts()).toHaveBeenCalledWith(
+      '("rib") AND ("credit mutuel")', expect.anything(), expect.any(Number)
+    );
+    expect(docs.map(d => d.id)).toEqual([4280]);
+  });
+
+  it('passes the taxonomy and date filters through to SQL', async () => {
+    mockedPlan().mockResolvedValue({
+      docTypes: ['rib'], entities: [], keywords: [], notTerms: [],
+      category: 'bank', dateFrom: '2023-01-01', dateTo: '2023-12-31',
+    });
+    mockedFts().mockResolvedValue([{ id: 1 }]);
+
+    await retrieveDocuments('rib 2023');
+
+    expect(mockedFts()).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ category: 'bank', dateFrom: '2023-01-01', dateTo: '2023-12-31' }),
+      expect.any(Number)
+    );
+  });
+
+  it('climbs the relaxation ladder when the first query returns nothing', async () => {
+    mockedPlan().mockResolvedValue({ docTypes: ['rib'], entities: ['ccm'], keywords: ['2023'], notTerms: [] });
+    mockedFts().mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 7 }]);
+
+    const docs = await retrieveDocuments('rib ccm 2023');
+
+    expect(mockedFts()).toHaveBeenCalledTimes(2);
+    expect(mockedFts().mock.calls[1][0]).not.toContain('2023');
+    expect(docs.map(d => d.id)).toEqual([7]);
+  });
+
+  it('falls back to the token scorer when FTS5 throws, never surfacing an error', async () => {
+    mockedPlan().mockResolvedValue({ docTypes: ['rib'], entities: [], keywords: [], notTerms: [] });
+    mockedFts().mockRejectedValue(new Error('no such module: fts5'));
+    (dbModule.getAllDocuments as any).mockResolvedValue([
+      { id: 99, title: 'RIB Banque', category: 'bank', subcategory: 'x', date: '2024-01-01', summary: '' },
+    ]);
+
+    const docs = await retrieveDocuments('rib');
+
+    expect(docs).toBeInstanceOf(Array);
+    expect(dbModule.getAllDocuments).toHaveBeenCalled();
+  });
+
+  it('honours an explicit count in the user words over the model limit', async () => {
+    mockedPlan().mockResolvedValue({ docTypes: ['bulletin'], entities: [], keywords: [], notTerms: [], limit: 10 });
+    mockedFts().mockResolvedValue([]);
+
+    await retrieveDocuments('les 3 derniers bulletins de salaire');
+
+    expect(mockedFts().mock.calls[0][2]).toBe(3);
+  });
+
+  it('does not read the French indefinite article as a request for exactly one document', async () => {
+    // "j'ai besoin d'un RIB" is not a request for one document, it is a request for RIBs. Reading
+    // it as a count of 1 would cap the search at a single row and drop the second RIB in the
+    // archive — the exact document this whole change exists to surface.
+    mockedPlan().mockResolvedValue({ docTypes: ['rib'], entities: [], keywords: [], notTerms: [] });
+    mockedFts().mockResolvedValue([]);
+
+    await retrieveDocuments("j'ai besoin d'un RIB");
+
+    expect(mockedFts().mock.calls[0][2]).toBeGreaterThan(1);
+  });
+
+  it('still reads an explicit singular request as one document', async () => {
+    mockedPlan().mockResolvedValue({ docTypes: ['bulletin'], entities: [], keywords: [], notTerms: [] });
+    mockedFts().mockResolvedValue([]);
+
+    await retrieveDocuments('mon dernier bulletin de salaire');
+
+    expect(mockedFts().mock.calls[0][2]).toBe(1);
   });
 });
