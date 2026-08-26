@@ -2,11 +2,12 @@ import { z } from 'zod';
 
 /**
  * A term array as Qwen actually emits it: usually strings, occasionally with a null or a number
- * mixed in, occasionally the key is absent entirely. Filter rather than throw — a single stray
- * element must not cost us the whole plan and send the chat down the fallback path.
+ * mixed in, occasionally the key is absent entirely, and occasionally the entire field is null.
+ * Filter rather than throw — a single stray element or null field must not cost us the whole plan
+ * and send the chat down the fallback path.
  */
 const termArray = z
-  .array(z.unknown())
+  .union([z.array(z.unknown()), z.null()])
   .optional()
   .transform(arr => (arr ?? []).filter((t): t is string => typeof t === 'string'));
 

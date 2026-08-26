@@ -17,6 +17,12 @@ describe('StructuredQuerySchema', () => {
     expect(parsed.dateFrom).toBeUndefined();
   });
 
+  it('accepts an explicit null term array, which Qwen emits as often as it omits the key', () => {
+    const parsed = StructuredQuerySchema.parse({ docTypes: null, keywords: ['rib'] });
+    expect(parsed.docTypes).toEqual([]);
+    expect(parsed.keywords).toEqual(['rib']);
+  });
+
   it('coerces a stringified limit and rejects an absurd one', () => {
     expect(StructuredQuerySchema.parse({ limit: '3' }).limit).toBe(3);
     expect(StructuredQuerySchema.parse({ limit: 9999 }).limit).toBeUndefined();
