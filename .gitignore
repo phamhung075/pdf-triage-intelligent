@@ -32,6 +32,19 @@ manual_decisions.json
 # Local user settings (contains private folder paths)
 settings.json
 
+# Personal prompt overlay — real employers, bank product codes, scan filename prefixes and
+# clinics injected into the committed, generic prompts/ templates at prompt-build time. The
+# templates stay publishable; this file is where your own signals live. See
+# prompts.private.json.example and src/domain/prompt-personalization.ts.
+.prompts.private.json
+
+# MCP HTTP transport auth token (auto-generated on first `npm run mcp` if absent — see
+# src/infrastructure/mcp/mcp-server.ts). Grants full tool access over the network; never commit.
+.mcp-api-token
+
+# Zip packages built by the MCP package_documents tool / REST package-zip endpoint.
+__packages/
+
 # Environment variables & Logs
 .env
 *.log
@@ -53,6 +66,13 @@ Thumbs.db
 
 # Vendored plugin (own git repo, not a submodule of this project)
 .claude/plugins/superpowers/
+
+# Windows directory junctions INTO the vendored plugin above. Git follows junctions, so leaving
+# these tracked committed 100 copies of third-party code (obra/superpowers, MIT (c) 2025 Jesse
+# Vincent) into this repo without its LICENSE. The junctions still work locally; they just are
+# not ours to redistribute. Single source of truth for skills: docs/skills.md.
+.claude/skills/
+docs/skills/
 
 # Local worktree sessions
 .claude/worktrees/
