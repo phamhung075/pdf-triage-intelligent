@@ -79,15 +79,28 @@ export async function requestClassificationCompletion(system: string, user: stri
     think: false,
     options: {
       temperature: 0.1,
-      num_ctx: 8192,
+      // 16384, not 8192. The system prompt alone is ~6.6k tokens (decision flow + the archive's
+      // taxonomy) and the document text adds ~1.2k, so at 8192 there was almost no room left to
+      // answer: the response was cut off mid-sentence, repairTruncatedJSON silently closed the
+      // JSON, and every field after `tags` in the schema — total_amount, vat_amount, siren, iban,
+      // expiry_date and all five contact_* — came back empty. Measured on a real invoice: at 8192
+      // the reply was unparseable; at 16384 the same prompt returned 18 keys with 7 of those 10
+      // fields populated. Costs more VRAM; that is the trade for the data actually arriving.
+      num_ctx: 16384,
       num_predict: 4096
     }
   });
   return { response: result.response, thinking: result.thinking };
 }
 
-// General text chat completion wrapper (without format: 'json') for Markdown Q&A responses
-export async function requestTextChatCompletion(system: string, user: string): Promise<{ response: string; thinking?: string }> {
+// General text chat completion wrapper (without format: 'json') for Markdown Q&A responses.
+//
+// `doneReason` is surfaced deliberately. Ollama reports 'length' when generation stopped because it
+// hit num_predict rather than because the model finished — a truncated answer that is otherwise
+// indistinguishable from a complete one. Step C discarded it, so an over-long chunk came back
+// cut off mid-document, passed the `length > 10` success gate as "converted", and silently replaced
+// the chunk's real content. Callers that care about losslessness must check it.
+export async function requestTextChatCompletion(system: string, user: string): Promise<{ response: string; thinking?: string; doneReason?: string }> {
   const ollama = new Ollama({ host: CONFIG.OLLAMA_HOST });
   const result: any = await ollama.generate({
     model: CONFIG.OLLAMA_MODEL,
@@ -96,11 +109,13 @@ export async function requestTextChatCompletion(system: string, user: string): P
     think: false,
     options: {
       temperature: 0.2,
-      num_ctx: 8192,
+      // Same reasoning as requestClassificationCompletion above — the chat assistant is fed
+      // document context that easily fills an 8k window before it can reply.
+      num_ctx: 16384,
       num_predict: 4096
     }
   });
-  return { response: result.response || '', thinking: result.thinking };
+  return { response: result.response || '', thinking: result.thinking, doneReason: result.done_reason };
 }
 
 export async function generateEmbedding(text: string): Promise<number[]> {

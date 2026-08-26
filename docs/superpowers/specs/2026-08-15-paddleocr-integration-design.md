@@ -17,7 +17,7 @@ below.
   `detectOrientationCascade` when EXIF metadata and the vision model
   disagree (or EXIF is absent).
 
-PaddleOCR (`D:\<user>\__projet\__master\PADDLEOCR`, Apache 2.0, free)
+PaddleOCR (`<workspace>\PADDLEOCR`, Apache 2.0, free)
 produces materially more accurate detection+recognition than Tesseract,
 especially on rotated text, dense layouts, and real phone-photographed
 documents — the same category of input this project already struggles with

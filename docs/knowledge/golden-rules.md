@@ -26,7 +26,9 @@ If AI resolves to an empty / `general` / `other` / `divers` / year-string subcat
 
 ## 5. Pre-move dynamic auto-create
 
-BEFORE moving a file, the missing category or subcategory MUST be inserted into `categories.json` (idempotent). Never construct folders for a slug that isn't in `categories.json` yet.
+BEFORE moving a file, the missing category or subcategory MUST be registered in the taxonomy (idempotent). Never construct folders for a slug the taxonomy doesn't know yet.
+
+The write target is **`.categories.private.json`, never the committed `categories.json`** — see `saveCategoriesConfig` in [`src/infrastructure/categories-store.ts`](../../src/infrastructure/categories-store.ts), which diffs the merged config against the public file and persists only the difference to the private overlay. `categories.json` stays a generic, shareable starter taxonomy; `.categories.private.json` is gitignored and accumulates the real subcategories derived from your own documents. Reads always see the two merged, so "is this slug in the taxonomy?" means the merged view, not the committed file alone.
 
 ## 6. Deep semantic reading over keywords
 
@@ -40,7 +42,7 @@ Never lump. `banque` is invalid; use `credit_mutuel`, `societe_generale`, `bnp_p
 
 With subcategory: `__archive/<cat>/<sub…>/<YYYY>/<filename>.pdf`
 Without: `__archive/<cat>/<YYYY>/<filename>.pdf`
-Subcategory may be multi-level (`ecole_x/bachelor`).
+Subcategory may be multi-level (`<school_slug>/bachelor`).
 
 ## 9. Sequential non-blocking scan
 

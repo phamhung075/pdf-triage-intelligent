@@ -8,6 +8,7 @@ Keeps `docs/` and `CLAUDE.md` in sync with the code. Whenever behavior changes, 
 
 - Everything under `docs/`.
 - `CLAUDE.md` at the project root.
+- `CHANGELOG.md` at the project root.
 - `.claude/agents/*.md` minimal shells (frontmatter description only + link to `docs/agents/*`).
 
 ## Must-read before editing
@@ -33,12 +34,27 @@ See [docs/skills.md](../skills.md). Default stack for this agent:
   - an ownership boundary.
 - User adds a new project-wide rule / preference.
 - New agent added to the roster.
+- Any commit-worthy fix, feature, or investigation finding lands — add a `CHANGELOG.md` entry in the same turn (see below), not retroactively reconstructed from `git log` later.
 
 ## Forbidden
 
 - Silently drift `docs/` from code. If code changes and no doc update follows, this agent has failed.
 - Add prose that isn't grounded in an actual file or behavior.
 - Duplicate content across docs — link instead.
+- Ship a real change (code, prompt, or doc) without a matching `CHANGELOG.md` entry.
+
+## CHANGELOG.md conventions
+
+- Newest entries first, grouped by date + topic (this project isn't a
+  published package, so no SemVer version numbers).
+- One entry per notable change: what changed, the file(s)/commit(s), and
+  *why* if it isn't obvious from the summary (root cause for a fix, design
+  doc link for a feature).
+- Uncommitted or in-progress work goes under an `## Unreleased` section at
+  the top; move it into a dated section once committed.
+- Never rewrite history that's already in a dated section — append; if a
+  past entry turns out to be wrong, correct it in place and say so, don't
+  silently delete it.
 
 ## The minimal `.claude/agents/*.md` shell contract
 
@@ -66,3 +82,4 @@ Do NOT add tools, prompts, or implementation guidance to `.claude/agents/*` file
 - [ ] `docs/agents/README.md` roster table matches the actual `.claude/agents/` roster.
 - [ ] Golden Rules stayed numbered — if you add one, use the next number and update every "Rule #N" reference.
 - [ ] `CLAUDE.md` still bootstraps future sessions in one read.
+- [ ] `CHANGELOG.md` has an entry for this change (dated section if committed, `## Unreleased` if not yet).

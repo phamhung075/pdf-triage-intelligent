@@ -17,9 +17,9 @@ flowchart TD
     D -- "no (PDF)" --> E["extractPDFContent"]
     E --> E1["Tier 1: pdf-parse<br/>digital text layer"]
     E1 -- text found --> G
-    E1 -- corrupt/empty --> E2["Tier 2: pdfjs-dist<br/>XRef repair"]
+    E1 -- "corrupt / empty / thin" --> E2["Tier 2: pdfjs-dist<br/>XRef repair"]
     E2 -- text found --> G
-    E2 -- still empty --> E3["Tier 3: Canvas render + OCR<br/>PaddleOCR first, Tesseract fallback"]
+    E2 -- "still empty / thin" --> E3["Tier 3: Canvas render + OCR<br/>PaddleOCR first, Tesseract fallback<br/>capped at OCR_MAX_PAGES"]
     E3 --> G
 
     G -- no --> BLOCK1["BLOCK — NO_TEXT_EXTRACTED<br/>upsertBlockedFile, kept in __raws"]
@@ -158,19 +158,66 @@ Two independent layers guard `startWebServer` (`http/web-server.ts`) and `startV
 1. **Same-directory single-instance lock** — `acquireSingleInstanceLock()` in `web-server.ts`, built on `readActiveLockHolder`/`acquireProcessLock` from `infrastructure/pid-lock.ts`. Writes this process's PID to `<BASE_DIR>/.server.lock` and refuses to start a second instance from the *same* `BASE_DIR` (e.g. a stale `tsx watch` child that hasn't exited yet, still running alongside a freshly spawned one). Each directory has its own `.server.lock`, so this lock is blind to a stale instance running from a *different* directory (e.g. a git worktree) — even one still squatting on the same TCP port. Unchanged by the port-takeover work; still Vision-Lab-agnostic (`startVisionLabServer` doesn't call it).
 2. **Cross-directory / OS-level port takeover** — `killProcessOnPort(port)`, new in `infrastructure/pid-lock.ts`. `startWebServer`/`startVisionLabServer` each split into a `startXServer` + `attemptListen(port, allowTakeover)` pair. On `EADDRINUSE`, `attemptListen` calls `killProcessOnPort(port)` — which shells out to `netstat -ano -p tcp` to find the PID `LISTENING` on the port and force-kills it via `taskkill /PID <pid> /F` (Windows only) — waits ~500ms for the OS to release the socket, then retries binding exactly once, with takeover disabled on that retry so a port that genuinely can't be freed fails fast instead of looping. This layer always kills whatever holds the port, with **no check** that it's a previous instance of this same app — a deliberate simplicity tradeoff, not an oversight (see `docs/superpowers/specs/2026-08-24-dev-server-port-takeover-design.md`).
 
+3. **PaddleOCR sidecar takeover** — `takeOverPaddleOcrServer()` in `infrastructure/paddleocr-client.ts`,
+   awaited by `startWebServer` before it binds. Unlike layers 1 and 2 this is not about a port
+   *collision*: the PaddleOCR service is a separate, long-lived **Python** process that outlives a
+   dev-server restart, and a stale one answers `/health` perfectly well — so
+   `ensurePaddleOcrServer()` happily reuses it and **any edit under `paddleocr-server/` silently
+   never loads**. `takeOverPaddleOcrServer()` kills it via the same `killProcessOnPort`, then clears
+   both `serverReadyPromise` (the readiness memo) and `spawnAttempted` (a once-per-process latch)
+   so the next OCR call spawns a replacement running current code. It acts **only on a loopback
+   `PADDLEOCR_HOST`** — `killProcessOnPort` kills whatever local PID holds that port number, so
+   against a remote service it would just kill an unrelated local program. Awaited rather than
+   fire-and-forget, so the kill cannot land on a server the 10s auto-watcher's first OCR call just
+   spawned. Cost: the models reload on the next request (absorbed by `main.py`'s background
+   warm-up thread), in exchange for `npm run dev` always meaning current Python code.
+
 Why both layers exist: a worktree-launched instance kept running and squatted on the dev port; every later `npm run dev` from `main` silently failed to start (layer 1 can't see the cross-directory conflict) while a user unknowingly kept looking at the stale instance's dashboard — wrong `BASE_DIR`, near-empty data, looked like "all documents lost" when nothing had actually been touched. Layer 2 closes that gap by making the newer `npm run dev` win automatically instead of requiring a manual PID hunt.
 
 ## Data flow (steady state)
 
 1. `infrastructure/http/web-server.ts` boots, static-serves `public/`, opens SSE endpoints, starts the 10 s auto-watcher.
-2. Auto-watcher calls `runTriageScan(broadcast)` (`application/triage-scan.ts`) when `__raws` has PDFs.
+2. Auto-watcher calls `runTriageScan(broadcast, () => scanAbortRequested)` (`application/triage-scan.ts`)
+   when `__raws` has PDFs.
+
+   **Serialization.** `acquireScanLock()` (`application/scan-lock.ts`) guards the whole run. It
+   tracks in-process ownership *separately* from the `.scan.lock` file, because `readActiveLockHolder`
+   deliberately reports "free" when the file holds this same PID — so the file alone could never
+   stop a second scan starting inside one process. That is exactly what happened when the user
+   pressed Stop (which cleared the in-memory flag without cancelling the running loop) and then
+   Scan again: two loops walked the same `__raws` listing, one moved a file to `__archive` between
+   the other's directory read and its `statSync`, and the loser of a classify race hit
+   `UNIQUE constraint failed: documents.checksum` and shunted an already-archived document into
+   `.duplicates_files`. The release function is idempotent for the same reason — a stale handle
+   must not delete a lock a later run now owns.
+
+   **Cancellation.** `runTriageScan` polls `shouldAbort` once per file. `POST /api/triage/unlock`
+   ("Stop") sets that flag; before it existed, Stop only dropped the re-entry guard and the loop
+   ran to completion underneath the user.
 3. `runTriageScan` walks `__raws`, for each PDF **or photo**:
    - **Photos only** — `convertImageToPdf()` (`application/convert-image-document.ts`) runs the vision pipeline
-     (orient → crop → enhance → extract), writes an A4 PDF beside the photo, deletes the photo once that PDF is on disk,
-     and returns `{pdfPath, checksum, rawText}`. `originalPath` is re-pointed at the PDF, and extraction below is skipped
+     (orient → crop → enhance → extract), writes an A4 PDF beside the photo, moves the photo to
+     `__raws/.delete_files/img_converted/` once that PDF is on disk (it is never deleted — the PDF holds a cropped,
+     re-encoded rendition), and returns `{pdfPath, checksum, rawText}`. `originalPath` is re-pointed at the PDF, and extraction below is skipped
      because the text is already in hand — otherwise the same page would be OCR'd twice.
-   - `extractPDFContent()` (`infrastructure/pdf-extractor.ts`) → `{checksum, raw_text, numpages, info}`.
+   - `extractPDFContent()` (`infrastructure/pdf-extractor.ts`) → `{checksum, raw_text, numpages, info, ocr_degraded}`.
      OCR is PaddleOCR-first (`infrastructure/paddleocr-client.ts` → local FastAPI service), Tesseract as availability fallback.
+     **`ocr_degraded` is true when that fallback fired**, so a caller holding text for the same file
+     can tell a fresh extraction is the WORSE one before overwriting anything with it — see
+     [OCR engine fallback and its cost](#ocr-engine-fallback-and-its-cost).
+
+     Two things about this tier are easy to get wrong, and both used to be silent:
+
+     - **A thin text layer is not a text layer.** A scan often carries a scanner watermark or page
+       numbers, which sail past an "is the text empty?" test and suppress OCR entirely — one 8-page
+       attestation in the archive extracted as `"Scanned with AnyScanner"` ×8 and none of its real
+       content ever reached the registry. `detectThinTextLayer()` (`domain/pdf-text.ts`) treats
+       "≥2 pages and under 100 chars/page" or "≥2 pages of ≤2 distinct lines totalling ≤200 chars"
+       as un-extracted, and falls through to OCR. Single-page documents are exempt on purpose.
+     - **OCR is page-capped.** Only the first `CONFIG.OCR_MAX_PAGES` pages (env `OCR_MAX_PAGES`,
+       default 10) are rendered and OCR'd, because each page is a real OCR round-trip. Anything past
+       the cap is genuinely absent from `raw_text`, the classifier, the Markdown and FTS5 — so
+       truncation always logs a `WARN` naming the skipped range. Raise the env var for long scans.
    - Dedup check via `getDocumentByChecksum(checksum)`.
    - `classifyPDFText()` (`application/classify-document.ts`) → validated `DocumentMetadata`.
    - `insertDocumentRecord()` → SQLite + FTS5.
@@ -199,3 +246,57 @@ Why both layers exist: a worktree-launched instance kept running and squatted on
 ## Threading model
 
 Single-process Node event loop. No worker threads. Long tasks (Ollama call, PDF parse) are async I/O — the 50 ms yield between files keeps SSE and HTTP responsive.
+
+## OCR engine fallback and its cost
+
+`ocrPageBuffer` (`infrastructure/pdf-extractor.ts`) tries **PaddleOCR** and drops to **Tesseract**
+only when that call fails. This is an *availability* fallback, not a quality cascade — but the two
+engines are nowhere near equal on a photographed document, so an unnoticed fallback silently
+degrades the result rather than merely making it slower.
+
+Three things keep that downgrade from doing damage:
+
+1. **It is serialized server-side.** A `PaddleOCR` predictor is a shared module-global in
+   `paddleocr-server/paddleocr_engine.py` and is **not thread-safe**, while `main.py`'s endpoints
+   are sync `def` and therefore run in Starlette's threadpool (deliberately — an `async def` there
+   blocks the event loop and starves `/health`). Two overlapping requests genuinely reached
+   `predict()` together, which raised and made `/ocr` answer HTTP 500. A `threading.RLock` **per
+   model** now queues concurrent inference instead. Per-model, not one global lock, so a ~2s
+   orientation probe never parks behind a multi-minute OCR pass. Because that lock lives in the
+   Python process, `startWebServer` restarts the sidecar on boot — see
+   [Server startup and port takeover](#server-startup-and-port-takeover), layer 3 — otherwise a
+   stale service would keep serving the old, unlocked code across a `npm run dev` restart.
+2. **A transient failure is retried once.** `paddleOcrRecognize` retries a **5xx** after 1.5s before
+   giving the page up to Tesseract. 4xx is not retried (a rejected request fails identically), and
+   neither is a timeout — the budget is already generous and a retry would double the worst case
+   before the caller ever gets to fall back.
+
+   **The timeout budget measures inference, and nothing else.** Successful passes were measured at
+   100-230s against a flat 300s budget, so anything else charged to it tipped pages into the
+   fallback. Two things used to be:
+   - *Model loading.* `/health` answers the instant the process is up — deliberately, so the ~15s
+     spawn poll succeeds — while the models are still warming behind it. `paddleOcrRecognize` now
+     waits on **`GET /ready`** (`waitForPaddleOcrModel`) under its own 15-minute budget before the
+     inference timer starts. `/ready` reports `{ready, ocr, orientation, warming}` and is answered
+     lock-free so it stays responsive *during* a running OCR pass. `warming: false` with the model
+     unloaded means the warm-up finished or failed and nothing more is coming, so the caller stops
+     waiting instead of blocking forever; a server with no `/ready` at all is treated the same way.
+   - *Queue time.* `runExclusive()` serializes this process's inference calls, so a request is only
+     sent once the previous one has finished — the abort signal is created as the request goes out,
+     not when it was queued. The server's per-model lock stays the correctness backstop (it must
+     hold against any client); this is what keeps the client's timer honest.
+
+   What remains scales with the page: `ocrTimeoutFor()` reads the render's real geometry via
+   `domain/image-dimensions.ts` (a header read, no decode) and scales linearly against a 2.0 MP
+   reference — a page of twice the area gets twice the budget. Floor 300s (the measured dense-A4
+   case), cap 20 min so a wedged server cannot stall a scan forever. Unreadable geometry falls back
+   to the floor rather than guessing from byte length, which is a poor proxy for OCR time.
+3. **It is visible.** The fallback logs at `warn`, not `debug`, and `extractPDFContent` returns
+   `ocr_degraded: true` so callers can act on it — see
+   [Which text a re-analysis uses](../workflows/relocalize.md#which-text-a-re-analysis-uses).
+
+**Why this matters.** These are not hypothetical. The 10s auto-watcher was mid-OCR on one document
+when a user clicked Rescan on another; the overlapping `/ocr` returned 500; that page fell to
+Tesseract; and because the old re-analysis guard only checked `length > 10`, OCR noise replaced
+clean stored text. The title, date, summary and markdown were all rebuilt from the noise and the
+file was physically moved into the wrong year folder — with one `DEBUG` line as the only trace.

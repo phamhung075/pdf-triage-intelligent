@@ -8,7 +8,13 @@ const DEFAULT_PERSONAL_NAME_DENYLIST = ['dupond', 'martin', 'lefebvre', 'bernard
 function baseMetadata(overrides: Partial<DocumentMetadata>): DocumentMetadata {
   return {
     titre: 'Test', registre: '', date: '', categorie: 'administrative', subcategorie: 'general',
-    summary: '', tags: [], markdown_content: '', other: {}, ...overrides,
+    summary: '', tags: [], markdown_content: '', other: {}, thinking: '',
+    // Transform-produced fields: DocumentMetadataSchema normalizes null/undefined to '', so the
+    // parsed OUTPUT type has them as plain required strings. Spell them out here rather than
+    // widening the production type just to satisfy a fixture.
+    total_amount: '', vat_amount: '', siren: '', iban: '', expiry_date: '',
+    contact_name: '', contact_email: '', contact_phone: '', contact_address: '', contact_website: '',
+    ...overrides,
   };
 }
 
@@ -99,13 +105,13 @@ describe('resolveSubcategory', () => {
     expect(subcategoryId).toBe('general');
   });
 
-  it('collapses a verbose underscore-normalized slug onto an existing subcategory whose alias is stored with spaces (regression: real categories.json credit_mutuel aliases like "credit mutuel" / "ccm marseille")', () => {
+  it('collapses a verbose underscore-normalized slug onto an existing subcategory whose alias is stored with spaces (regression: a private-overlay credit_mutuel alias set like "credit mutuel" / "ccm springfield")', () => {
     const category: CategoryItem = {
       id: 'bank', name: 'Banque & Relevés', description: '', aliases: [],
-      subcategories: [{ id: 'credit_mutuel', name: 'Crédit Mutuel', aliases: ['creditmutuel', 'credit mutuel', 'ccm marseille', 'ccm'] }]
+      subcategories: [{ id: 'credit_mutuel', name: 'Crédit Mutuel', aliases: ['creditmutuel', 'credit mutuel', 'ccm springfield', 'ccm'] }]
     };
     const { subcategoryId, isNew } = resolveSubcategory(
-      category, 'Caisse Credit Mutuel Marseille Ste Marguerite', 'Crédit Mutuel bank statement text', 'releve.pdf', DEFAULT_PERSONAL_NAME_DENYLIST
+      category, 'Caisse Credit Mutuel Springfield Centre', 'Crédit Mutuel bank statement text', 'releve.pdf', DEFAULT_PERSONAL_NAME_DENYLIST
     );
     expect(subcategoryId).toBe('credit_mutuel');
     expect(isNew).toBe(false);
@@ -134,13 +140,16 @@ describe('applyEntityPriorityOverride', () => {
   function baseMetadata(overrides: Partial<DocumentMetadata>): DocumentMetadata {
     return {
       titre: 'Test', registre: '', date: '', categorie: 'correspondence', subcategorie: 'general',
-      summary: '', tags: [], markdown_content: '', other: {}, ...overrides,
+      summary: '', tags: [], markdown_content: '', other: {}, thinking: '',
+      total_amount: '', vat_amount: '', siren: '', iban: '', expiry_date: '',
+      contact_name: '', contact_email: '', contact_phone: '', contact_address: '', contact_website: '',
+      ...overrides,
     };
   }
 
   it('overrides a weak/fallback category (correspondence) with the entity-dictionary-grounded category+subcategory', () => {
-    const input = baseMetadata({ categorie: 'correspondence', subcategorie: 'credit_mutuel_marseille_ste_marguerite' });
-    const result = applyEntityPriorityOverride(input, 'CAISSE DE CREDIT MUTUEL MARSEILLE STE MARGUERITE', BANK_DICTIONARY);
+    const input = baseMetadata({ categorie: 'correspondence', subcategorie: 'credit_mutuel_springfield_centre' });
+    const result = applyEntityPriorityOverride(input, 'CAISSE DE CREDIT MUTUEL SPRINGFIELD CENTRE', BANK_DICTIONARY);
     expect(result.overridden).toBe(true);
     expect(result.categorie).toBe('bank');
     expect(result.subcategorie).toBe('credit_mutuel');
@@ -174,8 +183,8 @@ describe('applyEntityPriorityOverride', () => {
   });
 
   it('overrides a bank-domain entity unconditionally, even against a non-weak/arbitrary wrong category (regression: real Step D output landed on "reports", not just "correspondence")', () => {
-    const input = baseMetadata({ categorie: 'reports', subcategorie: 'credit_mutuel_marseille_ste_marguerite' });
-    const result = applyEntityPriorityOverride(input, 'CAISSE DE CREDIT MUTUEL MARSEILLE STE MARGUERITE', BANK_DICTIONARY);
+    const input = baseMetadata({ categorie: 'reports', subcategorie: 'credit_mutuel_springfield_centre' });
+    const result = applyEntityPriorityOverride(input, 'CAISSE DE CREDIT MUTUEL SPRINGFIELD CENTRE', BANK_DICTIONARY);
     expect(result.overridden).toBe(true);
     expect(result.categorie).toBe('bank');
     expect(result.subcategorie).toBe('credit_mutuel');

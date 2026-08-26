@@ -27,9 +27,25 @@ For each file found by `getPDFsRecursively(INPUT_DIR, OUTPUT_ROOT_DIR)` (PDFs **
    - The PDF holds the **cropped** page (natural tones); the **enhanced** page is what OCR reads and is never archived.
    - `rawText` comes back in memory so step 4 is skipped for photos. Without this the fresh PDF would be handed to
      `extractPDFContent`, which would find no text layer, rasterize the page and OCR the same document a second time.
-   - The source image is deleted **only after** the PDF is confirmed on disk. If conversion throws, a `TRIAGE` warn is logged
-     and the photo falls through to step 4 unchanged — conversion is an enhancement, never a gate.
+   - The source image is **moved to `__raws/.delete_files/img_converted/`**, never deleted, and only after the PDF is
+     confirmed on disk. The PDF holds a cropped, JPEG-re-encoded rendition, so a mis-detected crop silently clips the page
+     and the untouched original is the only way back. Name collisions get a `_1`, `_2` … suffix rather than overwriting
+     (two cameras both emit `IMG_0001.jpg`). `pdf-scanner.ts` skips dot-directories, so nothing parked there is re-triaged
+     — and nothing prunes it either, so the folder grows until the user clears it.
+   - If conversion throws, a `TRIAGE` warn is logged and the photo falls through to step 4 unchanged — conversion is an
+     enhancement, never a gate.
    - See [`convert-image-document.ts`](../../src/application/convert-image-document.ts).
+
+   **Photo bundles.** Before the file walk, `runTriageScan` calls `findImageBundleFolders(INPUT_DIR)`.
+   A folder qualifies only when it holds **2+ images and no other kind of file** — a lone photo is
+   not a multi-page document, and a folder mixing photos with a PDF is storage the user keeps, not
+   a document to fuse. Each qualifying folder becomes one multi-page PDF named after the folder
+   (`__raws/contrat-bail/` → `__raws/contrat-bail.pdf`), pages ordered by `sortImagePagesNaturally`
+   so `IMG_2` precedes `IMG_10`, with every page's OCR text concatenated (separated by `---`) so the
+   classifier reads the whole document at once. Sources move to
+   `.delete_files/img_converted/<folder>/`, keeping the pages grouped; the folder is removed only
+   once genuinely empty. Bundling is an enhancement, never a gate: on failure the folder is left
+   alone and its photos are triaged individually.
 4. **`extractPDFContent(originalPath)`** → `{ checksum, raw_text }` — **skipped** when step 3 already produced them.
 5. **No-text guard**: if `cleanText.length < 10`:
    - Log `TRIAGE` warn, `upsertBlockedFile({ reason: 'NO_TEXT_EXTRACTED', … })`, emit `FILE_FAILED { message: '❌ Blocked: No text extracted from PDF. Kept in __raws.' }`.
@@ -39,7 +55,7 @@ For each file found by `getPDFsRecursively(INPUT_DIR, OUTPUT_ROOT_DIR)` (PDFs **
    - Emit `FILE_COMPLETED { stage: 'SKIPPED_DUPLICATE' }`.
    - Yield 50 ms, `continue`.
 7. **Broadcast `FILE_PROGRESS { stage: 'AI_CLASSIFYING' }`**.
-8. **`classifyPDFText(raw_text, file)`** → validated `DocumentMetadata` (may auto-create category / subcategory in `categories.json` as a side-effect).
+8. **`classifyPDFText(raw_text, file)`** → validated `DocumentMetadata` (may auto-create category / subcategory as a side-effect — written to the gitignored `.categories.private.json`, never to the committed `categories.json`; see Golden Rule #5).
 9. **Strict no-subcategory fail guard**: if `subcategorie` is empty / `general` / `other` / `divers`:
    - Log warn, `upsertBlockedFile({ reason: 'NO_SUBCATEGORY', … })`, emit `FILE_FAILED`.
    - Yield 50 ms, `continue`. No DB row, no move. Skipped on future ticks until the file changes (step 1).

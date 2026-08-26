@@ -1,4 +1,5 @@
 import { CategoryItem, EntityDictionary } from './document.schema.js';
+import { PromptPersonalization, EMPTY_PROMPT_PERSONALIZATION, matchPriorityRules } from './prompt-personalization.js';
 
 const DOMAIN_CATEGORY_MAP: Record<keyof EntityDictionary, string> = {
   banks: 'bank',
@@ -11,27 +12,114 @@ const DOMAIN_CATEGORY_MAP: Record<keyof EntityDictionary, string> = {
 
 export const ALL_ENTITY_DOMAINS = Object.keys(DOMAIN_CATEGORY_MAP) as (keyof EntityDictionary)[];
 
+interface EntityCandidate {
+  /** Lowercased candidate text, used as a cheap substring pre-filter before any regex runs. */
+  needle: string;
+  /** Built and compiled only if `needle` is actually present in the document. */
+  regexSource: string;
+  regex: RegExp | null;
+  categorie: string;
+  subcategorie: string;
+}
+
+// The dictionary ships ~1,044 entities and each contributes a name plus every alias, so matching
+// used to build a RegExp per candidate on every call — roughly 2,700 of them, each with a unicode
+// lookbehind. V8 compiles a regex lazily on its first execution, so the first full-dictionary call
+// measured 2,092ms against 23ms for an empty dictionary, and that 2s made
+// classification-resolution.test.ts flake against vitest's 5s timeout. Subsequent calls only looked
+// cheap because V8's regex compilation cache still held the sources — a bounded, evictable cache.
+//
+// Two changes fix it. First, a plain lowercase `includes()` pre-filter: a boundary-anchored pattern
+// can only match if its literal text occurs at all, so the overwhelming majority of candidates are
+// rejected by a substring scan and never become a RegExp. Second, the survivors are compiled once
+// and memoized. The pre-filter is the part that matters — it turns ~2,700 regex compilations into
+// the handful of entities a document actually mentions.
+//
+// Keyed by the dictionary OBJECT via a WeakMap: entity-dictionary-store.ts caches parsed
+// dictionaries, so an unchanged file yields the same identity and this memo hits; edit the file and
+// the store hands back a fresh object, which misses here and rebuilds exactly as it should. WeakMap
+// means a replaced dictionary's candidates become collectable rather than leaking.
+const entityCandidateCache = new WeakMap<EntityDictionary, Map<string, EntityCandidate[]>>();
+
+function entityCandidatesFor(dictionary: EntityDictionary, domain: keyof EntityDictionary): EntityCandidate[] {
+  let byDomain = entityCandidateCache.get(dictionary);
+  if (!byDomain) {
+    byDomain = new Map();
+    entityCandidateCache.set(dictionary, byDomain);
+  }
+
+  const cached = byDomain.get(domain as string);
+  if (cached) return cached;
+
+  const categorie = DOMAIN_CATEGORY_MAP[domain];
+  const candidates: EntityCandidate[] = [];
+  for (const entry of dictionary[domain]) {
+    for (const candidate of [entry.name, ...entry.aliases]) {
+      const needle = candidate.toLowerCase();
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (escaped.length === 0) continue;
+      candidates.push({
+        needle,
+        // Unicode-aware word boundaries, so accented characters delimit correctly.
+        regexSource: `(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`,
+        regex: null,
+        categorie,
+        subcategorie: entry.slug,
+      });
+    }
+  }
+
+  byDomain.set(domain as string, candidates);
+  return candidates;
+}
+
 export function matchEntityDictionary(combined: string, domains: (keyof EntityDictionary)[], dictionary: EntityDictionary): { categorie: string; subcategorie: string } | null {
+  // The regexes carry the 'i' flag, so lowercasing once here keeps the pre-filter equivalent to
+  // what they would match, while letting every candidate be tested with a plain substring scan.
+  const haystack = (combined || '').toLowerCase();
+
   for (const domain of domains) {
-    const categorie = DOMAIN_CATEGORY_MAP[domain];
-    for (const entry of dictionary[domain]) {
-      const candidates = [entry.name, ...entry.aliases];
-      for (const candidate of candidates) {
-        const escaped = candidate.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        if (escaped.length === 0) continue;
-        // Use Unicode-aware word boundaries to correctly handle accented characters
-        if (new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu').test(combined)) {
-          return { categorie, subcategorie: entry.slug };
-        }
+    for (const candidate of entityCandidatesFor(dictionary, domain)) {
+      if (!haystack.includes(candidate.needle)) continue; // cannot match; skip compiling anything
+
+      // No 'g' flag, so the compiled regex is stateless and safe to reuse across calls.
+      if (!candidate.regex) candidate.regex = new RegExp(candidate.regexSource, 'iu');
+      if (candidate.regex.test(combined)) {
+        return { categorie: candidate.categorie, subcategorie: candidate.subcategorie };
       }
     }
   }
   return null;
 }
 
-export function buildEntityHintLine(categoryId: string, dictionary: EntityDictionary): string {
+/**
+ * @param documentText When given, only entities this document actually mentions are listed.
+ *
+ * Without it every one of the dictionary's ~1,000 entities is emitted for every category on every
+ * classification. Measured on this corpus that was 44,873 of the 50,859-char category description
+ * (88%), pushing the full system prompt to ~67,500 chars — roughly 19k tokens against the
+ * num_ctx of 8192 pinned in ollama-client.ts. More than half the prompt, including the tail of the
+ * STEP 1..13 decision flow, was being truncated away before the model read it, and it grew with
+ * every auto-created subcategory. This is a correctness problem before it is a speed one.
+ *
+ * Dropping the list entirely would be safe — matchEntityDictionary applies the same dictionary
+ * deterministically in ruleBasedClassify, and Step A already extracts the issuer — but keeping the
+ * handful of entities the text mentions preserves the naming nudge at a fraction of the cost.
+ */
+export function buildEntityHintLine(categoryId: string, dictionary: EntityDictionary, documentText?: string): string {
   const domains = ALL_ENTITY_DOMAINS.filter(domain => DOMAIN_CATEGORY_MAP[domain] === categoryId);
-  const entries = domains.flatMap(domain => dictionary[domain]);
+  let entries = domains.flatMap(domain => dictionary[domain]);
+
+  if (documentText !== undefined) {
+    const haystack = documentText.toLowerCase();
+    entries = entries.filter(entry =>
+      [entry.name, ...entry.aliases].some(candidate => {
+        const needle = candidate.toLowerCase().trim();
+        return needle.length > 0 && haystack.includes(needle);
+      })
+    );
+  }
+
   if (entries.length === 0) return '';
   return ` Known real-world entities: ${entries.map(e => `${e.slug} (${e.name})`).join(', ')}.`;
 }
@@ -52,13 +140,23 @@ export function normalizeSlug(str: string): string {
 export function preprocessRawText(text: string): string {
   if (!text) return '';
   return text
-    // Separate colon boundaries (e.g. name:PHAMD -> name: PHAMD, Invoice#INV -> Invoice # INV)
+    // Separate colon boundaries (e.g. name:DUPOND -> name: DUPOND, Invoice#INV -> Invoice # INV)
     .replace(/([a-zA-Z0-9]):([a-zA-Z0-9])/g, '$1: $2')
     .replace(/([a-zA-Z0-9])#([a-zA-Z0-9])/g, '$1 # $2')
     // Separate camelCase boundaries (e.g. InvoiceDetails -> Invoice Details)
     .replace(/([a-z])([A-Z])/g, '$1 $2')
-    // Separate common fused document field keywords (e.g. Customersname -> Customers name, Totalpayable -> Total payable, Invoicedate -> Invoice date)
-    .replace(/([a-zA-Z]+)(name|address|number|code|date|total|payable|price|rate|details|info|item|subtotal|charges|wrap|promotions|amount|vat|tax|invoice|seller|buyer)/gi, '$1 $2')
+    // Separate common fused document field keywords (e.g. Customersname -> Customers name,
+    // Totalpayable -> Total payable). Deliberately narrow: this runs on the text Step A extracts
+    // the issuer from and Step D writes titre/summary from, so a false split corrupts the value
+    // that is then fed back to Step D as "GROUND TRUTH". The short, substring-prone tokens
+    // (date, code, rate, item, info, vat, tax, price, total, amount, wrap) were removed because
+    // they split ordinary words — "private" -> "pri vate", "corporate" -> "corpo rate" — and the
+    // prefix now needs 5+ letters plus a non-letter tail so "surname"/"username" survive intact.
+    .replace(/([a-zA-Z]{5,})(name|address|number|payable|details|subtotal|charges|promotions|invoice|seller|buyer)(?![a-z])/gi, '$1 $2')
+    // 'date' needs a known field prefix rather than the generic {5,} rule: plenty of ordinary
+    // words end in it and would be mangled ('candidate' -> 'candi date', 'consolidate',
+    // 'liquidate'), while the real fusions all come from a small, closed set of field labels.
+    .replace(/(invoice|delivery|order|due|issue|payment|start|end|birth|expiry)(date)(?![a-z])/gi, '$1 $2')
     // Separate letter-number boundaries (e.g. Deliverydate02 -> Deliverydate 02)
     .replace(/([a-zA-Z])([0-9])/g, '$1 $2')
     .replace(/([0-9])([a-zA-Z])/g, '$1 $2')
@@ -205,38 +303,59 @@ export function cleanAndParseJSON(rawStr: string): any {
   try {
     return JSON.parse(cleaned);
   } catch (e) {
-    // Response was likely truncated mid-generation (e.g. context/length limit cut off
-    // markdown_content before the closing brace). Repair by closing any unterminated
-    // string and any brackets left open, respecting string boundaries, then retry.
+    // Response was truncated mid-generation — the context window ran out before the model
+    // finished. Repair by closing any unterminated string and any brackets left open,
+    // respecting string boundaries, then retry.
+    //
+    // The repair is deliberately loud. Silently patching the JSON is how a real bug hid for the
+    // life of this corpus: at num_ctx 8192 the reply was cut off after `tags`, this closed the
+    // object, the schema filled the missing keys with '', and every downstream layer saw a valid
+    // result — so total_amount, vat_amount, siren, iban, expiry_date and all five contact_*
+    // fields were empty on all 774 documents with nothing anywhere reporting a problem.
     const repaired = repairTruncatedJSON(text).replace(/,\s*([\}\]])/g, '$1');
-    return JSON.parse(repaired);
+    const parsed = JSON.parse(repaired);
+    console.warn(
+      `[CLASSIFY] Model response was truncated (${text.length} chars) and had to be repaired — ` +
+      `fields near the end of the JSON schema are probably missing. Raise num_ctx or shorten the prompt.`
+    );
+    return parsed;
   }
 }
 
-export function ruleBasedClassify(rawText: string, filename: string, dictionary: EntityDictionary, personalNameDenylist: string[]): { categorie: string; subcategorie: string; title: string; date: string; reason: string; payment_status?: string; invoice_type?: string } {
+export function ruleBasedClassify(rawText: string, filename: string, dictionary: EntityDictionary, personalNameDenylist: string[], personalization: PromptPersonalization = EMPTY_PROMPT_PERSONALIZATION): { categorie: string; subcategorie: string; title: string; date: string; reason: string; payment_status?: string; invoice_type?: string } {
   const combined = (filename + ' ' + rawText.substring(0, 4000)).toLowerCase();
 
   // Generic bank-statement signal phrases (same signals as the Qwen prompt's STEP 1)
   // used to guard the gov (7b) and insurance-dictionary (8) branches so a
   // Crédit Mutuel / Chase / Barclays relevé isn't misfiled via a transaction-row mention of
   // CAF / AXA / etc. (Golden Rule #6 "archetypal trap").
-  const looksLikeBankStatement = /(relev[ée]\s*de\s*compte|relev[ée]\s*de\s*ch[èe]ques|rlv[_-]|rlv_|rchq|rce[_-]|rce_|syn[_-]ep|synth[èe]se\s*(d'|de\s*)?[ée]pargne|solde\s*cr[ée]diteur|c\/c\s*eurocompte|relev[ée]\s*bancaire|extrait\s*de\s*compte|releve\s*de\s*cheques|bank\s*statement|account\s*statement|checking\s*account|savings\s*account|statement\s*of\s*account|credit\s*card\s*statement|opening\s*balance|closing\s*balance|bank\s*summary)/i.test(combined);
+  //
+  // Bank-specific statement filename codes and account-product names are personal, so they are
+  // not literals here — they come from the gitignored .prompts.private.json overlay, the same
+  // source that feeds the prompt's STEP 0. A statement whose only signal is such a code is
+  // recognized through `priorityMatch` below.
+  const priorityMatch = matchPriorityRules(combined, personalization);
+  const looksLikeBankStatement = /(relev[ée]\s*de\s*compte|relev[ée]\s*de\s*ch[èe]ques|synth[èe]se\s*(d'|de\s*)?[ée]pargne|solde\s*cr[ée]diteur|relev[ée]\s*bancaire|extrait\s*de\s*compte|releve\s*de\s*cheques|bank\s*statement|account\s*statement|checking\s*account|savings\s*account|statement\s*of\s*account|credit\s*card\s*statement|opening\s*balance|closing\s*balance|bank\s*summary)/i.test(combined)
+    || priorityMatch?.categorie === 'bank';
 
   let categorie = 'administrative';
   let subcategorie = 'general';
   let reason = 'Default administrative fallback';
 
-  // 0a. Amendes / Traffic Fines & Penalty Receipts (High Priority Override)
-  if (/\b(justificatif.*règlement.*amende|règlement.*amende|reglement.*amende|amende|amendes|amendes\.gouv\.fr|antai|avis de contravention|procès-verbal|proces-verbal|pv d'amende|traffic\s*fine|parking\s*ticket|penalty\s*charge)\b/i.test(combined)) {
-    categorie = 'administrative';
-    subcategorie = 'amende';
-    reason = 'Matched traffic fine / penalty pattern (amendes.gouv.fr/antai)';
+  // 0a. User overlay overrides — the deterministic mirror of the prompt's STEP 0
+  // (.prompts.private.json). Golden Rule #6 still wins: a non-bank override never beats a bank
+  // statement, so a landlord / vendor / employer name appearing only inside a statement's
+  // transaction rows cannot pull the document out of 'bank'.
+  if (priorityMatch && !(looksLikeBankStatement && priorityMatch.categorie !== 'bank')) {
+    categorie = priorityMatch.categorie;
+    subcategorie = priorityMatch.subcategorie;
+    reason = `Matched user overlay priority rule '${priorityMatch.keyword}' -> ${categorie}/${subcategorie}`;
   }
   // 0b. Bank Statements, Check Statements & Savings Summaries (High Priority Override - Golden Rule #6)
   else if (looksLikeBankStatement) {
     categorie = 'bank';
     if (/bnp[-_ ]?paribas|bnpparibas|\bbnp\b/i.test(combined)) { subcategorie = 'bnp_paribas'; reason = 'Matched bank statement pattern -> BNP Paribas'; }
-    else if (/\b(caisse de credit mutuel|crédit mutuel|credit mutuel|ccm marseille|creditmutuel)\b/i.test(combined) || /30004|rchq|rce|syn[_-]ep/i.test(combined)) { subcategorie = 'credit_mutuel'; reason = 'Matched bank statement pattern -> Crédit Mutuel'; }
+    else if (/\b(caisse de credit mutuel|crédit mutuel|credit mutuel|creditmutuel)\b/i.test(combined)) { subcategorie = 'credit_mutuel'; reason = 'Matched bank statement pattern -> Crédit Mutuel'; }
     else if (/\b(société générale|societe generale)\b/i.test(combined)) { subcategorie = 'societe_generale'; reason = 'Matched bank statement pattern -> Société Générale'; }
     else if (/\b(boursorama|boursobank)\b/i.test(combined)) { subcategorie = 'boursobank'; reason = 'Matched bank statement pattern -> BoursoBank'; }
     else if (/\b(lcl|crédit lyonnais|credit lyonnais)\b/i.test(combined)) { subcategorie = 'lcl'; reason = 'Matched bank statement pattern -> LCL'; }
@@ -246,6 +365,16 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
       if (dictBank) { subcategorie = dictBank.subcategorie; reason = `Matched bank statement pattern -> ${dictBank.subcategorie} (via dictionary)`; }
       else { subcategorie = 'releve_bancaire'; reason = 'Matched generic bank statement pattern'; }
     }
+  }
+  // 0c. Amendes / Traffic Fines & Penalty Receipts.
+  // Deliberately AFTER the bank-statement branch, mirroring prompts/classification_rules.md where
+  // STEP 1 (bank) precedes STEP 1B (fines). When it ran first, a Crédit Mutuel relevé listing a
+  // single ANTAI debit row returned administrative/amende — the archetypal Golden Rule #6 trap the
+  // rest of this function is built to avoid, in the one branch that sat above the guard.
+  else if (/\b(justificatif.*règlement.*amende|règlement.*amende|reglement.*amende|amende|amendes|amendes\.gouv\.fr|antai|avis de contravention|procès-verbal|proces-verbal|pv d'amende|traffic\s*fine|parking\s*ticket|penalty\s*charge)\b/i.test(combined)) {
+    categorie = 'administrative';
+    subcategorie = 'amende';
+    reason = 'Matched traffic fine / penalty pattern (amendes.gouv.fr/antai)';
   }
   // Specific Bulletin de Salaire / Pay Slips Category (Universal for all employers/companies)
   else if (/bulletindesalaire|bulletin de salaire|bulletin de paie|fiche de paie|payslip|pay\s*slip|paystub|pay\s*stub|salary\s*statement|wage\s*statement|gross\s*pay|net\s*pay/i.test(combined)) {
@@ -269,7 +398,7 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     }
   }
   // Internship Attestations (Universal for all educational institutions & companies)
-  else if (/attestation.*stage|stage|internship/i.test(combined)) {
+  else if (/(attestation|convention|certificat)\s*(de\s*)?stage|internship/i.test(combined)) {
     categorie = 'education';
     subcategorie = 'attestation_stage';
   }
@@ -287,15 +416,15 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     else subcategorie = 'cdi_cdd';
   }
   // 2. Identity & Passports & Civil Records & Vehicle Cession
-  else if (/(passeport|passport|carte d'identité|cni|piece_identite|pièce d'identité|piece d'identite|cancuoccongdan|giaypheplaixe|giay phep lai xe|permis de conduire|carte[-_ ]?de[-_ ]?séjour|carte[-_ ]?sejour|titre[-_ ]?de[-_ ]?séjour|titre[-_ ]?sejour|\btitre[-_][\p{L}]|récépissé|recipisse|rechung|carte vitale|cartevitale|acte de mariage|actemariage|acte de naissance|livret de famille|dces|cession.*véhicule|enregistrement.*dces|identity\s*card|id\s*card|driver'?s?\s*license|residence\s*permit|visa|birth\s*certificate|marriage\s*certificate)/iu.test(combined)) {
+  else if (/(passeport|passport|carte d'identité|(?<!\p{L})cni(?!\p{L})|piece_identite|pièce d'identité|piece d'identite|cancuoccongdan|giaypheplaixe|giay phep lai xe|permis de conduire|carte[-_ ]?de[-_ ]?séjour|carte[-_ ]?sejour|titre[-_ ]?de[-_ ]?séjour|titre[-_ ]?sejour|\btitre[-_][\p{L}]|récépissé|recipisse|carte vitale|cartevitale|acte de mariage|actemariage|acte de naissance|livret de famille|cession.*véhicule|identity\s*card|id\s*card|driver'?s?\s*license|residence\s*permit|visa\s*(de\s*)?(long|court|s[ée]jour|schengen)|birth\s*certificate|marriage\s*certificate)/iu.test(combined)) {
     categorie = 'identity';
     if (/(passeport|passport)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'passeport';
-    else if (/(récépissé|recipisse|rec_hung|rechung)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'recipisse_sejour';
-    else if (/(carte[-_ ]?de[-_ ]?séjour|carte[-_ ]?sejour|titre[-_ ]?de[-_ ]?séjour|titre[-_ ]?sejour|residence\s*permit|visa|\btitre[-_][\p{L}])(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'titre_sejour';
+    else if (/(récépissé|recipisse)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'recipisse_sejour';
+    else if (/(carte[-_ ]?de[-_ ]?séjour|carte[-_ ]?sejour|titre[-_ ]?de[-_ ]?séjour|titre[-_ ]?sejour|residence\s*permit|visa\s*(de\s*)?(long|court|s[ée]jour|schengen)|\btitre[-_][\p{L}])(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'titre_sejour';
     else if (/(carte vitale|cartevitale)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'carte_vitale';
     else if (/(giaypheplaixe|giay phep lai xe|permis de conduire|permis|driver'?s?\s*license)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'permis_conduire';
-    else if (/(dces|cession.*véhicule|enregistrement.*dces|carte[-_ ]?grise)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'carte_grise';
-    else if (/(cancuoccongdan|carte d'identité|cni|piece_identite|pièce d'identité|piece d'identite|identity\s*card|id\s*card)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'carte_identite';
+    else if (/(cession.*véhicule|carte[-_ ]?grise)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'carte_grise';
+    else if (/(cancuoccongdan|carte d'identité|(?<!\p{L})cni(?!\p{L})|piece_identite|pièce d'identité|piece d'identite|identity\s*card|id\s*card)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'carte_identite';
     else if (/(actemariage|acte de mariage|acte de naissance|birth\s*certificate|marriage\s*certificate)(?:[-_ ][\p{L}\p{N}_-]+)?/iu.test(combined)) subcategorie = 'acte_mariage';
   }
   // 3. Health / Medical & Work Stoppages
@@ -303,34 +432,33 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     categorie = 'health';
     if (/\barrêt de travail|arret de travail|avis d'arrêt|sick\s*leave|doctor'?s?\s*note\b/i.test(combined)) subcategorie = 'arret_travail';
     else if (/\bameli|assurance maladie|cpam|attestationam\b/i.test(combined)) subcategorie = 'ameli';
-    else if (/\bgan\b/i.test(combined)) subcategorie = 'gan_sante';
-    else if (/\bclinic_x|clinic_x\b/i.test(combined)) subcategorie = 'clinic_x';
     else {
       const dictHealth = matchEntityDictionary(combined, ['health'], dictionary);
       if (dictHealth) subcategorie = dictHealth.subcategorie;
     }
   }
   // 4. Housing & Domicile Proof & Transport Schedules
-  else if (!looksLikeBankStatement && /\b(justificatif de domicile|attestation d'hébergement|attestation hebergement|attestation cercles|cercles|declarationhonneur|quittance de loyer|foncia|logement|bus relais|bus|navigo|proof\s*of\s*address|utility\s*bill|rent\s*receipt)\b/i.test(combined)) {
-    if (/\bbus|bus relais|navigo\b/i.test(combined)) {
+  else if (!looksLikeBankStatement && /\b(justificatif de domicile|attestation d'hébergement|attestation hebergement|declarationhonneur|quittance de loyer|logement|bus|navigo|proof\s*of\s*address|utility\s*bill|rent\s*receipt)\b/i.test(combined)) {
+    if (/\b(bus|navigo)\b/i.test(combined)) {
       categorie = 'administrative';
       subcategorie = 'navigo';
     } else {
       categorie = 'housing';
-      if (/\bfoncia\b/i.test(combined)) subcategorie = 'foncia';
-      else subcategorie = 'justificatif_domicile';
+      subcategorie = 'justificatif_domicile';
     }
   }
   // 5. Education & Academic Diplomas & Transcripts
-  else if (/\b(formation|bachelor|étudiant|scolarité|inscription|ecole_y|ecole_x|ecole_z|openclassrooms|école|université|diplôme|diplome|bulletinscolaire|certificat|alternance|l1informatique|relevé de notes|releve de notes|relevés de notes|bulletin de notes|academic\s*transcript|grade\s*report|certificate\s*of\s*enrollment|diploma|degree\s*certificate|tuition\s*fee)\b/i.test(combined)) {
+  else if (/\b(formation|bachelor|étudiant|scolarité|inscription|école|université|diplôme|diplome|bulletinscolaire|certificat|alternance|relevé de notes|releve de notes|relevés de notes|bulletin de notes|academic\s*transcript|grade\s*report|certificate\s*of\s*enrollment|diploma|degree\s*certificate|tuition\s*fee)\b/i.test(combined)) {
     categorie = 'education';
-    if (/\becole_x\b/i.test(combined)) subcategorie = 'ecole_x';
-    else if (/\becole_y\b/i.test(combined)) subcategorie = 'ecole_y';
-    else if (/\becole_z\b/i.test(combined)) subcategorie = 'ecole_z';
-    else if (/\bopenclassrooms\b/i.test(combined)) subcategorie = 'openclassrooms';
-    else if (/\balternance\b/i.test(combined)) subcategorie = 'alternance';
+    if (/\balternance\b/i.test(combined)) subcategorie = 'alternance';
     else if (/\brelevé de notes|releve de notes|relevés de notes|bulletin de notes|academic\s*transcript|grade\s*report\b/i.test(combined)) subcategorie = 'releve_notes';
-    else if (/\bdiplome|diplôme|bulletinscolaire|certificat|l1informatique|diploma|degree\b/i.test(combined)) subcategorie = 'diplomes';
+    else if (/\bdiplome|diplôme|bulletinscolaire|certificat|diploma|degree\b/i.test(combined)) subcategorie = 'diplomes';
+    else {
+      // A school / training-provider name is personal, so it is not a literal here. The
+      // overlay's STEP 0 rules catch a known one earlier; the dictionary is the generic path.
+      const dictSchool = matchEntityDictionary(combined, ALL_ENTITY_DOMAINS, dictionary);
+      if (dictSchool) subcategorie = dictSchool.subcategorie;
+    }
   }
   // 6. Enterprise Invoices (Client Sales vs Supplier Purchases)
   else if (/\b(facture n°|facture no|facture|invoice|quittance|montant à payer|total ttc|bill|receipt|tax\s*invoice|amount\s*due|balance\s*due|total\s*due|payment\s*receipt)\b/i.test(combined)) {
@@ -366,10 +494,10 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     }
   }
   // 7. Taxes & Kbis & Company Registration Statements
-  else if (!looksLikeBankStatement && /\b(kbis|extrait kbis|avis[ _-]d[ _-]impot|avis[ _-]d'impot|avis[ _-]impot|déclaration[ _-]d'impôt|taxe[ _-]fonciere|taxe[ _-]foncière|taxe[ _-]d'habitation|revenus[ _-]et[ _-]prelev|prélèvement[ _-]sociaux|prelev[ _-]sociaux|finances[ _-]publiques|dgfip|impôt|impots|dossier-rempli|dossier|tax\s*return|tax\s*assessment|w-?2|form\s*1040|tax\s*notice|hmrc|property\s*tax|inland\s*revenue)\b/i.test(combined)) {
+  else if (!looksLikeBankStatement && /\b(kbis|extrait kbis|avis[ _-]d[ _-]impot|avis[ _-]d'impot|avis[ _-]impot|déclaration[ _-]d'impôt|taxe[ _-]fonciere|taxe[ _-]foncière|taxe[ _-]d'habitation|revenus[ _-]et[ _-]prelev|prélèvement[ _-]sociaux|prelev[ _-]sociaux|finances[ _-]publiques|dgfip|impôt|impots|dossier-rempli|tax\s*return|tax\s*assessment|w-?2|form\s*1040|tax\s*notice|hmrc|property\s*tax|inland\s*revenue)\b/i.test(combined)) {
     categorie = 'administrative';
     if (/\bkbis|extrait kbis\b/i.test(combined)) subcategorie = 'kbis';
-    else if (/\bdossier-rempli|dossier\b/i.test(combined)) subcategorie = 'dossier_administratif';
+    else if (/\bdossier[-_]rempli\b/i.test(combined)) subcategorie = 'dossier_administratif';
     else subcategorie = 'impot';
   }
   // 7b. Government & Social Agencies
@@ -379,7 +507,7 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     subcategorie = dictGov.subcategorie;
   }
   // 8. Insurance / Assurances & Theft Claims
-  else if (/\b(assurance auto|assurance habitation|prévoyance|prevoyance|responsabilité civile|allianz|macif|maaf|a2a|déclaration de vol|declaration de vol|découverte de vol|decourverte de vol|dépôt de plainte|depot de plainte|plainte|car\s*insurance|auto\s*insurance|home\s*insurance|renters?\s*insurance|liability\s*insurance|policy\s*schedule|insurance\s*certificate)\b/i.test(combined) || (!looksLikeBankStatement && matchEntityDictionary(combined, ['insurance'], dictionary))) {
+  else if (/\b(assurance auto|assurance habitation|prévoyance|prevoyance|responsabilité civile|allianz|macif|maaf|déclaration de vol|declaration de vol|découverte de vol|decourverte de vol|dépôt de plainte|depot de plainte|plainte|car\s*insurance|auto\s*insurance|home\s*insurance|renters?\s*insurance|liability\s*insurance|policy\s*schedule|insurance\s*certificate)\b/i.test(combined) || (!looksLikeBankStatement && matchEntityDictionary(combined, ['insurance'], dictionary))) {
     categorie = 'insurance';
     if (/\bdéclaration de vol|declaration de vol|découverte de vol|decourverte de vol|dépôt de plainte|depot de plainte|plainte\b/i.test(combined)) subcategorie = 'declaration_vol';
     else if (/\ballianz\b/i.test(combined)) subcategorie = 'allianz';
@@ -399,7 +527,7 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     categorie = 'recruitment';
   }
   // 11. Correspondence
-  else if (/\b(yahoo mail|courrier|lettre|email|mail|recommandé|notification|letter|notice)\b/i.test(combined)) {
+  else if (/\b(courrier|lettre|email|mail|recommandé|notification|letter|notice)\b/i.test(combined)) {
     categorie = 'correspondence';
   }
   // 12. Technical
@@ -413,26 +541,19 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
 
   // Exact Subcategory Fallbacks & Dynamic Subcategory Generation from Filename Keywords
   if (subcategorie === 'general') {
-    if (/\becole_x\b/i.test(combined)) subcategorie = 'ecole_x';
-    else if (/\becole_y\b/i.test(combined)) subcategorie = 'ecole_y';
-    else if (/\becole_z\b/i.test(combined)) subcategorie = 'ecole_z';
-    else if (/\bopenclassrooms\b/i.test(combined)) subcategorie = 'openclassrooms';
-    else if (/\bcarrefour\b/i.test(combined)) subcategorie = 'carrefour';
+    if (/\bcarrefour\b/i.test(combined)) subcategorie = 'carrefour';
     else if (/\bkairos\b/i.test(combined)) subcategorie = 'kairos';
     else if (/\ballianz\b/i.test(combined)) subcategorie = 'allianz';
-    else if (/\b(gan|gan santé|gan assurances)\b/i.test(combined)) subcategorie = 'gan_sante';
-    else if (/\bcapgemini\b/i.test(combined)) subcategorie = 'capgemini';
     else if (/\b(sfr|red by sfr)\b/i.test(combined)) subcategorie = 'sfr';
     else if (/\bedf\b/i.test(combined)) subcategorie = 'edf';
     else if (/\bengie\b/i.test(combined)) subcategorie = 'engie';
     else if (/\bbouygues\b/i.test(combined)) subcategorie = 'bouygues';
-    else if (/\bfree\b/i.test(combined)) subcategorie = 'free';
+    else if (/\bfree\s*(mobile|telecom|haut\s*débit)\b|free\.\bfr\b/i.test(combined)) subcategorie = 'free';
     else if (/\b(ameli|assurance maladie|cpam)\b/i.test(combined)) subcategorie = 'ameli';
     else if (/\b(navigo|ile-de-france mobilités|ratp)\b/i.test(combined)) subcategorie = 'navigo';
     else if (/\bcdiscount\b/i.test(combined)) subcategorie = 'cdiscount';
     else if (/\bamazon\b/i.test(combined)) subcategorie = 'amazon';
     else if (/\bfnac\b/i.test(combined)) subcategorie = 'fnac';
-    else if (/\bfoncia\b/i.test(combined)) subcategorie = 'foncia';
     else if (/\b(page[ _-]de[ _-]confirmation|confirmation)\b/i.test(combined)) {
       categorie = 'administrative';
       subcategorie = 'attestation_confirmation';
@@ -441,15 +562,11 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
       categorie = 'education';
       subcategorie = 'cpf';
     }
-    else if (/\b(bctc|bctcth|giai[ _-]trinh|bao[ _-]cao[ _-]tai[ _-]chinh)\b/i.test(combined)) {
-      categorie = 'administrative';
-      subcategorie = 'bctc';
-    }
     else if (/\b(bulletindesalaire|bulletin[ _-]de[ _-]salaire|fiche[ _-]de[ _-]paie)\b/i.test(combined)) {
       categorie = 'bulletin_salaire';
       subcategorie = 'bulletin_salaire';
     }
-    else if (/\b(facture|invoice|bill|receipt|casque)\b/i.test(combined)) {
+    else if (/\b(facture|invoice|bill|receipt)\b/i.test(combined)) {
       if (categorie !== 'factures_clients') {
         categorie = 'invoices';
       }
@@ -572,10 +689,14 @@ export function reconcileDocumentDate(rawDate: string, titre: string, now: Date 
   };
 }
 
-export function buildCategoriesDescriptionStr(categoriesConfig: { categories: CategoryItem[] }, dictionary: EntityDictionary): string {
+export function buildCategoriesDescriptionStr(
+  categoriesConfig: { categories: CategoryItem[] },
+  dictionary: EntityDictionary,
+  documentText?: string
+): string {
   return categoriesConfig.categories.map(c => {
     const subsStr = c.subcategories ? c.subcategories.map(s => s.id).join(', ') : 'none';
-    const entityHint = buildEntityHintLine(c.id, dictionary);
+    const entityHint = buildEntityHintLine(c.id, dictionary, documentText);
     return `- Category '${c.id}' (${c.name}): ${c.description}. Existing subcategories: [${subsStr}].${entityHint}`;
   }).join('\n');
 }

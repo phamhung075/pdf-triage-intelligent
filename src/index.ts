@@ -18,7 +18,7 @@ async function main() {
     await startMCPServer();
   } else {
     console.log('Starting Web Dashboard & Triage API Server...');
-    startWebServer(CONFIG.PORT);
+    await startWebServer(CONFIG.PORT);
   }
 }
 

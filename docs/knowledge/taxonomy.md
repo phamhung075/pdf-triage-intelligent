@@ -27,17 +27,17 @@ Defined as defaults in `getCategoriesConfig()` (`src/infrastructure/categories-s
 - Lowercase snake_case slug.
 - One entity per slug — **never lump**.
   - Banks: `credit_mutuel`, `societe_generale`, `bnp_paribas`, `boursobank`, `lcl`, `la_banque_postale`.
-  - Employers: `employeur_x`, `globex`, `capgemini`, `ecole_x`.
-  - Schools: `ecole_x`, `ecole_y`, `ecole_z`, `openclassrooms`.
+  - Employers: the slugified employer name printed on the pay slip (`acme_corp`, `globex_sarl`, …).
+  - Schools: the slugified school or training-provider name (`northwind_academy`, …).
   - Vendors: `sfr`, `edf`, `engie`, `free`, `cdiscount`, `amazon`, `bouygues`, `orange`, `veolia`.
-  - Health: `ameli`, `gan_sante`, `clinic_x`.
+  - Health: `ameli`, `cpam`, plus the slugified practitioner/mutuelle name.
   - Insurance: `allianz`, `macif`, `maaf`.
-  - Housing: `foncia`, `justificatif_domicile`.
+  - Housing: `justificatif_domicile`, plus the slugified property-manager name.
   - Identity types: `passeport`, `titre_sejour`, `carte_vitale`, `permis_conduire`, `carte_identite`, `acte_mariage`.
   - Tax: `impot`.
   - Contracts: `cdi_cdd`, `conditions_generales`, `attestation_employeur`.
 - Forbidden as final subcategory: `general`, `other`, `divers`, empty string, year strings.
-- Nesting allowed: `ecole_x/bachelor` maps to `education/ecole_x/bachelor/<YYYY>/`.
+- Nesting allowed: `<school_slug>/bachelor` maps to `education/<school_slug>/bachelor/<YYYY>/`.
 
 ## Cross-category traps
 
@@ -80,6 +80,68 @@ auto-created per Rule #5 — the dictionary only improves naming quality, it
 never blocks auto-creation. To add an entity, add a `{slug, name, aliases}`
 entry under the right domain (`banks`, `energy`, `telecom`, `insurance`,
 `gov`, `health`) — no prompt-string or regex editing required.
+
+## Personal prompt overlay
+
+Everything under `prompts/` is **committed and publishable**, so it carries no real
+employer, bank product code, scan filename prefix, clinic, or school belonging to the
+person running this instance. Those signals are still useful to the classifier, so they
+live in a gitignored overlay and are injected at prompt-build time:
+
+| File | Committed? | Holds |
+| --- | --- | --- |
+| `prompts/*.md`, `prompts/json_schema_response.json` | yes | the generic decision flow, generic examples, and two placeholders |
+| `prompts.private.json.example` | yes | the template + inline documentation |
+| `.prompts.private.json` | **no** (gitignored) | your real entities and keyword overrides |
+
+The overlay feeds **both** classification paths, which is what keeps them logically aligned
+(Golden Rule #6). `src/domain/prompt-personalization.ts` owns the shape, the rendering, and the
+matcher; `src/infrastructure/prompt-personalization-store.ts` reads the file.
+
+**Path 1 — the Qwen prompt.** Two placeholders:
+
+- `{{USER_PRIORITY_RULES}}` in `prompts/classification_rules.md` — rendered as a **STEP 0**
+  block *before* the generic STEP 1. The flow is strict-order and STEP 1 is a high-priority
+  override, so an overlay block appended after STEP 13 would never fire for the document
+  types these overrides exist to catch.
+- `{{USER_KNOWN_ENTITIES}}` in `prompts/micro_prompt_entity.md` — recognition hints for
+  Step A entity extraction.
+
+**Path 2 — the deterministic fallback.** `matchPriorityRules()` runs the same rules inside
+`ruleBasedClassify()` (`src/domain/classification.ts`), as a branch sitting between the
+fines override and the bank-statement override. Without it the Ollama-down fallback would keep
+classifying by signals the prompt no longer carries — a silent divergence.
+
+Two rules govern the fallback path:
+
+- **Only rules with an explicit `subcategory` apply.** A rule that defers subcategory resolution
+  to the issuing entity gives a regex classifier nothing to resolve from, and inventing one would
+  manufacture a subcategory the document never supported.
+- **A non-bank rule never outranks a bank statement** (Golden Rule #6). A landlord or vendor name
+  matched only inside a statement's transaction rows cannot pull the document out of `bank`. The
+  rendered STEP 0 block states the same exception to the model in words.
+
+Keyword matching excludes adjacent **letters**, not digits: `gan` must not fire inside
+`organization`, but a statement code or scan prefix is routinely glued to a date or account number
+(`STMT_CHK_101`), and a digit-excluding boundary would never match those. A keyword ending in a
+separator (`stmt_`, `c/c `) needs no trailing guard at all.
+
+Overlay shape (`known_entities`, `priority_rules`, `extra_rules_text`) is Zod-validated. A
+missing file is the normal state for a fresh clone and both blocks render as the empty
+string; an invalid file is logged and treated as empty rather than thrown, so a typo can
+never take the triage pipeline down. Same public-base + private-overlay split as
+`categories.json` / `.categories.private.json`.
+
+Note that the overlay is often *redundant* for entity naming: `{{CATEGORIES_DESCRIPTION}}`
+already injects the real, merged subcategory list (including everything auto-created from
+your own documents), and `entity_dictionary.json` already supplies per-category entity
+hints. Reach for `.prompts.private.json` for signals neither of those can express — bank
+statement filename codes, scanner prefixes, bilingual document titles.
+
+`src/domain/prompt-hygiene.test.ts` fails the build if any name from
+`CONFIG.PERSONAL_NAME_DENYLIST` reappears in a committed `prompts/` file **or** in
+`src/domain/classification.ts`, and asserts the classifier still reads its overrides through
+`matchPriorityRules` rather than hardcoding them.
 
 ## Rename flow
 

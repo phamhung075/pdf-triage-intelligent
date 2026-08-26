@@ -300,7 +300,7 @@ class TriageEventsManager {
             const res = await fetch('/api/registry/repair', { method: 'POST' });
             const data = await res.json();
             if (res.ok) {
-                this.app.toast.success(`Registry Repair Finished:\n- Scanned: ${data.scannedCount}\n- Repaired: ${data.repairedCount}\n- Relocalized: ${data.relocalizedCount || 0}\n- Returned to __raws: ${data.movedToRawsCount || 0}\n- Updated: ${data.updatedCount}`, 6000);
+                this.app.toast.success(`Registry Repair Finished:\n- Scanned: ${data.scannedCount}\n- Repaired: ${data.repairedCount}\n- Relocalized: ${data.relocalizedCount || 0}\n- Returned to incoming: ${data.movedToRawsCount || 0}\n- Updated: ${data.updatedCount}`, 6000);
                 this.app.categoryPills.loadCategories();
                 this.app.documentGrid.loadDocuments();
             }
@@ -319,13 +319,13 @@ class TriageEventsManager {
         }
     }
     async handleClearRegistry() {
-        if (!confirm('Are you sure you want to clear the registry and move all archived PDFs back to __raws?'))
+        if (!confirm('Are you sure you want to clear the registry and move all archived PDFs back to your incoming folder?'))
             return;
         try {
             const res = await fetch('/api/documents', { method: 'DELETE' });
             const data = await res.json();
             if (res.ok) {
-                this.app.toast.success(data.message || 'Registry cleared & files returned to __raws!');
+                this.app.toast.success(data.message || 'Registry cleared & files returned to your incoming folder!');
                 this.app.modals.closeSettingsModal();
                 this.app.categoryPills.loadCategories();
                 this.app.documentGrid.loadDocuments();
@@ -407,7 +407,7 @@ class TriageEventsManager {
                     const evt = JSON.parse(e.data);
                     if (evt.type === 'SCAN_STARTED') {
                         if (header) {
-                            header.innerHTML = `Found <strong>${evt.totalFiles}</strong> incoming PDF(s) in <code>__raws</code> folder. Following live triage flow:`;
+                            header.innerHTML = `Found <strong>${evt.totalFiles}</strong> incoming document(s). Following live triage flow:`;
                         }
                         (evt.files || []).forEach((fname) => {
                             if (!fileRows.has(fname) && list) {
@@ -417,7 +417,7 @@ class TriageEventsManager {
                                 row.innerHTML = `
                   <div style="display: flex; flex-direction: column; gap: 0.2rem;">
                     <span class="scan-progress-filename">📄 ${state.escapeHtml(fname)}</span>
-                    <span class="step-msg" style="font-size: 0.78rem; color: #94a3b8;">Queued in __raws...</span>
+                    <span class="step-msg" style="font-size: 0.78rem; color: #94a3b8;">Queued...</span>
                   </div>
                   <span class="scan-stage-badge scan-stage-QUEUED">QUEUED</span>
                 `;

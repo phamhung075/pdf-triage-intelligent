@@ -6,7 +6,8 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createCanvas } from '@napi-rs/canvas';
 import { createWorker } from 'tesseract.js';
 import { logger } from './logger.js';
-import { cleanExtractedText, detectMidWordCapitalizationCorruption, type CorruptionSignal } from '../domain/pdf-text.js';
+import { CONFIG } from './settings.js';
+import { cleanExtractedText, detectMidWordCapitalizationCorruption, detectThinTextLayer, type CorruptionSignal } from '../domain/pdf-text.js';
 import { paddleOcrRecognize } from './paddleocr-client.js';
 
 export interface ExtractedPDF {
@@ -14,6 +15,18 @@ export interface ExtractedPDF {
   raw_text: string;
   numpages: number;
   info: any;
+  // True when this text came out of the Tesseract availability fallback instead of PaddleOCR.
+  // The two engines are NOT interchangeable in quality — on a photographed ID card PaddleOCR
+  // returned the clean numbered form fields where Tesseract returned line noise — so a caller
+  // that already holds text
+  // for this file (re-analysis) needs to know the new extraction is the degraded one BEFORE it
+  // overwrites anything with it. Undefined/false means no OCR ran, or PaddleOCR handled it.
+  ocr_degraded?: boolean;
+}
+
+export interface CanvasOcrResult {
+  text: string;
+  degraded: boolean;
 }
 
 export function sanitizeDocumentNoise(text: string): string {
@@ -71,13 +84,30 @@ export async function safePdfParse(buffer: Buffer): Promise<{ text: string; nump
   }
 }
 
+// Ceiling for the pdfjs recovery parser. Previously a bare `Math.min(doc.numPages, 10)`, which
+// quietly dropped everything past page 10 of any document that reached this fallback — 10 of the
+// 273 archived documents are longer than that. Pure text extraction costs milliseconds per page,
+// so the ceiling is high enough to be a runaway guard rather than a quality trade-off.
+const PDFJS_MAX_PAGES = 200;
+
 // Fallback 1: Robust text extraction via pdfjs-dist legacy (recovers text from corrupted XRef tables)
 export async function parseWithPdfjs(buffer: Buffer): Promise<string> {
   try {
     const loadingTask = (pdfjsLib as any).getDocument({ data: new Uint8Array(buffer), ignoreErrors: true, useSystemFonts: true });
     const doc = await loadingTask.promise;
     let fullText = '';
-    const numPages = Math.min(doc.numPages, 10);
+    // Same rule as the canvas OCR path: cap if we must, but never silently. This one is cheap
+    // (text extraction, no rendering and no OCR round-trip), so it gets a much higher ceiling —
+    // it exists to bound a pathological document, not to trade quality for speed.
+    const numPages = Math.min(doc.numPages, PDFJS_MAX_PAGES);
+    if (doc.numPages > numPages) {
+      logger.warn(
+        'PDF_PARSER',
+        `pdfjs-dist recovery parser truncated: reading only ${numPages} of ${doc.numPages} pages — ` +
+        `text from pages ${numPages + 1}-${doc.numPages} will be MISSING.`,
+        { totalPages: doc.numPages, parsedPages: numPages, skippedPages: doc.numPages - numPages }
+      );
+    }
     for (let i = 1; i <= numPages; i++) {
       const page = await doc.getPage(i);
       const textContent = await page.getTextContent();
@@ -149,14 +179,17 @@ export async function getSharedTesseractWorker(): Promise<any> {
 // Tries PaddleOCR first (better accuracy on real scanned/photographed documents); falls back
 // to the local Tesseract worker only if the PaddleOCR service call fails — an availability
 // fallback, not a quality cascade (only one good text result is needed here).
-async function ocrPageBuffer(pngBuf: Buffer): Promise<string> {
+async function ocrPageBuffer(pngBuf: Buffer): Promise<CanvasOcrResult> {
   try {
-    return await paddleOcrRecognize(pngBuf);
+    return { text: await paddleOcrRecognize(pngBuf), degraded: false };
   } catch (err: any) {
-    logger.debug('PDF_PARSER', `PaddleOCR unavailable, falling back to Tesseract: ${err.message}`);
+    // warn, not debug: this is a silent quality downgrade, not routine noise. It produced a
+    // re-analysis that came back visibly worse than the original triage of the very same bytes,
+    // and the only trace of it in an 11 MB debug log was a single DEBUG line.
+    logger.warn('PDF_PARSER', `PaddleOCR unavailable, falling back to Tesseract — OCR quality for this page will be lower: ${err.message}`);
     const worker = await getSharedTesseractWorker();
     const res = await worker.recognize(pngBuf);
-    return res?.data?.text || '';
+    return { text: res?.data?.text || '', degraded: true };
   }
 }
 
@@ -189,7 +222,7 @@ export async function ocrImageBufferBothEngines(pngBuf: Buffer): Promise<{
 }
 
 // Fallback 2: High-fidelity Canvas Page Rendering + OCR (for scanned photos, sliced images, & vector path PDFs)
-export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promise<string> {
+export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = CONFIG.OCR_MAX_PAGES): Promise<CanvasOcrResult> {
   try {
     const loadingTask = (pdfjsLib as any).getDocument({
       data: new Uint8Array(buffer),
@@ -198,7 +231,27 @@ export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promi
     });
     const doc = await loadingTask.promise;
     const ocrTexts: string[] = [];
+    // Tracked per PAGE, not per document: the fallback is decided one page at a time, so a
+    // two-page scan can genuinely come back half PaddleOCR and half Tesseract — which is exactly
+    // what happened to the permis de conduire whose page 2 was byte-identical across two runs
+    // while page 1 was not.
+    let degraded = false;
     const numPages = Math.min(doc.numPages, maxPages);
+
+    // Never truncate silently. The cap used to be a hardcoded 3 with no log line at all, so a
+    // 19-page scanned policy contributed 3 pages to raw_text and nothing anywhere said the other 16
+    // had been dropped — the registry, the classifier and the Markdown all just saw a short
+    // document. Raise CONFIG.OCR_MAX_PAGES (env OCR_MAX_PAGES) to cover longer scans, at the cost
+    // of one OCR round-trip per extra page.
+    if (doc.numPages > numPages) {
+      logger.warn(
+        'PDF_PARSER',
+        `Canvas OCR truncated: rendering only ${numPages} of ${doc.numPages} pages — ` +
+        `text from pages ${numPages + 1}-${doc.numPages} will be MISSING from raw_text and markdown. ` +
+        `Raise OCR_MAX_PAGES to capture them.`,
+        { totalPages: doc.numPages, ocrPages: numPages, skippedPages: doc.numPages - numPages }
+      );
+    }
 
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       try {
@@ -209,23 +262,26 @@ export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = 3): Promi
         await page.render({ canvasContext: context, viewport }).promise;
         const pngBuf = canvas.toBuffer('image/png');
 
-        const text = await ocrPageBuffer(pngBuf);
-        if (text && text.trim().length > 10) {
-          ocrTexts.push(text.trim());
+        const pageOcr = await ocrPageBuffer(pngBuf);
+        if (pageOcr.degraded) degraded = true;
+        if (pageOcr.text && pageOcr.text.trim().length > 10) {
+          ocrTexts.push(pageOcr.text.trim());
         }
       } catch (pageErr: any) {
         logger.debug('PDF_PARSER', `Canvas OCR failed on page ${pageNum}: ${pageErr.message}`);
       }
     }
 
-    return ocrTexts.join('\n\n');
+    return { text: ocrTexts.join('\n\n'), degraded };
   } catch (err: any) {
     logger.warn('PDF_PARSER', `Full-page canvas OCR failed: ${err.message}`);
-    return '';
+    return { text: '', degraded: false };
   }
 }
 
-export const ocrPdfImages = ocrPdfPagesWithCanvas;
+// Text-only adapter, for callers that have no use for the engine provenance.
+export const ocrPdfImages = async (buffer: Buffer, maxPages = CONFIG.OCR_MAX_PAGES): Promise<string> =>
+  (await ocrPdfPagesWithCanvas(buffer, maxPages)).text;
 
 import zlib from 'zlib';
 
@@ -375,10 +431,12 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
   if (['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff'].includes(ext)) {
     logger.info('PDF_PARSER', `Running OCR for image file '${filename}'...`);
     let ocrText = '';
+    let imageOcrDegraded = false;
     try {
       ocrText = await paddleOcrRecognize(fileBuffer);
     } catch (paddleErr: any) {
-      logger.debug('PDF_PARSER', `PaddleOCR unavailable for image ${filename}, falling back to Tesseract: ${paddleErr.message}`);
+      imageOcrDegraded = true;
+      logger.warn('PDF_PARSER', `PaddleOCR unavailable for image ${filename}, falling back to Tesseract — OCR quality will be lower: ${paddleErr.message}`);
       try {
         // Keeps the fra+eng+vie language set: the fallback must not be able to read FEWER
         // languages than it did before PaddleOCR was put in front of it.
@@ -395,13 +453,17 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
       checksum,
       raw_text: cleaned ? `[OCR Extracted Text]\n\n${cleaned}` : `[Image file: ${filename}]`,
       numpages: 1,
-      info: { title: filename }
+      info: { title: filename },
+      ocr_degraded: imageOcrDegraded
     };
   }
 
   let raw_text = '';
   let numpages = 1;
   let info: any = {};
+  // Set only if the OCR tier below actually runs AND has to drop to Tesseract. A PDF whose digital
+  // text layer parses cleanly never reaches OCR, so this stays false for the common case.
+  let ocrDegraded = false;
 
   // Step 1: Fast standard pdf-parse
   try {
@@ -439,9 +501,28 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
   }
   const corruptedDigitalText = corruptionSignal ? raw_text : '';
 
+  // Thin-text-layer guard: a scanned PDF frequently carries a token digital text layer — the
+  // scanner app's watermark, a page number — which the "< 10 chars" test happily accepts, so OCR
+  // never runs and the document's real content never enters the registry at all. An 8-page
+  // attestation in the archive extracted as "Scanned with AnyScanner" x8 (198 chars) this way.
+  // Treated as an additional trigger for the same Step 2 / Step 3 fallback chain, exactly like the
+  // corruption signal above.
+  let thinSignal = detectThinTextLayer(raw_text, numpages);
+  if (thinSignal.thin) {
+    logger.warn(
+      'PDF_PARSER',
+      `Thin digital text layer for '${filename}' (${thinSignal.reason}): ` +
+      `${raw_text.length} chars over ${numpages} page(s) = ${thinSignal.charsPerPage.toFixed(0)}/page, ` +
+      `${thinSignal.distinctLines} distinct line(s). Treating as un-extracted and falling through to OCR.`,
+      { filename, charsPerPage: Math.round(thinSignal.charsPerPage), distinctLines: thinSignal.distinctLines, numpages, reason: thinSignal.reason }
+    );
+  }
+  // Preserved so a failed OCR attempt can fall back to it rather than losing the watermark text.
+  const thinDigitalText = thinSignal.thin ? raw_text : '';
+
   // Step 2: Robust pdfjs-dist fallback parser for corrupted XRef tables (also
   // triggered when Step 1 produced non-empty but likely-corrupted text).
-  if (!raw_text || raw_text.length < 10 || corruptionSignal) {
+  if (!raw_text || raw_text.length < 10 || corruptionSignal || thinSignal.thin) {
     const pdfjsText = await parseWithPdfjs(fileBuffer);
     const cleanedPdfjs = cleanExtractedText(pdfjsText, filename);
     // Only apply the extra corruption re-check when we're on the
@@ -452,6 +533,10 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
       logger.info('PDF_PARSER', `Recovered ${cleanedPdfjs.length} chars using pdfjs-dist fallback parser`, { filename });
       raw_text = cleanedPdfjs;
       corruptionSignal = null; // recovered clean text — no longer need to protect the original
+      // pdfjs reads the same text layer pdf-parse did, so on a scanned page it usually recovers the
+      // same watermark. Re-check rather than assume the recovery resolved anything — otherwise this
+      // branch would "recover" 198 chars of watermark and suppress the OCR tier below.
+      thinSignal = detectThinTextLayer(raw_text, numpages);
     } else if (corruptionSignal) {
       logger.debug(
         'PDF_PARSER',
@@ -466,10 +551,11 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
   // Step 3: High-fidelity Canvas page rendering, then OCR via ocrPageBuffer — PaddleOCR first,
   // Tesseract only as an availability fallback (see ocrPageBuffer). Also runs when the digital
   // text layer parsed but looks corrupted, not only when it is missing.
-  if (!raw_text || raw_text.length < 10 || corruptionSignal) {
+  if (!raw_text || raw_text.length < 10 || corruptionSignal || thinSignal.thin) {
     logger.info('PDF_PARSER', `No usable digital text layer for '${filename}'. Running full-page Canvas render & OCR (PaddleOCR, Tesseract fallback)...`, { filename });
-    const ocrText = await ocrPdfPagesWithCanvas(fileBuffer);
-    const cleanedOcr = cleanExtractedText(ocrText, filename);
+    const canvasOcr = await ocrPdfPagesWithCanvas(fileBuffer);
+    if (canvasOcr.degraded) ocrDegraded = true;
+    const cleanedOcr = cleanExtractedText(canvasOcr.text, filename);
     if (cleanedOcr && cleanedOcr.length >= 10) {
       const recoveredFromCorruption = !!corruptionSignal;
       logger.info('PDF_PARSER', `Successfully extracted ${cleanedOcr.length} chars via Canvas OCR`, { filename });
@@ -493,6 +579,18 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
         { filename }
       );
       corruptionSignal = null;
+    } else if (thinSignal.thin && thinDigitalText) {
+      // OCR could not do better than the watermark. Keep the thin text rather than dropping to
+      // empty — an empty raw_text would trip the "< 10 chars" block and strand the file in __raws,
+      // which is worse than archiving it with a known-poor text layer. The warning above already
+      // recorded that this document's content was never really extracted.
+      raw_text = thinDigitalText;
+      logger.warn(
+        'PDF_PARSER',
+        `OCR did not improve on the thin text layer for '${filename}'. Keeping the original ` +
+        `${raw_text.length}-char layer — this document's real content is NOT in the registry.`,
+        { filename, numpages }
+      );
     }
   }
 
@@ -512,6 +610,7 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
     checksum,
     raw_text,
     numpages,
-    info
+    info,
+    ocr_degraded: ocrDegraded
   };
 }

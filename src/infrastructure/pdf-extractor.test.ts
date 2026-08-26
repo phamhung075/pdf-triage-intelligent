@@ -390,3 +390,102 @@ describe('ocrImageBufferBothEngines', () => {
     expect((result.tesseract as { text: string }).text.toUpperCase()).toContain('HELLO');
   }, 60_000);
 });
+
+
+describe('extractPDFContent — ocr_degraded provenance', () => {
+  // Which engine read the page is not a detail: PaddleOCR and Tesseract are not interchangeable in
+  // quality, and a caller that already holds text for this file must be able to tell that a fresh
+  // extraction is the WORSE one before it overwrites anything. Without this flag a re-analysis
+  // replaced a good classification with one built on Tesseract noise, and nothing recorded why.
+  it('reports ocr_degraded=false when PaddleOCR handles the page', async () => {
+    paddleOcrRecognizeMock.mockReset();
+    paddleOcrRecognizeMock.mockResolvedValue('PERMIS DE CONDUIRE REPUBLIQUE FRANCAISE');
+
+    const bytes = await buildImageOnlyPdf('HELLO WORLD');
+    const filePath = writeTempPdf(bytes, 'paddle-ok.pdf');
+    try {
+      const result = await extractPDFContent(filePath);
+      expect(result.raw_text).toContain('PERMIS DE CONDUIRE');
+      expect(result.ocr_degraded).toBe(false);
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  }, 60_000);
+
+  it('reports ocr_degraded=true when the page falls back to Tesseract', async () => {
+    // The default beforeEach mock already rejects, i.e. no PaddleOCR service — the same condition
+    // that produced the bad re-analysis, except there it surfaced as an HTTP 500.
+    const bytes = await buildImageOnlyPdf('HELLO WORLD');
+    const filePath = writeTempPdf(bytes, 'paddle-down.pdf');
+    try {
+      const result = await extractPDFContent(filePath);
+      expect(result.raw_text.startsWith('[OCR Extracted Text]')).toBe(true);
+      expect(result.ocr_degraded).toBe(true);
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  }, 60_000);
+
+  it('reports ocr_degraded=false for a digital-text PDF that never reaches OCR', async () => {
+    const bytes = await buildTextPdf('Hello Tier1 Extraction Test');
+    const filePath = writeTempPdf(bytes, 'digital-provenance.pdf');
+    try {
+      const result = await extractPDFContent(filePath);
+      expect(result.ocr_degraded).toBe(false);
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+});
+
+// Both page caps used to truncate in total silence: `Math.min(doc.numPages, 3)` for canvas OCR and
+// `Math.min(doc.numPages, 10)` for the pdfjs recovery parser, neither with a log line. In the live
+// archive that meant a 19-page scanned insurance policy contributed only 3 pages to raw_text, the
+// classifier and the Markdown, with nothing anywhere saying 16 pages had been dropped. Capping is a
+// legitimate throughput trade-off; doing it invisibly is not.
+describe('page-cap truncation is always reported', () => {
+  async function buildMultiPagePdf(pageCount: number): Promise<Buffer> {
+    const pdfDoc = await PDFDocument.create();
+    const font = await pdfDoc.embedFont('Helvetica');
+    for (let i = 1; i <= pageCount; i++) {
+      const page = pdfDoc.addPage([300, 150]);
+      page.drawText(`PAGE ${i} CONTENT`, { x: 20, y: 80, size: 18, font });
+    }
+    return Buffer.from(await pdfDoc.save({ useObjectStreams: false }));
+  }
+
+  it('warns, naming the skipped range, when canvas OCR renders fewer pages than the document has', async () => {
+    const { logger } = await import('./logger.js');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { ocrPdfPagesWithCanvas } = await import('./pdf-extractor.js');
+
+    await ocrPdfPagesWithCanvas(await buildMultiPagePdf(5), 2);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'PDF_PARSER',
+      expect.stringContaining('Canvas OCR truncated: rendering only 2 of 5 pages'),
+      expect.objectContaining({ totalPages: 5, ocrPages: 2, skippedPages: 3 })
+    );
+    warnSpy.mockRestore();
+  });
+
+  it('stays quiet when every page is covered', async () => {
+    const { logger } = await import('./logger.js');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { ocrPdfPagesWithCanvas } = await import('./pdf-extractor.js');
+
+    await ocrPdfPagesWithCanvas(await buildMultiPagePdf(2), 5);
+
+    const truncationWarnings = warnSpy.mock.calls.filter(c => String(c[1]).includes('truncated'));
+    expect(truncationWarnings).toHaveLength(0);
+    warnSpy.mockRestore();
+  });
+
+  it('reads well past the old 10-page ceiling in the pdfjs recovery parser', async () => {
+    const { parseWithPdfjs } = await import('./pdf-extractor.js');
+    const text = await parseWithPdfjs(await buildMultiPagePdf(14));
+    // Page 14 used to be dropped outright by the hardcoded Math.min(doc.numPages, 10).
+    expect(text).toContain('PAGE 14 CONTENT');
+    expect(text).toContain('PAGE 1 CONTENT');
+  });
+});

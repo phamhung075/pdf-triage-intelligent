@@ -59,6 +59,11 @@ async function initSchema(db: Database): Promise<void> {
       original_path TEXT NOT NULL,
       new_path TEXT DEFAULT '',
       file_type TEXT DEFAULT 'PDF',
+      -- Where the photograph that produced this PDF was parked
+      -- (__raws/.delete_files/img_converted/...). Empty for documents that arrived as PDFs, and
+      -- for anything converted before sources were retained — those photos were deleted outright,
+      -- so there is nothing to point at and no way to backfill.
+      source_image_path TEXT DEFAULT '',
       embedding TEXT DEFAULT '[]',
       status TEXT DEFAULT 'PENDING',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -114,6 +119,10 @@ async function initSchema(db: Database): Promise<void> {
     if (!hasFileType) {
       await db.exec("ALTER TABLE documents ADD COLUMN file_type TEXT DEFAULT 'PDF';");
     }
+    const hasSourceImage = tableInfo.some((col: any) => col.name === 'source_image_path');
+    if (!hasSourceImage) {
+      await db.exec("ALTER TABLE documents ADD COLUMN source_image_path TEXT DEFAULT '';");
+    }
     await db.exec("UPDATE documents SET contact_name='', contact_email='', contact_phone='', contact_address='', contact_website='' WHERE contact_name LIKE '%Description%' OR contact_name LIKE '%Qty%' OR contact_name LIKE '%Subtotal%' OR contact_name LIKE '%Unit price%';");
   } catch (err) {
     console.warn("Table info pragma migration check notice:", err);
@@ -137,11 +146,18 @@ async function initSchema(db: Database): Promise<void> {
     );
   `);
 
-  // Try creating FTS5 table if supported by sqlite build
-  try {
-    await db.exec(`
-      CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
-        doc_id UNINDEXED,
+  // FTS5 index. `CREATE VIRTUAL TABLE IF NOT EXISTS` is a no-op against an EXISTING table, so
+  // it silently does NOT migrate one whose columns have drifted — which is what happened here:
+  // the on-disk table still had the original 7 columns while the INSERTs below had grown to 11.
+  // Every insert then failed at prepare, straight into an empty catch, so the index sat at 0 rows
+  // against a full corpus of documents and nobody noticed. Detect the drift and rebuild.
+  const FTS_COLUMN_NAMES = [
+    'doc_id', 'title', 'original_filename', 'original_path', 'new_path',
+    'registre', 'summary', 'category', 'subcategory', 'tags', 'raw_text',
+  ];
+  const CREATE_FTS = `
+    CREATE VIRTUAL TABLE documents_fts USING fts5(
+      doc_id UNINDEXED,
         title,
         original_filename,
         original_path,
@@ -152,11 +168,58 @@ async function initSchema(db: Database): Promise<void> {
         subcategory,
         tags,
         raw_text
+    );
+  `;
+
+  try {
+    await db.exec(CREATE_FTS.replace('CREATE VIRTUAL TABLE', 'CREATE VIRTUAL TABLE IF NOT EXISTS'));
+
+    const ftsInfo: Array<{ name: string }> = await db.all('PRAGMA table_info(documents_fts)');
+    const actual = ftsInfo.map(c => c.name);
+    const drifted = actual.length !== FTS_COLUMN_NAMES.length
+      || FTS_COLUMN_NAMES.some((name, i) => actual[i] !== name);
+
+    if (drifted) {
+      console.warn(
+        `FTS5 schema drift: documents_fts has [${actual.join(', ')}] but the code writes `
+        + `[${FTS_COLUMN_NAMES.join(', ')}]. Rebuilding and backfilling the index.`
       );
-    `);
+      await db.exec('DROP TABLE IF EXISTS documents_fts;');
+      await db.exec(CREATE_FTS);
+    }
+
+    // Backfill whenever the index is empty but documents exist — covers both the rebuild above
+    // and any database whose index was never populated because of the drift.
+    // db.get is typed as T | undefined (no row); COUNT(*) always returns one, but keep the guard
+    // honest rather than asserting non-null.
+    const ftsCount = await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM documents_fts');
+    const docCount = await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM documents');
+    if (ftsCount?.n === 0 && (docCount?.n ?? 0) > 0) {
+      await db.exec(`
+        INSERT INTO documents_fts (doc_id, title, original_filename, original_path, new_path, registre, summary, category, subcategory, tags, raw_text)
+        SELECT id, COALESCE(title, ''), COALESCE(original_filename, ''), COALESCE(original_path, ''),
+               COALESCE(new_path, ''), COALESCE(registre, ''), COALESCE(summary, ''),
+               COALESCE(category, ''), COALESCE(subcategory, 'general'), COALESCE(tags, '[]'),
+               COALESCE(raw_text, '')
+        FROM documents;
+      `);
+      console.warn(`FTS5 index backfilled from ${docCount?.n ?? 0} existing document(s).`);
+    }
   } catch (err) {
-    console.warn("FTS5 virtual table creation skipped or not supported:", err);
+    console.warn("FTS5 virtual table setup skipped or not supported:", err);
   }
+}
+
+// One-shot so a genuinely FTS5-less SQLite build does not spam the log on every write, while a
+// real breakage (schema drift, constraint failure) still surfaces instead of vanishing.
+let ftsWriteFailureLogged = false;
+function warnFtsWriteFailure(operation: string, err: unknown): void {
+  if (ftsWriteFailureLogged) return;
+  ftsWriteFailureLogged = true;
+  console.warn(
+    `FTS5 ${operation} failed — full-text search will be incomplete. `
+    + `This message is logged once per process.`, err
+  );
 }
 
 export interface DocumentRecord {
@@ -185,6 +248,8 @@ export interface DocumentRecord {
   original_path: string;
   new_path: string;
   file_type: string;
+  /** Photo this PDF was made from, parked under .delete_files/img_converted. '' when unknown. */
+  source_image_path: string;
   embedding: string; // JSON string
   status: string;
   created_at: string;
@@ -216,6 +281,7 @@ export async function insertDocumentRecord(doc: {
   original_path: string;
   new_path?: string;
   file_type?: string;
+  source_image_path?: string;
   embedding?: number[];
   status?: string;
 }): Promise<number> {
@@ -226,8 +292,8 @@ export async function insertDocumentRecord(doc: {
     `INSERT INTO documents (
       checksum, title, registre, date, category, subcategory, summary, tags, raw_text, markdown_content,
       total_amount, vat_amount, siren, iban, expiry_date, contact_name, contact_email, contact_phone, contact_address, contact_website,
-      original_filename, original_path, new_path, file_type, embedding, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      original_filename, original_path, new_path, file_type, source_image_path, embedding, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       doc.checksum,
       doc.title,
@@ -253,6 +319,7 @@ export async function insertDocumentRecord(doc: {
       doc.original_path,
       doc.new_path || '',
       doc.file_type || detectFileType(doc.original_filename),
+      doc.source_image_path || '',
       JSON.stringify(doc.embedding || []),
       doc.status || 'PENDING',
       now,
@@ -282,7 +349,7 @@ export async function insertDocumentRecord(doc: {
       ]
     );
   } catch (err) {
-    // Ignore FTS errors if FTS5 not active
+    warnFtsWriteFailure('insert', err);
   }
 
   return docId;

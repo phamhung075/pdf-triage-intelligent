@@ -8,6 +8,7 @@
 - [Golden Rules](./knowledge/golden-rules.md) — Absolute constraints every agent MUST obey.
 - [Agent Roster](./agents/README.md) — The team, who does what, and when to invoke each.
 - [Skills Index](./skills.md) — Methodology skills (Superpowers) unified under docs/. **Skills = how to work; agent playbooks = what to work on. Layer both.**
+- [Changelog](../CHANGELOG.md) — Dated, grouped record of every notable change. `docs/` + `CLAUDE.md` describe the *current* state; the changelog is the history of how it got there. Update it alongside any doc change of real size — see [docs-curator](./agents/docs-curator.md).
 
 ## 🔄 Workflows
 

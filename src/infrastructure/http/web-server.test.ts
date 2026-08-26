@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import os from 'os';
 import request from 'supertest';
 import http from 'http';
 import type { AddressInfo } from 'net';
@@ -122,6 +123,8 @@ vi.mock('child_process', () => ({ exec: execMock, spawn: spawnMock }));
 // I/O-free modules (Zod schemas / string helpers), so exercising the real implementations
 // through the route handlers is both safe and more representative than re-stubbing them.
 vi.mock('../settings.js', () => ({
+  // The locks live under DATA_DIR; nothing in this test cares where, only that it exists.
+  get DATA_DIR() { return os.tmpdir(); },
   CONFIG: {
     INPUT_DIR: 'C:/pdf-triage-test/__raws',
     OUTPUT_ROOT_DIR: 'C:/pdf-triage-test/__archive',
@@ -143,6 +146,8 @@ function sampleDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     id: 1,
     checksum: 'abc123',
+    file_type: 'PDF',
+    source_image_path: '',
     title: 'Facture SFR Janvier',
     registre: 'REF-001',
     date: '2026-01-15',

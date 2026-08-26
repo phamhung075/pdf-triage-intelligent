@@ -4,7 +4,7 @@ import { CONFIG, ensureDirectoriesExist, reloadConfigFromDisk } from '../infrast
 import { acquireScanLock } from './scan-lock.js';
 import { getPDFsRecursively } from '../infrastructure/pdf-scanner.js';
 import { extractPDFContent } from '../infrastructure/pdf-extractor.js';
-import { convertImageToPdf, isImageFile, type ConvertedImageDocument } from './convert-image-document.js';
+import { convertImageToPdf, convertImageFolderToPdf, findImageBundleFolders, isImageFile, type ConvertedImageDocument } from './convert-image-document.js';
 import {
   getDocumentByChecksum,
   insertDocumentRecord,
@@ -17,6 +17,7 @@ import {
 import { classifyPDFText } from './classify-document.js';
 import { generateEmbedding } from '../infrastructure/ollama-client.js';
 import { relocalizeFileIfNeeded } from './relocalize-document.js';
+import { isForbiddenSubcategory } from '../domain/taxonomy.js';
 import { syncJSONRegistry } from '../infrastructure/json-registry.js';
 import { logger } from '../infrastructure/logger.js';
 
@@ -47,7 +48,16 @@ export interface TriageProgressEvent {
   skippedCount?: number;
 }
 
-export async function runTriageScan(onProgress?: (event: TriageProgressEvent) => void): Promise<{
+/**
+ * @param shouldAbort Polled once per file. runTriageScan has no other cancellation point, so
+ *   POST /api/triage/unlock ("Stop") previously only cleared the caller's in-memory flag and let
+ *   the loop run to completion — the user saw the scan stop while it kept moving and classifying
+ *   files underneath them.
+ */
+export async function runTriageScan(
+  onProgress?: (event: TriageProgressEvent) => void,
+  shouldAbort?: () => boolean
+): Promise<{
   scannedCount: number;
   processedCount: number;
   skippedCount: number;
@@ -60,6 +70,31 @@ export async function runTriageScan(onProgress?: (event: TriageProgressEvent) =>
 
   console.log(`Scanning for PDFs in: ${CONFIG.INPUT_DIR}`);
   console.log(`Output Root Directory: ${CONFIG.OUTPUT_ROOT_DIR}`);
+
+  // Photo bundles first: a folder in __raws holding only photos is ONE multi-page document, not N
+  // loose pages. Done BEFORE the file walk so the resulting PDF is picked up by this same scan,
+  // and so the individual photos are already out of __raws by the time the walk lists it.
+  for (const bundleDir of findImageBundleFolders(CONFIG.INPUT_DIR)) {
+    try {
+      const bundled = await convertImageFolderToPdf(bundleDir);
+      logger.info('TRIAGE', `Bundled folder '${path.basename(bundleDir)}' into a ${bundled.pageCount}-page PDF`, {
+        bundleDir,
+        pdfPath: bundled.pdfPath,
+      });
+      // No `stage` — the union is a fixed set the UI switches on, and inventing a value here
+      // would fall through every branch of the consumer.
+      onProgress?.({
+        type: 'FILE_PROGRESS',
+        filename: path.basename(bundled.pdfPath),
+        message: `Bundled ${bundled.pageCount} photos from '${path.basename(bundleDir)}' into one PDF`,
+      });
+    } catch (err: any) {
+      // Bundling is an enhancement, never a gate — exactly like single-photo conversion. Leave the
+      // folder alone and let the walk below triage its photos individually rather than blocking
+      // readable documents.
+      logger.warn('TRIAGE', `Could not bundle folder '${bundleDir}', its photos will be triaged individually: ${err.message}`);
+    }
+  }
 
   const pdfFilePaths = getPDFsRecursively(CONFIG.INPUT_DIR, CONFIG.OUTPUT_ROOT_DIR);
   const filenames = pdfFilePaths.map(p => path.basename(p));
@@ -78,6 +113,10 @@ export async function runTriageScan(onProgress?: (event: TriageProgressEvent) =>
   const items: TriageResultItem[] = [];
 
   for (const incomingPath of pdfFilePaths) {
+    if (shouldAbort?.()) {
+      logger.info('TRIAGE', `Scan aborted by user after ${scannedCount} of ${totalFiles} file(s). Remaining files stay in __raws for the next scan.`);
+      break;
+    }
     scannedCount++;
     // Both are re-pointed at the generated PDF when the incoming file is a photograph, so that
     // everything downstream — blocking, dedup, the DB record, the archive move — operates on the
@@ -213,8 +252,14 @@ export async function runTriageScan(onProgress?: (event: TriageProgressEvent) =>
       console.log(`Classifying '${file}'...`);
       const metadata = await classifyPDFText(raw_text, file);
 
+      // Golden Rule #4. Use the canonical predicate, not a hand-rolled three-value test: it is the
+      // same one every other write path uses (web-server.ts, relocalize-document.ts, mcp-server.ts,
+      // categories-store.ts), and resolveSubcategory deliberately returns sentinels like 'unknown',
+      // 'camscanner', a bare year or a file extension *verbatim* so this guard blocks them
+      // (classification-resolution.ts). The old inline test caught 3 of the ~20, so the rest were
+      // archived into junk taxonomy branches instead of being held in __raws for review.
       const subcat = (metadata.subcategorie || '').toLowerCase().trim();
-      if (!subcat || subcat === 'general' || subcat === 'other' || subcat === 'divers') {
+      if (isForbiddenSubcategory(metadata.subcategorie)) {
         let movedPath = originalPath;
         try {
           movedPath = moveBlockedFileToBlockedFolder(originalPath);
@@ -254,9 +299,26 @@ export async function runTriageScan(onProgress?: (event: TriageProgressEvent) =>
           tags: metadata.tags,
           raw_text,
           markdown_content: metadata.markdown_content || '',
+          // Step D extracts all of these and DocumentMetadataSchema validates them, but they were
+          // never passed here — so insertDocumentRecord wrote its '' default for every one and all
+          // ten columns sat empty for the entire corpus while summary/date/tags filled in normally.
+          // That is why the UI's Contact Information panel always looked broken.
+          total_amount: metadata.total_amount,
+          vat_amount: metadata.vat_amount,
+          siren: metadata.siren,
+          iban: metadata.iban,
+          expiry_date: metadata.expiry_date,
+          contact_name: metadata.contact_name,
+          contact_email: metadata.contact_email,
+          contact_phone: metadata.contact_phone,
+          contact_address: metadata.contact_address,
+          contact_website: metadata.contact_website,
           original_filename: file,
           original_path: originalPath,
           embedding,
+          // Present only when this document came from a photograph, so it can be traced back to
+          // the image it was made from and re-edited if the automatic crop got it wrong.
+          source_image_path: converted?.sourceImagePath || '',
           status: 'PENDING'
         });
       } catch (insertErr: any) {

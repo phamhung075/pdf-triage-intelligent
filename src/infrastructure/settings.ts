@@ -20,8 +20,49 @@ export const BASE_DIR = process.env.PDF_TRIAGE_BASE_DIR
 // dotenv.config() with no explicit `path` defaults to looking for .env in process.cwd() —
 // exactly the same unreliable-in-packaged-Electron problem BASE_DIR just had. Point it at
 // BASE_DIR explicitly instead of trusting cwd.
-dotenv.config({ path: path.join(BASE_DIR, '.env') });
-export const SETTINGS_FILE = path.join(BASE_DIR, 'settings.json');
+/**
+ * Where WRITABLE state lives, as opposed to BASE_DIR which holds read-only app assets.
+ *
+ * These were the same directory, which is fine for a git checkout and wrong for an installed app:
+ * the packaged layout puts the app under dist-installer/win-unpacked/resources/app, and
+ * `npm run dist:exe` begins by deleting dist-installer outright — so the database, the registry,
+ * settings.json and both private overlays were destroyed by every rebuild, and would be destroyed
+ * by every upgrade. (That is not hypothetical: it happened, and took a test document with it.)
+ *
+ * The desktop shell sets PDF_TRIAGE_DATA_DIR to Electron's userData path when packaged
+ * (see desktop/main.cjs). Unset — a git checkout, `npm run dev`, `npm run scan`, the MCP server,
+ * the test suite — it falls back to BASE_DIR, so nothing changes for development.
+ *
+ * The split, concretely:
+ *   BASE_DIR (read-only, replaced on upgrade) : prompts/, categories.json, entity_dictionary.json
+ *   DATA_DIR (writable, survives upgrades)    : settings.json, the DB, registry.json, the private
+ *                                               overlays, manual_decisions.json, default folders
+ */
+export const DATA_DIR = process.env.PDF_TRIAGE_DATA_DIR
+  ? path.resolve(process.env.PDF_TRIAGE_DATA_DIR)
+  : BASE_DIR;
+
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// .env is read from DATA_DIR first (an installed app's own config) and falls back to BASE_DIR so a
+// checkout keeps working unchanged.
+const DATA_ENV = path.join(DATA_DIR, '.env');
+dotenv.config({ path: fs.existsSync(DATA_ENV) ? DATA_ENV : path.join(BASE_DIR, '.env') });
+export const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
+/**
+ * True when this install has never been configured — no settings.json, or one without the two
+ * folder paths the pipeline cannot run without. Drives the first-run setup screen.
+ *
+ * Deliberately a function, not a captured constant: the wizard writes settings.json and then asks
+ * again, and a stale snapshot would keep reporting "unconfigured" until restart.
+ */
+export function isFirstRun(): boolean {
+  const current = loadCustomSettings();
+  return !current.input_dir || !current.output_root_dir;
+}
 
 export function loadCustomSettings() {
   if (fs.existsSync(SETTINGS_FILE)) {
@@ -78,19 +119,25 @@ function sanitizeLanguage(lang: unknown): 'FR' | 'EN' {
 
 export const CONFIG = {
   LANGUAGE: sanitizeLanguage(customSettings.language || process.env.SYSTEM_LANGUAGE),
-  INPUT_DIR: customSettings.input_dir || process.env.PDF_INPUT_DIR || path.join(BASE_DIR, 'input'),
-  OUTPUT_ROOT_DIR: customSettings.output_root_dir || process.env.PDF_OUTPUT_DIR || path.join(BASE_DIR, 'organized'),
-  JSON_REGISTRY_PATH: process.env.PDF_REGISTRY_PATH || path.join(BASE_DIR, 'registry.json'),
-  DB_PATH: process.env.PDF_DB_PATH || path.join(BASE_DIR, 'pdf_triage.db'),
+  INPUT_DIR: customSettings.input_dir || process.env.PDF_INPUT_DIR || path.join(DATA_DIR, 'input'),
+  OUTPUT_ROOT_DIR: customSettings.output_root_dir || process.env.PDF_OUTPUT_DIR || path.join(DATA_DIR, 'organized'),
+  JSON_REGISTRY_PATH: process.env.PDF_REGISTRY_PATH || path.join(DATA_DIR, 'registry.json'),
+  DB_PATH: process.env.PDF_DB_PATH || path.join(DATA_DIR, 'pdf_triage.db'),
   // Public, generic, committed starter taxonomy (top-level categories only, no personal
   // subcategories). CATEGORIES_PRIVATE_FILE holds everything auto-created from the user's own
   // documents (real bank branches, employers, etc.) — gitignored, never committed. See
   // categories-store.ts for how the two are merged on read and diffed on write.
   CATEGORIES_FILE: path.join(BASE_DIR, 'categories.json'),
-  CATEGORIES_PRIVATE_FILE: path.join(BASE_DIR, '.categories.private.json'),
+  CATEGORIES_PRIVATE_FILE: path.join(DATA_DIR, '.categories.private.json'),
   ENTITY_DICTIONARY_FILE: path.join(BASE_DIR, 'entity_dictionary.json'),
-  MANUAL_DECISIONS_FILE: path.join(BASE_DIR, 'manual_decisions.json'),
+  MANUAL_DECISIONS_FILE: path.join(DATA_DIR, 'manual_decisions.json'),
   PROMPTS_DIR: path.join(BASE_DIR, 'prompts'),
+  // Personal prompt overlay — the private counterpart to the generic, committed prompts/
+  // templates. Holds the real employers, bank product codes, scan filename prefixes and
+  // clinics that must never be committed, and is rendered into the {{USER_PRIORITY_RULES}}
+  // and {{USER_KNOWN_ENTITIES}} placeholders at prompt-build time. Gitignored; see
+  // prompts.private.json.example for the shape and prompt-personalization-store.ts for the read.
+  PROMPTS_PRIVATE_FILE: path.join(DATA_DIR, '.prompts.private.json'),
 
   OLLAMA_HOST: customSettings.ollama_host || process.env.OLLAMA_HOST || 'http://127.0.0.1:11434',
   OLLAMA_MODEL: sanitizeOllamaModel(customSettings.ollama_model || process.env.OLLAMA_MODEL),
@@ -99,6 +146,16 @@ export const CONFIG = {
   VISION_LAB_PORT: parseInt(process.env.VISION_LAB_PORT || '3179', 10),
   PADDLEOCR_HOST: process.env.PADDLEOCR_HOST || 'http://127.0.0.1:8871',
   PADDLEOCR_SPAWN_CMD: process.env.PADDLEOCR_SPAWN_CMD || 'python paddleocr-server/main.py',
+  // How many pages of a SCANNED pdf get rendered and OCR'd. This was a hardcoded 3 with no logging,
+  // so a 19-page scanned insurance policy silently contributed only its first 3 pages to raw_text,
+  // the classifier and the Markdown — 84% of the document simply absent, with nothing in the log to
+  // say so. Truncation is now always logged; this knob sets where it happens. Higher costs real
+  // time (OCR runs per page, seconds each), so it is a deliberate quality/throughput trade-off
+  // rather than something to set to Infinity.
+  OCR_MAX_PAGES: (() => {
+    const raw = parseInt(process.env.OCR_MAX_PAGES || '10', 10);
+    return Number.isFinite(raw) && raw >= 1 ? raw : 10;
+  })(),
 
   PORT: parseInt(process.env.PORT || '3971', 10),
   // Security default: bind to localhost only. This server has no authentication — binding to
@@ -107,6 +164,15 @@ export const CONFIG = {
   // to anyone on the same network. Only override this if you specifically want LAN access and
   // understand there is no auth layer protecting it.
   HOST: process.env.PDF_TRIAGE_HOST || '127.0.0.1',
+
+  // MCP Streamable HTTP transport (npm run mcp) — lets non-stdio agents (OpenAI Agents SDK,
+  // other machines on the LAN) call the same tools stdio-based clients (Claude Desktop/Code)
+  // use. Unlike HOST above, this one defaults to LAN-reachable (0.0.0.0) by design — mitigated
+  // by the required bearer token (see getOrCreateMcpApiToken in mcp-server.ts), not by binding.
+  // Every mutating tool call goes through the same handlers as stdio, so the token is the only
+  // thing standing between the network and this registry's personal documents.
+  MCP_HTTP_PORT: parseInt(process.env.MCP_HTTP_PORT || '3972', 10),
+  MCP_HTTP_HOST: process.env.MCP_HTTP_HOST || '0.0.0.0',
 
   PERSONAL_NAME_DENYLIST: sanitizePersonalNameDenylist(customSettings.personal_name_denylist),
 };

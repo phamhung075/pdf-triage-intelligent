@@ -41,7 +41,7 @@ class DocumentGridManager {
       grid.innerHTML = `
         <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: #94a3b8;">
           <h3>No documents found in registry</h3>
-          <p>Drop files into <code>__raws</code> folder and click 'Scan & Triage Files'.</p>
+          <p>Drop files into <code>your incoming folder</code> folder and click 'Scan & Triage Files'.</p>
         </div>
       `;
       return;
@@ -97,8 +97,17 @@ class DocumentGridManager {
           <button class="btn-secondary btn-folder-doc" title="Open containing folder">📂 Folder</button>
           <button class="btn-secondary btn-move-doc" style="color: #a7f3d0;" title="Relocalize & Correct Category/Subcategory">📍 Move</button>
           <button class="btn-secondary btn-edit-doc" title="Edit Metadata">✏️ Edit</button>
+          ${doc.source_image_path ? `<button class="btn-secondary btn-reedit-doc" style="color: #c4b5fd;" title="Re-crop, rotate or adjust the original photo and file it again">\u{1F5BC}\uFE0F Re-edit</button>` : ''}
         </div>
       `;
+
+      const btnReedit = card.querySelector('.btn-reedit-doc');
+      if (btnReedit) {
+        btnReedit.addEventListener('click', e => {
+          e.stopPropagation();
+          this.app.imageEditor.openForDocument(doc.id, doc.title);
+        });
+      }
 
       const btnView = card.querySelector('.btn-view-doc');
       if (btnView) {

@@ -12,7 +12,8 @@
     "scan": "tsx src/index.ts scan",
     "mcp": "tsx src/index.ts mcp",
     "vision:dev": "tsx src/vision-lab-main.ts",
-    "build": "npm run build:css && tsc && tsc -p tsconfig.frontend.json",
+    "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean:dist && npm run build:css && tsc && tsc -p tsconfig.frontend.json",
     "build:css": "sass public/scss/style.scss public/style.css --no-source-map",
     "watch:css": "sass --watch public/scss/style.scss:public/style.css",
     "build:frontend": "npm run build:css && tsc -p tsconfig.frontend.json",
@@ -29,8 +30,12 @@
     "sqlite",
     "zod"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "Dai Hung PHAM",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phamhung075/smart-pdf-triage-local-ai.git"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
     "dotenv": "^16.4.7",
@@ -78,15 +83,23 @@
       "prompts/**/*",
       "categories.json",
       "entity_dictionary.json",
+      "prompts.private.json.example",
       "package.json"
     ],
     "win": {
-      "target": "dir",
+      "target": [
+        "nsis",
+        "dir"
+      ],
       "publish": null,
       "signAndEditExecutable": false
     },
     "nsis": {
-      "differentialPackage": false
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Smart PDF Triage"
     }
   }
 }

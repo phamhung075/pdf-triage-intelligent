@@ -52,14 +52,52 @@ export function isForbiddenSubcategory(subcategory?: string): boolean {
   return false;
 }
 
-export function findCanonicalCategoryForSubcategory(subcategorySlug: string | undefined, categoriesConfig: any): string | null {
+/**
+ * The category a subcategory slug canonically belongs to, or `null` when that cannot be decided.
+ *
+ * `null` means "leave this document's category alone" — it is not an error. The caller
+ * (repair-registry.ts) overwrites the DB row and physically relocates the file on a non-null
+ * answer, so guessing here silently rewrites the archive.
+ *
+ * This used to return the first category containing the slug, by array position. Subcategories are
+ * namespaced per-category, so the same slug legitimately appears under several of them — the live
+ * taxonomy has 42 such slugs — and array order was deciding which one won. A Repair run would have
+ * relocated 87 of 276 archived documents on that basis: every `clinic_x` payslip out of
+ * `bulletin_salaire` into `contracts`, `permis_conduire` out of `identity` into `administrative`,
+ * and so on. Order in a JSON file is not evidence about a document.
+ *
+ * @param currentCategory the document's existing category. When the slug is ambiguous and the
+ *   document already sits under one of the candidates, that placement is the answer — it was chosen
+ *   by classification (or by the user), which is strictly better information than array order.
+ */
+export function findCanonicalCategoryForSubcategory(
+  subcategorySlug: string | undefined,
+  categoriesConfig: any,
+  currentCategory?: string
+): string | null {
   if (!subcategorySlug || isForbiddenSubcategory(subcategorySlug)) return null;
   const subLower = subcategorySlug.toLowerCase().trim();
+
+  const matches: string[] = [];
   for (const cat of categoriesConfig?.categories || []) {
-    if (cat.subcategories && cat.subcategories.some((s: any) => s.id.toLowerCase() === subLower)) {
-      return cat.id;
+    if (cat.subcategories && cat.subcategories.some((s: any) => s.id?.toLowerCase() === subLower)) {
+      matches.push(cat.id);
     }
   }
+
+  if (matches.length === 0) return null;
+
+  // Already sitting under a category that legitimately owns this slug — nothing to correct.
+  const current = currentCategory?.toLowerCase().trim();
+  if (current && matches.some(m => m.toLowerCase() === current)) {
+    return matches.find(m => m.toLowerCase() === current)!;
+  }
+
+  // Exactly one owner: an unambiguous correction, which is what this function is for.
+  if (matches.length === 1) return matches[0];
+
+  // Several owners and the document is under none of them. There is no evidence here for choosing
+  // between them, so decline rather than move the file somewhere arbitrary.
   return null;
 }
 
@@ -163,6 +201,27 @@ export function generateIntelligentFilename(
   return intelligentName;
 }
 
+/**
+ * Reduces one path segment to a safe slug before it is joined into a filesystem path.
+ *
+ * computeCanonicalPath() builds an archive path out of a category and subcategory that can
+ * come straight from an HTTP body (POST /api/documents/:id/relocalize, which has no schema) or
+ * an MCP tool call, neither of which validated them. A category of '..' escaped
+ * OUTPUT_ROOT_DIR entirely and moved the user's document somewhere arbitrary. Anything that is
+ * not a slug character is collapsed to '_', which neutralizes '..', '.' and any drive or UNC
+ * prefix while leaving every real taxonomy slug (bulletin_salaire, credit_mutuel, cdi_cdd)
+ * byte-identical.
+ */
+function sanitizePathSegment(segment: string, fallback: string): string {
+  const cleaned = segment
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^[_.-]+|[_.-]+$/g, '');
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
 export function computeCanonicalPath(
   originalPath: string,
   category: string,
@@ -189,6 +248,61 @@ export function computeCanonicalPath(
     }
   }
 
-  const subParts = cleanSub.split(/[\/\\]+/).filter(Boolean);
-  return path.join(outputRootDir, cleanCat, ...subParts, yearStr, file);
+  // Sanitize every segment before it reaches path.join — see sanitizePathSegment above. The
+  // subcategory is still split first so legitimate multi-level nesting ('school/bachelor')
+  // keeps working; each resulting part is then individually neutralized.
+  const safeCat = sanitizePathSegment(cleanCat, 'other');
+  const subParts = cleanSub.split(/[\/\\]+/).filter(Boolean)
+    .map(part => sanitizePathSegment(part, 'general'))
+    .filter(Boolean);
+  return path.join(outputRootDir, safeCat, ...subParts, yearStr, file);
+}
+
+/**
+ * Point every document's subcategory `oldSub` at `newSub` within one category, in the taxonomy.
+ *
+ * Renaming and merging are the same user gesture ("these two are the same thing") and differ only
+ * in whether the destination already exists. Treating a merge as a rename — mutating the old entry's
+ * id in place — leaves TWO entries sharing that id, and every later lookup has to guess between
+ * them. Reconciling two spellings of one entity is the normal case here: an archive accrues
+ * `bouyguestelecom` alongside `bouygues_telecom` because slug normalisation has no near-duplicate
+ * check, so this path gets used precisely when the destination is already there.
+ *
+ * Mutates and returns `categories`. The old spelling survives as an alias on the winner, so a
+ * document or classifier lookup using it still resolves.
+ */
+export function mergeSubcategoryInTaxonomy(
+  categories: any[],
+  categoryId: string,
+  oldSub: string,
+  newSub: string
+): any[] {
+  const cat = (categories || []).find(c => c.id === categoryId.toLowerCase().trim());
+  if (!cat || !Array.isArray(cat.subcategories)) return categories;
+
+  const from = oldSub.toLowerCase().trim();
+  const to = newSub.toLowerCase().trim();
+  if (!from || !to || from === to) return categories;
+
+  const prettyName = to.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+  const source = cat.subcategories.find((s: any) => s.id === from);
+  const target = cat.subcategories.find((s: any) => s.id === to);
+
+  if (target) {
+    target.aliases = Array.from(new Set([
+      ...(target.aliases || []),
+      ...((source && source.aliases) || []),
+      from,
+      to,
+    ]));
+    if (source) cat.subcategories = cat.subcategories.filter((s: any) => s !== source);
+  } else if (source) {
+    source.id = to;
+    source.name = prettyName;
+    source.aliases = Array.from(new Set([...(source.aliases || []), from, to]));
+  } else {
+    cat.subcategories.push({ id: to, name: prettyName, aliases: [to] });
+  }
+
+  return categories;
 }

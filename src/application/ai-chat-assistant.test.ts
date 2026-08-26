@@ -35,24 +35,24 @@ describe('ai-chat-assistant', () => {
       checksum: 'abc2',
       title: 'Bulletin de Salaire Mai 2026',
       category: 'bulletin_salaire',
-      subcategory: 'employeur_x',
+      subcategory: 'acme_corp',
       date: '2026-05-31',
-      summary: 'Monthly pay slip EmployeurX',
+      summary: 'Monthly pay slip AcmeCorp',
       total_amount: '2450.00',
-      original_filename: '2026-05-31_EmployeurX_Bulletin_de_Salaire_Mai.pdf',
-      new_path: 'C:\\archive\\bulletin_salaire\\employeur_x\\2026\\2026-05-31_EmployeurX_Bulletin_de_Salaire_Mai.pdf'
+      original_filename: '2026-05-31_AcmeCorp_Bulletin_de_Salaire_Mai.pdf',
+      new_path: 'C:\\archive\\bulletin_salaire\\acme_corp\\2026\\2026-05-31_AcmeCorp_Bulletin_de_Salaire_Mai.pdf'
     },
     {
       id: 3,
       checksum: 'abc3',
       title: 'Bulletin de Salaire Juin 2026',
       category: 'bulletin_salaire',
-      subcategory: 'employeur_x',
+      subcategory: 'acme_corp',
       date: '2026-06-30',
-      summary: 'June pay slip EmployeurX',
+      summary: 'June pay slip AcmeCorp',
       total_amount: '2450.00',
-      original_filename: '2026-06-30_EmployeurX_Bulletin_de_Salaire_Juin.pdf',
-      new_path: 'C:\\archive\\bulletin_salaire\\employeur_x\\2026\\2026-06-30_EmployeurX_Bulletin_de_Salaire_Juin.pdf'
+      original_filename: '2026-06-30_AcmeCorp_Bulletin_de_Salaire_Juin.pdf',
+      new_path: 'C:\\archive\\bulletin_salaire\\acme_corp\\2026\\2026-06-30_AcmeCorp_Bulletin_de_Salaire_Juin.pdf'
     }
   ];
 
@@ -97,9 +97,9 @@ describe('ai-chat-assistant', () => {
       ...mockDocs,
       {
         id: 4, checksum: 'abc4', title: 'Bulletin de Salaire Avril 2026', category: 'bulletin_salaire',
-        subcategory: 'employeur_x', date: '2026-04-30', summary: 'April pay slip EmployeurX',
-        total_amount: '2450.00', original_filename: '2026-04-30_EmployeurX_Bulletin.pdf',
-        new_path: 'C:\\archive\\bulletin_salaire\\employeur_x\\2026\\2026-04-30_EmployeurX_Bulletin.pdf'
+        subcategory: 'acme_corp', date: '2026-04-30', summary: 'April pay slip AcmeCorp',
+        total_amount: '2450.00', original_filename: '2026-04-30_AcmeCorp_Bulletin.pdf',
+        new_path: 'C:\\archive\\bulletin_salaire\\acme_corp\\2026\\2026-04-30_AcmeCorp_Bulletin.pdf'
       }
     ]);
     (ollamaModule.requestTextChatCompletion as any).mockResolvedValue({
@@ -116,14 +116,14 @@ describe('ai-chat-assistant', () => {
       ...mockDocs,
       { // a re-scanned duplicate of the June 2026 slip (id 3) under a different filename/checksum
         id: 5, checksum: 'abc5-dup', title: 'BULLETIN DE SALAIRE JUIN 2026', category: 'bulletin_salaire',
-        subcategory: 'employeur_x', date: '2026-06-30', summary: 'duplicate scan', total_amount: '2450.00',
-        original_filename: 'converted.pdf', new_path: 'C:\\archive\\bulletin_salaire\\employeur_x\\2026\\converted.pdf'
+        subcategory: 'acme_corp', date: '2026-06-30', summary: 'duplicate scan', total_amount: '2450.00',
+        original_filename: 'converted.pdf', new_path: 'C:\\archive\\bulletin_salaire\\acme_corp\\2026\\converted.pdf'
       },
       {
         id: 6, checksum: 'abc6', title: 'Bulletin de Salaire Avril 2026', category: 'bulletin_salaire',
-        subcategory: 'employeur_x', date: '2026-04-30', summary: 'April pay slip', total_amount: '2450.00',
-        original_filename: '2026-04-30_EmployeurX_Bulletin.pdf',
-        new_path: 'C:\\archive\\bulletin_salaire\\employeur_x\\2026\\2026-04-30_EmployeurX_Bulletin.pdf'
+        subcategory: 'acme_corp', date: '2026-04-30', summary: 'April pay slip', total_amount: '2450.00',
+        original_filename: '2026-04-30_AcmeCorp_Bulletin.pdf',
+        new_path: 'C:\\archive\\bulletin_salaire\\acme_corp\\2026\\2026-04-30_AcmeCorp_Bulletin.pdf'
       }
     ]);
 

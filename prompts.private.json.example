@@ -1,0 +1,44 @@
+{
+  "_comment": [
+    "Template for .prompts.private.json — copy this file to `.prompts.private.json` (gitignored) and",
+    "replace the placeholder values with your own. This is where the PERSONAL signals live: the real",
+    "employers, bank product codes, scan filename prefixes, clinics and schools that must never be",
+    "committed. The templates in prompts/ stay generic and publishable; this overlay is injected into",
+    "them at prompt-build time. Deleting this file is safe — the prompts read correctly without it.",
+    "",
+    "known_entities  -> injected into prompts/micro_prompt_entity.md at {{USER_KNOWN_ENTITIES}}",
+    "priority_rules  -> injected into prompts/classification_rules.md at {{USER_PRIORITY_RULES}},",
+    "                   rendered as a STEP 0 evaluated BEFORE the generic STEP 1..13 flow",
+    "extra_rules_text -> free-form Markdown appended to that same STEP 0 block",
+    "",
+    "See src/domain/prompt-personalization.ts for the schema and docs/knowledge/taxonomy.md for the why."
+  ],
+
+  "known_entities": [
+    "ACME CORP",
+    "GLOBEX SARL",
+    "Lakeside Dental",
+    "Northwind Academy"
+  ],
+
+  "priority_rules": [
+    {
+      "keywords": ["STMT_CHK_", "SAVINGS_SUMMARY", "C/C MYPRODUCT"],
+      "category": "bank",
+      "subcategory": "my_bank",
+      "note": "My bank's own statement filename codes and account-product names — they never appear in another issuer's document. Replace with yours."
+    },
+    {
+      "keywords": ["Jahresabschluss", "JA-BERICHT"],
+      "category": "administrative",
+      "note": "Foreign-language financial statements; resolve the subcategory from the issuing company. Use this shape for any document type your archive holds in another language."
+    },
+    {
+      "keywords": ["recXX"],
+      "category": "identity",
+      "note": "Prefix my scanner puts on residence-permit receipts. Filename signal only — never invent an issuer from it."
+    }
+  ],
+
+  "extra_rules_text": "- Statements from my property manager are 'housing', never 'invoices', even when they are titled \"Facture\"."
+}

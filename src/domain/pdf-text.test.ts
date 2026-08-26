@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cleanExtractedText, isLikelyCorruptedText, detectMidWordCapitalizationCorruption } from './pdf-text.js';
+import { cleanExtractedText, isLikelyCorruptedText, detectMidWordCapitalizationCorruption , detectThinTextLayer } from './pdf-text.js';
 
 // --- Real-data fixtures ---
 //
@@ -27,7 +27,7 @@ const CORRUPTED_BALANCE_SHEET_EXCERPT =
 // NEGATIVE CONTROL 1: doc id 2503, a clean French Pôle Emploi letter
 // (normal prose with accents, no font corruption).
 const CLEAN_FRENCH_LETTER_EXCERPT =
-  "[Propriétés Document: Open Print | Driver PDF]\n\nPôle emploi la force d'un réseau !\nRetrouvez tous nos services en ligne,\n24h/24, 7j/7 sur www.pole-emploi.fr\n4000 conseillers entreprise\nà votre service\nODSE04\n0000000000\n34/ODSE04/V7\nLE GLOBEX\nM. DUPOND JEANLUC\n210 BD BOULEVARD EXEMPLE\n75010 SPRINGFIELD 10\nMARSEILLE, le 15 Mars 2017\nVos informations utiles :\nN° SIRET :000000000 00000\nN° offre :XXXXXXX\nConcerne :LE GLOBEX\n75010 SPRINGFIELD\nVotre correspondant :Service Entreprise\nTél. : 0491313616 - recrutementmarseillepharo@pole-emploi.net\nObjet :Votre recrutement / N° offre XXXXXXX\nMonsieur,\nLa  date  de  fin  de  publication  que  vous  avez  choisie  pour  votre  offre  de  \"  Cuisinier  /  Cuisinière  \"  est  atteinte.  Nous\nsuspendons donc la publication de votre offre à compter de ce jour.\nNéanmoins, vous avez la possibilité de prolonger la publication de votre offre, en vous connectant à votre\nespace recrutement\nsur www.pole-emploi.fr.\nPar  ailleurs,  nous  n’avons  pas  connaissance  de  candidatures  sur  votre  offre.  Nous  tenons  à  partager  cette  alerte  avec\nvous.\nSi  vous  rencontrez  des  difficultés  dans  votre  recrutement,  contactez  le  Service  Entreprise  de  votre  agence  Pôle  emploi\npour examiner les différentes solutions possibles.\nEn revanche, si vous avez arrêté votre choix sur un candidat qui vous a contacté directement, nous vous remercions de\nnous le faire savoir en vous connectant à votre\nespace recrutement\nsur www.pole-emploi.fr.\nEn l’absence de réponse de votre part dans les 8 jours, nous en déduirons que votre besoin en recru";
+  "[Propriétés Document: Open Print | Driver PDF]\n\nPôle emploi la force d'un réseau !\nRetrouvez tous nos services en ligne,\n24h/24, 7j/7 sur www.pole-emploi.fr\n4000 conseillers entreprise\nà votre service\nODSE04\n0000000000\n34/ODSE04/V7\nLE GLOBEX\nM. DUPOND JEANLUC\n210 BD BOULEVARD EXEMPLE\n75010 SPRINGFIELD 10\nSPRINGFIELD, le 15 Mars 2017\nVos informations utiles :\nN° SIRET :000000000 00000\nN° offre :XXXXXXX\nConcerne :LE GLOBEX\n75010 SPRINGFIELD\nVotre correspondant :Service Entreprise\nTél. : 0100000000 - recrutement.exemple@pole-emploi.net\nObjet :Votre recrutement / N° offre XXXXXXX\nMonsieur,\nLa  date  de  fin  de  publication  que  vous  avez  choisie  pour  votre  offre  de  \"  Cuisinier  /  Cuisinière  \"  est  atteinte.  Nous\nsuspendons donc la publication de votre offre à compter de ce jour.\nNéanmoins, vous avez la possibilité de prolonger la publication de votre offre, en vous connectant à votre\nespace recrutement\nsur www.pole-emploi.fr.\nPar  ailleurs,  nous  n’avons  pas  connaissance  de  candidatures  sur  votre  offre.  Nous  tenons  à  partager  cette  alerte  avec\nvous.\nSi  vous  rencontrez  des  difficultés  dans  votre  recrutement,  contactez  le  Service  Entreprise  de  votre  agence  Pôle  emploi\npour examiner les différentes solutions possibles.\nEn revanche, si vous avez arrêté votre choix sur un candidat qui vous a contacté directement, nous vous remercions de\nnous le faire savoir en vous connectant à votre\nespace recrutement\nsur www.pole-emploi.fr.\nEn l’absence de réponse de votre part dans les 8 jours, nous en déduirons que votre besoin en recru";
 
 // NEGATIVE CONTROL 2: doc id 3080, a real Société Générale bank statement.
 // This is the important trap case: pdf-parse glues table cells together
@@ -36,12 +36,12 @@ const CLEAN_FRENCH_LETTER_EXCERPT =
 // letters not at position 0 — but they are multi-word concatenations, not
 // per-character substitution corruption, and must NOT be flagged.
 const CLEAN_BANK_STATEMENT_EXCERPT =
-  "[Propriétés Document: Pro/Afp Document | Pro/Afp]\n\nSociétéGénérale552120222RCSParis\nS.A.aucapitalde1066714367,50EurSiègeSocial\n29,bdHaussmann75009Paris\nR\nA\n4\n2\n0\n3\n2\n1\nM.JEANLUC\nLARUEEXEMPLE10\n201BOULEVARDEXEMPLE\n99999LIEUXXXX\nRELEVÉDECOMPTE\nCOMPTEDEPARTICULIER-eneuros\nn°00000000000000000000000\ndu06/12/2020au06/01/2021\nenvoin°1Page1/4\n1Depuisl'étranger:(+33)176773933,tarifau01/03/2020\nPourtouteinsatisfactionoudésaccord,vouspouvezcontacter:\n1-L'agence:votrepremierinterlocuteur\n2-LeServiceRelationsClientèle:Adresse:SociétéGénéraleBDDF/SEG/SAT/SRC75886Pariscedex18Tel:0142143169E-mail:relations.clientele@socgen.com\n3-LeMédiateur,endernierrecours,gratuitementetenapplicationdelaChartedelaMédiationSociétéGénéraleenadressantuncourrieràl'adressesuivante:\nLeMédiateurauprèsdeSociétéGénérale,17coursValmy92987ParisLaDéfensecedex7,ouparvoieélectroniquesurlesiteinternetduMédiateur:\nwww.mediateur.societegenerale.fr.LeMédiateurrépondradansundélaide90joursmaximumàréceptiondudossiercomplet.\nVOSCONTACTS\nVotreBanqueàDistance\nCodeclient\nM.JEANDUPOND:00000000\nsurinternet:particuliers.societegenerale.fr\nsurvotremobileavecl'AppliSociétéGénérale\npartéléphoneau3933\n(service0,30€/min+prixappel\n1\n)\nVotreagenceMARSEILLESAINTEANNE\nparmessageriedansvotreEspaceClient\nparticuliers.societegenerale.fr\npartéléphone:0491761414\nparfax:0491225271\nVotreconseillerenagence\nMEXEMPLE\npartéléphone:0491761414\nSTD\nRELEVÉDESOPÉRATIONS\nDateValeurNaturedel'opérationDébitCrédit\nSOLDEPRÉCÉDENTAU05/12/2020158,18\n07/12/202007/12/2020VIRRECU6891719800S\nDE:ADYENNV\nMOTIF:TX0000000000XTEtsy.comIE\nPROVENANCE:NLPaysBas\n2,92\n07/12/202007/12/2020CARTEX026603/12Amazonsellerrepay\n47,99USDETATS-UNISD'AME\n1EUR=1,2100USD\nCOMMERCEELECTRONIQUE\n39,66\n08/12/202008/12/2020FRAISPAIEMENTHORSZONEEURO\nCARTEX0266\n03/1247,99USDU.S.A\n2,07\n09/12/202009/12/2020VIRRECU7094640751S\nDE:StripeTechnologyEuropeLtd\nMOTIF:STRIPED0D0D0\nPROVENANCE:DEAllemagne\n19,81\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n10/12/202010/12/2020VIRRECU7186644386S\nDE:StripeTechnologyEuropeLtd\nMOTIF:STRIPEA0A0A0\nPROVENANCE:DEAllemagne\n11,98\n11/12/202011/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\nsuite>>>\n\nSociétéGénérale552120222RCSParis\nS.A.aucapitalde1066714367,50EurSiègeSocial\n29,bdHaussmann75009Paris\nR\nA\n4\n2\n0\n3\n2\n1\nRELEVÉDECOMPTE\nCOMPTEDEPARTICULIER-eneuros\nn°00000000000000000000000\ndu06/12/2020au06/01/2021\nenvoin°1Page2/4\nDateValeurNaturedel'opérationDébitCrédit\n11/12/202011/12/2020PRELEVEMENTEUROPEEN7105387282\nDE:PayPal(Europe)S.a.r.l.etCie.,S\n.C.A.\nID:LU96ZZZ0000000000000000058\nMOTIF:0000000000000PAYPAL\nREF:0000000000000PAYPALVIREMENT\nMANDAT4642224XQPQ22\n10,00\n14/12/202014/12/2020VIRINSTREC084921870309\nDE:GLOBEX\nDATE:14/12/202000:44\nMOTIF:SALAIRE\nREF:XX000000XX0X0X00\nPOUR:DUPONDJEANLUC\n1.452,38\n14/12/202014/12/2020VIRRECU7586670563S\nDE:StripeTechnologyEuropeLtd\nMOTIF:STRIPEC0C0C0\nPROVENANCE:DEAllemagne\n28,78\n14/12/202014/12/2020CARTEX026606/12AMAZONEUSARL\nCOMMERCEELECTRONIQUE\n27,25\n15/12/202015/12/2020CARTEX026614/12MICROSOFT*ADVERTISING\n59,53EURIRLANDE\nCOMMERCEELECTRONIQUE\n59,53\n16/12/202016/12/2020VIRRECU7786007938S\nDE:StripeTechnologyEuropeLtd\nMOTIF:STRIPEB0B0B0\nPROVENANCE:DEAllemagne\n12,17\n16/12/202015/12/2020VIRINSTANTANEEMIS\nPOUR:MarieDupond\n9999BQXXXXCPT00000000000\nDATE:15/12/202021:39\nREF:000000000000\nREF:000000000000000000000001\nMOTIF:Muathiep\nCHEZ:XXXXFRPPXXX\n1.000,00\n16/12/202016/12/2020CARTEX026616/12ALLOVOISINS\nCOMMERCEELECTRONIQUE\n9,99\n17/12/202017/12/2020FRAISVIRINSTANTANEELEC000000000000\nREF000000000000000000000001\n0,80\n18/12/202018/12/2020COTISATIONMENSUELLESOBRIO6,90\n21/";
+  "[Propriétés Document: Pro/Afp Document | Pro/Afp]\n\nSociétéGénérale552120222RCSParis\nS.A.aucapitalde1066714367,50EurSiègeSocial\n29,bdHaussmann75009Paris\nR\nA\n4\n2\n0\n3\n2\n1\nM.JEANLUC\nLARUEEXEMPLE10\n201BOULEVARDEXEMPLE\n75009PARIS\nRELEVÉDECOMPTE\nCOMPTEDEPARTICULIER-eneuros\nn°00000000000000000000000\ndu06/12/2020au06/01/2021\nenvoin°1Page1/4\n1Depuisl'étranger:(+33)176773933,tarifau01/03/2020\nPourtouteinsatisfactionoudésaccord,vouspouvezcontacter:\n1-L'agence:votrepremierinterlocuteur\n2-LeServiceRelationsClientèle:Adresse:SociétéGénéraleBDDF/SEG/SAT/SRC75886Pariscedex18Tel:0142143169E-mail:relations.clientele@socgen.com\n3-LeMédiateur,endernierrecours,gratuitementetenapplicationdelaChartedelaMédiationSociétéGénéraleenadressantuncourrieràl'adressesuivante:\nLeMédiateurauprèsdeSociétéGénérale,17coursValmy92987ParisLaDéfensecedex7,ouparvoieélectroniquesurlesiteinternetduMédiateur:\nwww.mediateur.societegenerale.fr.LeMédiateurrépondradansundélaide90joursmaximumàréceptiondudossiercomplet.\nVOSCONTACTS\nVotreBanqueàDistance\nCodeclient\nM.JEANDUPOND:00000000\nsurinternet:particuliers.societegenerale.fr\nsurvotremobileavecl'AppliSociétéGénérale\npartéléphoneau3933\n(service0,30€/min+prixappel\n1\n)\nVotreagencePARISSAINTEANNE\nparmessageriedansvotreEspaceClient\nparticuliers.societegenerale.fr\npartéléphone:0100000001\nparfax:0100000002\nVotreconseillerenagence\nMLEEXEMPLE\npartéléphone:0100000001\nSTD\nRELEVÉDESOPÉRATIONS\nDateValeurNaturedel'opérationDébitCrédit\nSOLDEPRÉCÉDENTAU05/12/2020158,18\n07/12/202007/12/2020VIRRECU6891719800S\nDE:ADYENNV\nMOTIF:TX0000000000XTEtsy.comIE\nPROVENANCE:NLPaysBas\n2,92\n07/12/202007/12/2020CARTEX026603/12Amazonsellerrepay\n47,99USDETATS-UNISD'AME\n1EUR=1,2100USD\nCOMMERCEELECTRONIQUE\n39,66\n08/12/202008/12/2020FRAISPAIEMENTHORSZONEEURO\nCARTEX0266\n03/1247,99USDU.S.A\n2,07\n09/12/202009/12/2020VIRRECU7094640751S\nDE:StripeTechnologyEuropeLtd\nMOTIF:STRIPED0D0D0\nPROVENANCE:DEAllemagne\n19,81\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n09/12/202009/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\n10/12/202010/12/2020VIRRECU7186644386S\nDE:StripeTechnologyEuropeLtd\nMOTIF:STRIPEA0A0A0\nPROVENANCE:DEAllemagne\n11,98\n11/12/202011/12/2020CARTEX026608/12Google\nCOMMERCEELECTRONIQUE\n1,29\nsuite>>>\n\nSociétéGénérale552120222RCSParis\nS.A.aucapitalde1066714367,50EurSiègeSocial\n29,bdHaussmann75009Paris\nR\nA\n4\n2\n0\n3\n2\n1\nRELEVÉDECOMPTE\nCOMPTEDEPARTICULIER-eneuros\nn°00000000000000000000000\ndu06/12/2020au06/01/2021\nenvoin°1Page2/4\nDateValeurNaturedel'opérationDébitCrédit\n11/12/202011/12/2020PRELEVEMENTEUROPEEN7105387282\nDE:PayPal(Europe)S.a.r.l.etCie.,S\n.C.A.\nID:LU96ZZZ0000000000000000058\nMOTIF:0000000000000PAYPAL\nREF:0000000000000PAYPALVIREMENT\nMANDAT4642224XQPQ22\n10,00\n14/12/202014/12/2020VIRINSTREC084921870309\nDE:GLOBEXSARL\nDATE:14/12/202000:44\nMOTIF:VIREMENT\nREF:XX000000XX0X0X00\nPOUR:DUPONDJEANLUC\n1.234,56\n14/12/202014/12/2020VIRRECU7586670563S\nDE:StripeTechnologyEuropeLtd\nMOTIF:STRIPEB0B0B0\nPROVENANCE:DEAllemagne\n28,78\n14/12/202014/12/2020CARTEX026606/12AMAZONEUSARL\nCOMMERCEELECTRONIQUE\n27,25\n15/12/202015/12/2020CARTEX026614/12MICROSOFT*ADVERTISING\n59,53EURIRLANDE\nCOMMERCEELECTRONIQUE\n59,53\n16/12/202016/12/2020VIRRECU7786007938S\nDE:StripeTechnologyEuropeLtd\nMOTIF:STRIPEC0C0C0\nPROVENANCE:DEAllemagne\n12,17\n16/12/202015/12/2020VIRINSTANTANEEMIS\nPOUR:MarieDupond\n9999BQXXXXCPT00000000000\nDATE:15/12/202021:39\nREF:000000000000\nREF:000000000000000000000001\nMOTIF:Muathiep\nCHEZ:XXXXFRPPXXX\n2.000,00\n16/12/202016/12/2020CARTEX026616/12ALLOVOISINS\nCOMMERCEELECTRONIQUE\n9,99\n17/12/202017/12/2020FRAISVIRINSTANTANEELEC000000000000\nREF000000000000000000000001\n0,80\n18/12/202018/12/2020COTISATIONMENSUELLESOBRIO6,90\n21/";
 
 // NEGATIVE CONTROL 3: doc id 2548, a clean plain-text "certificat de travail"
 // (short administrative letter, no accents-heavy content, no tables).
 const CLEAN_CERTIFICATE_EXCERPT =
-  "SAS GLOBEX.SARL 13014 MARSEILLE  CERTIFICAT DE TRAVAIL  NAF :   4791A SIRET :   00000000000000 Nous certifions que   MR DUPOND Jean Luc  demeurant   10 Rue de l'Exemple 75009 PARIS a été employé(e) par nous du   au 01/02/2020   01/07/2023  services rendus sont pris en compte dans l'exemption.\" La formule \"libre de tout engagement\" et toute autre constatant l'expiration régulière du contrat de travail, les qualités professionnelles et les donnant lieu au droit proportionnel. prévues à l'alinéa 1 du présent article, toutes les fois que ces mentions ne contiennent ni obligations, ni quittances, ni aucune autre convention Sont exempts de timbre et d'enregistrement les certificats de travail délivrés aux salariés même s'ils contiennent d'autres mentions que celles emplois ont été tenus. celle de sa sortie, et la nature de l'emploi, ou le cas échéant, des emplois successivement occupés ainsi que les périodes pendant lesquelles ces \"L'employeur doit, à l'expiration du contrat de travail, délivrer au travailleur un certificat contenant exclusivement la date d'entrée et  Le présent certificat a été établi conformément à l'article L1234-19 du Code du Travail :  en qualité de Fait à   MARS";
+  "SAS GLOBEX.SARL 75014 PARIS  CERTIFICAT DE TRAVAIL  NAF :   4791A SIRET :   00000000000000 Nous certifions que   MR DUPOND Jean Luc  demeurant   10 Boulvard Exemple 75009 PARIS a été employé(e) par nous du   au 01/02/2020   01/07/2023  services rendus sont pris en compte dans l'exemption.\" La formule \"libre de tout engagement\" et toute autre constatant l'expiration régulière du contrat de travail, les qualités professionnelles et les donnant lieu au droit proportionnel. prévues à l'alinéa 1 du présent article, toutes les fois que ces mentions ne contiennent ni obligations, ni quittances, ni aucune autre convention Sont exempts de timbre et d'enregistrement les certificats de travail délivrés aux salariés même s'ils contiennent d'autres mentions que celles emplois ont été tenus. celle de sa sortie, et la nature de l'emploi, ou le cas échéant, des emplois successivement occupés ainsi que les périodes pendant lesquelles ces \"L'employeur doit, à l'expiration du contrat de travail, délivrer au travailleur un certificat contenant exclusivement la date d'entrée et  Le présent certificat a été établi conformément à l'article L1234-19 du Code du Travail :  en qualité de Fait à   PARI";
 
 describe('cleanExtractedText', () => {
   it('returns empty string for text under 10 clean chars', () => {
@@ -116,5 +116,84 @@ describe('detectMidWordCapitalizationCorruption', () => {
     expect(signal.ratio).toBe(0);
     expect(signal.matchCount).toBe(0);
     expect(signal.sampleWords).toEqual([]);
+  });
+});
+
+describe('detectThinTextLayer', () => {
+  it('flags the real-world scanner-watermark case: 8 pages of one repeated line', () => {
+    const text = Array(8).fill('Scanned with AnyScanner').join('\n\n');
+    const signal = detectThinTextLayer(text, 8);
+    expect(signal.thin).toBe(true);
+    expect(signal.reason).toBe('repeated-boilerplate');
+    expect(signal.distinctLines).toBe(1);
+  });
+
+  it('flags a multi-page document whose text layer is far too sparse to be content', () => {
+    const signal = detectThinTextLayer('Page 1\nPage 2\nPage 3\nSome stray header text', 4);
+    expect(signal.thin).toBe(true);
+    expect(signal.reason).toBe('low-density');
+  });
+
+  it('leaves a normal multi-page document alone', () => {
+    const page = 'Bulletin de salaire. '.repeat(40); // ~840 chars of real content per page
+    const signal = detectThinTextLayer([page, page, page].join('\n'), 3);
+    expect(signal.thin).toBe(false);
+    expect(signal.reason).toBeNull();
+  });
+
+  it('never flags a single-page document — a sparse certificate is legitimate', () => {
+    expect(detectThinTextLayer('Attestation', 1).thin).toBe(false);
+    expect(detectThinTextLayer('x', 1).thin).toBe(false);
+  });
+
+  it('does not flag empty text — the existing "< 10 chars" guard already covers that', () => {
+    expect(detectThinTextLayer('', 5).thin).toBe(false);
+    expect(detectThinTextLayer('   \n  ', 5).thin).toBe(false);
+  });
+
+  it('does not treat a few long distinct lines as boilerplate', () => {
+    // 2 pages, 3 distinct substantial lines — above the density floor, so real content.
+    const text = ['A'.repeat(200), 'B'.repeat(200), 'C'.repeat(200)].join('\n');
+    expect(detectThinTextLayer(text, 2).thin).toBe(false);
+  });
+});
+
+describe('detectThinTextLayer — boilerplate rule requires the repeated content to be short', () => {
+  it('does not flag a document that repeats a long line on every page', () => {
+    const longLine = 'Conditions generales de vente applicables au present contrat. '.repeat(6); // ~370 chars
+    const signal = detectThinTextLayer([longLine, longLine, longLine].join('\n'), 3);
+    expect(signal.thin).toBe(false);
+  });
+
+  it('still flags a short watermark repeated on every page', () => {
+    const signal = detectThinTextLayer(Array(12).fill('Scanned with CamScanner').join('\n'), 12);
+    expect(signal.thin).toBe(true);
+    expect(signal.reason).toBe('repeated-boilerplate');
+  });
+});
+
+describe('detectThinTextLayer — the density rule also requires vocabulary-poor text', () => {
+  it('spares a short but genuinely real 2-page document', () => {
+    // Under the density floor over 2 pages, but carrying the varied vocabulary of a real document
+    // (~16 distinct words per page, comfortably above the 5th-percentile of 18.9 measured across
+    // the archive's normal multi-page documents). Running OCR here would cost minutes to re-derive
+    // text already in hand.
+    const text = 'attestation employeur salarie poste technicien contrat duree signature adresse '
+               + 'siret ville fonction brute nette essai avenant cadre statut heures jours conges '
+               + 'prime bureau';
+    const signal = detectThinTextLayer(text, 2); // 85.5 chars/page, 11.5 distinct words/page
+    expect(signal.charsPerPage).toBeLessThan(100); // density alone would have flagged it
+    expect(signal.thin).toBe(false);
+  });
+
+  it('still flags a sparse page-furniture-only text layer', () => {
+    const signal = detectThinTextLayer('Page 1\n\nPage 2\n\nPage 3\n\nPage 4', 4);
+    expect(signal.thin).toBe(true);
+    expect(signal.reason).toBe('low-density');
+  });
+
+  it('reports distinctWordsPerPage so the log line can explain the decision', () => {
+    const signal = detectThinTextLayer(Array(8).fill('Scanned with AnyScanner').join('\n'), 8);
+    expect(signal.distinctWordsPerPage).toBeCloseTo(3 / 8, 5);
   });
 });

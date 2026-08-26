@@ -1,4 +1,4 @@
-const { app, Tray, Menu, shell, nativeImage } = require('electron');
+const { app, Tray, Menu, shell, nativeImage, BrowserWindow } = require('electron');
 const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -6,11 +6,15 @@ const http = require('http');
 const { pathToFileURL } = require('url');
 
 let tray = null;
+let mainWindow = null;
 let serverProcess = null;
 let ollamaProcess = null;
 
 const PORT = 3971;
-const SERVER_URL = `http://localhost:${PORT}`;
+// 127.0.0.1, not "localhost": the server binds IPv4 only (CONFIG.HOST), while on Windows
+// "localhost" resolves to ::1 first. Browsers usually fall back to IPv4, but there is no reason to
+// depend on that when the address we bind is known.
+const SERVER_URL = `http://127.0.0.1:${PORT}`;
 const OLLAMA_HOST = 'http://127.0.0.1:11434';
 
 // Basic 16x16 PNG Data URL for System Tray Icon (Folder/PDF Sorter Icon)
@@ -54,6 +58,21 @@ async function startExpressServer() {
   console.log('⚡ Auto-starting Express Web Server...');
   const appRoot = path.resolve(__dirname, '..');
   const compiledEntry = path.join(appRoot, 'dist', 'index.js');
+
+  // Point the server's writable state outside the application folder BEFORE importing it —
+  // settings.ts reads this at module load, and the import below is what loads it.
+  //
+  // Packaged, appRoot is .../resources/app, which an upgrade replaces wholesale and which
+  // `npm run dist:exe` deletes outright at the start of every build. Keeping the database,
+  // registry, settings and private overlays there meant losing them on every rebuild. userData
+  // (%APPDATA%\Smart PDF Triage) is the conventional home for exactly this and survives both.
+  //
+  // Unpackaged (electron desktop/main.cjs against a checkout) this is left alone, so DATA_DIR
+  // falls back to the repo root and development behaves as before.
+  if (app.isPackaged && !process.env.PDF_TRIAGE_DATA_DIR) {
+    process.env.PDF_TRIAGE_DATA_DIR = app.getPath('userData');
+    console.log(`📁 App data directory: ${process.env.PDF_TRIAGE_DATA_DIR}`);
+  }
   
   if (fs.existsSync(compiledEntry)) {
     try {
@@ -85,9 +104,89 @@ async function startExpressServer() {
   });
 }
 
-function openDashboardInBrowser() {
-  console.log(`🌐 Opening browser at ${SERVER_URL}...`);
-  shell.openExternal(SERVER_URL);
+function createOrFocusWindow(fragment = '') {
+  const hash = fragment ? (fragment.startsWith('#') ? fragment : '#' + fragment) : '';
+  const targetUrl = `${SERVER_URL}/${hash}`;
+  
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (hash) {
+      mainWindow.loadURL(targetUrl);
+    }
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+
+  const iconPath = path.join(__dirname, 'icon.png');
+
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 820,
+    minWidth: 960,
+    minHeight: 640,
+    title: 'Smart PDF Triage - AI Document Sorting System',
+    icon: fs.existsSync(iconPath) ? iconPath : undefined,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      webSecurity: true
+    },
+    show: false,
+    autoHideMenuBar: true
+  });
+
+  mainWindow.loadURL(targetUrl);
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  // Handle links opening in external browser or inside app
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith(SERVER_URL) || url.includes('/viewer.html')) {
+      return { action: 'allow' };
+    }
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  mainWindow.on('close', (e) => {
+    if (!app.isQuitting) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+/**
+ * Opens the desktop application window once the Express server answers.
+ */
+function openDashboardInBrowser(fragment = '') {
+  const deadline = Date.now() + 20000;
+
+  const attempt = () => {
+    const req = http.get(SERVER_URL, (res) => {
+      res.resume();
+      console.log(`🌐 Express server online. Showing desktop window...`);
+      createOrFocusWindow(fragment);
+    });
+    req.on('error', () => {
+      if (Date.now() < deadline) {
+        setTimeout(attempt, 250);
+      } else {
+        console.warn(`Server did not answer within 20s — opening desktop window anyway.`);
+        createOrFocusWindow(fragment);
+      }
+    });
+  };
+
+  attempt();
 }
 
 function triggerManualScan() {
@@ -113,7 +212,7 @@ function setupSystemTray() {
     },
     { type: 'separator' },
     {
-      label: '🌐 Open Dashboard (http://localhost:3971)',
+      label: `🌐 Open Dashboard (${SERVER_URL})`,
       click: () => openDashboardInBrowser()
     },
     {
@@ -121,8 +220,11 @@ function setupSystemTray() {
       click: () => triggerManualScan()
     },
     {
+      // Settings is a modal inside the single-page dashboard, so this needs the #settings
+      // fragment that TriageApp.applyDeepLink() understands. Without it this item opened the
+      // dashboard root — indistinguishable from "Open Dashboard", so it looked broken.
       label: '⚙️ System Configuration',
-      click: () => shell.openExternal(`${SERVER_URL}`)
+      click: () => openDashboardInBrowser('#settings')
     },
     { type: 'separator' },
     {
@@ -186,10 +288,8 @@ if (!gotTheLock) {
     // 3. Register Taskbar System Tray
     setupSystemTray();
 
-    // 4. Immediately open default browser as requested by user
-    setTimeout(() => {
-      openDashboardInBrowser();
-    }, 2000);
+    // 4. Open the dashboard as soon as the server answers (openDashboardInBrowser polls).
+    openDashboardInBrowser();
   });
 
   app.on('window-all-closed', (e) => {

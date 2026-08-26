@@ -30,11 +30,13 @@
         <button id="btnScan" class="btn-primary">⚡ Scan & Triage Files</button>
         <button id="btnExportCsv" class="btn-secondary" title="Export indexed documents to CSV spreadsheet">📊 Export CSV</button>
         <button id="btnExportMarkdown" class="btn-secondary" title="Download every document's converted Markdown as a ZIP of .md files">📝 Export Markdown</button>
+        <button id="btnImportImages" class="btn-secondary" title="Pick photos or scans to add — each is straightened, cropped, read and filed automatically">🖼️ Import Image(s)</button>
+        <input type="file" id="importImagesInput" accept="image/png,image/jpeg,image/webp,image/bmp,image/tiff" multiple hidden>
         <button id="btnPdfUtil" class="btn-secondary" title="Split multi-page PDFs or merge multiple scans">✂️ Split / Merge PDF</button>
         <button id="btnRepair" class="btn-secondary" title="Fix file locations, reclassify generic items, and sync registry">🔧 Repair Registry</button>
-        <button id="btnBlockedFiles" class="btn-secondary" title="View files stuck in __raws/blocked_files and why">🚫 Blocked Files<span id="blockedFilesBadge" style="display:none; margin-left: 0.4rem; background: #ef4444; color: #fff; border-radius: 10px; padding: 0.05rem 0.5rem; font-size: 0.75rem;"></span></button>
-        <button id="btnOpenRaws" class="btn-secondary" title="Open the __raws incoming folder">📥 Open __raws</button>
-        <button id="btnOpenArchive" class="btn-secondary" title="Open the __archive folder">📂 Open __archive</button>
+        <button id="btnBlockedFiles" class="btn-secondary" title="View files that could not be sorted, and why">🚫 Blocked Files<span id="blockedFilesBadge" style="display:none; margin-left: 0.4rem; background: #ef4444; color: #fff; border-radius: 10px; padding: 0.05rem 0.5rem; font-size: 0.75rem;"></span></button>
+        <button id="btnOpenRaws" class="btn-secondary" title="Open your incoming documents folder">📥 Open Incoming</button>
+        <button id="btnOpenArchive" class="btn-secondary" title="Open your sorted documents folder">📂 Open Archive</button>
         <button id="btnLogs" class="btn-secondary" title="View real-time backend terminal logs">📋 Terminal Logs</button>
         <button id="btnOpenChatAssistant" class="btn-primary" style="background: linear-gradient(135deg, #a855f7, #7e22ce); border: none;" title="Ask questions or prepare administrative document dossiers with Local AI">💬 AI Assistant</button>
         <button id="btnSettings" class="btn-secondary">⚙️ System Config</button>
@@ -93,6 +95,99 @@
       <div class="search-box">
         <input type="text" id="searchInput" placeholder="Search by title, ref #, text content, tags or summary...">
         <button type="button" id="btnClearSearch" class="btn-clear-search" style="display: none;" title="Clear search" aria-label="Clear search">✕</button>
+      </div>
+    </div>
+
+    <!-- First-run setup. Shown instead of the document grid when settings.json has never been
+         written (GET /api/config/setup-state). Hidden by default so a configured install never
+         flashes it while the state request is in flight. -->
+    <section id="setupWizard" class="setup-wizard" hidden>
+      <div class="setup-card">
+        <h2>👋 Welcome to Smart PDF Triage</h2>
+        <p class="setup-lead">
+          Pick two folders and you're ready. Nothing leaves your machine — documents are read and
+          classified by your own local Ollama.
+        </p>
+
+        <label class="setup-label" for="setupInputDir">📥 Where you'll put new documents</label>
+        <input type="text" id="setupInputDir" class="setup-input" spellcheck="false"
+               placeholder="C:\Users\you\Documents\Smart PDF Triage\Incoming">
+        <p class="setup-hint">
+          Drop PDFs or photos in here and they get sorted automatically. Checked every 10 seconds.
+          The folder is created if it doesn't exist yet.
+        </p>
+
+        <label class="setup-label" for="setupOutputDir">🗂️ Where the sorted documents should go</label>
+        <input type="text" id="setupOutputDir" class="setup-input" spellcheck="false"
+               placeholder="C:\Users\you\Documents\Smart PDF Triage\Archive">
+        <p class="setup-hint">
+          Files are filed into subfolders by type, sender and year — for example
+          <code>invoices / edf / 2026 /</code>. Must be different from the folder above.
+        </p>
+
+        <label class="setup-label" for="setupLanguage">🌐 Language for titles &amp; summaries</label>
+        <select id="setupLanguage" class="setup-input">
+          <option value="FR">Français (French)</option>
+          <option value="EN">English</option>
+        </select>
+
+        <div class="setup-status">
+          <span id="setupOllamaStatus" class="setup-badge setup-badge-checking">Checking Ollama…</span>
+          <span id="setupDataDir" class="setup-datadir"></span>
+        </div>
+
+        <p id="setupError" class="setup-error" hidden></p>
+
+        <button type="button" id="btnSetupSave" class="setup-save">Save and start</button>
+      </div>
+    </section>
+
+    <!-- Manual image editor. Crop / rotate / adjust a photograph before it becomes a PDF —
+         used both for re-editing a document whose automatic crop went wrong, and for tidying an
+         image before importing it. Geometry lives in src/domain/crop-quad.ts. -->
+    <div id="imageEditorModal" class="modal-backdrop">
+      <div class="modal-content image-editor">
+        <div class="modal-header">
+          <h2>🖼️ Edit image</h2>
+          <button type="button" id="btnCloseImageEditor" class="modal-close" aria-label="Close">✕</button>
+        </div>
+
+        <div class="editor-body">
+          <div class="editor-stage">
+            <canvas id="editorCanvas"></canvas>
+            <p id="editorLoading" class="editor-loading">Loading image…</p>
+          </div>
+
+          <div class="editor-controls">
+            <div class="editor-group">
+              <span class="editor-group-title">Crop</span>
+              <p class="editor-help">Drag the corners or edges. The shaded area is removed.</p>
+              <button type="button" id="btnEditorResetCrop" class="btn-secondary editor-btn">Reset to full image</button>
+            </div>
+
+            <div class="editor-group">
+              <span class="editor-group-title">Rotate</span>
+              <button type="button" id="btnEditorRotate" class="btn-secondary editor-btn">↻ Rotate 90°</button>
+            </div>
+
+            <div class="editor-group">
+              <span class="editor-group-title">Adjust</span>
+              <label class="editor-slider-label" for="editorBrightness">Brightness <span id="editorBrightnessVal">0</span></label>
+              <input type="range" id="editorBrightness" min="-100" max="100" value="0" class="editor-slider">
+              <label class="editor-slider-label" for="editorContrast">Contrast <span id="editorContrastVal">0</span></label>
+              <input type="range" id="editorContrast" min="-100" max="100" value="0" class="editor-slider">
+              <button type="button" id="btnEditorResetAdjust" class="btn-secondary editor-btn">Reset adjustments</button>
+            </div>
+
+            <p id="editorError" class="setup-error" hidden></p>
+
+            <button type="button" id="btnEditorApply" class="setup-save">Convert to PDF</button>
+            <p class="editor-help">
+              The edited image is added to your incoming folder and re-read, re-classified and
+              filed like any other document.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -239,13 +334,13 @@
           </h3>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem;">
             <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.8rem;">
-              <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase;">📂 Incoming (`__raws`)</div>
+              <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase;">📂 Incoming</div>
               <div id="statRawsSize" style="font-size: 1.25rem; font-weight: 700; color: #38bdf8; margin: 0.2rem 0;">- B</div>
               <div id="statRawsCount" style="font-size: 0.8rem; color: #cbd5e1;">0 files</div>
             </div>
 
             <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 0.8rem;">
-              <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase;">📦 Archive (`__archive`)</div>
+              <div style="font-size: 0.78rem; color: #94a3b8; text-transform: uppercase;">📦 Archive</div>
               <div id="statArchiveSize" style="font-size: 1.25rem; font-weight: 700; color: #34d399; margin: 0.2rem 0;">- B</div>
               <div id="statArchiveCount" style="font-size: 0.8rem; color: #cbd5e1;">0 files</div>
             </div>
@@ -308,14 +403,14 @@
           </div>
 
           <div class="form-group" style="margin-bottom: 1.2rem;">
-            <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">📥 Input Files Directory Path (`__raws`)</label>
-            <input type="text" id="cfgInputDir" required placeholder="C:\Users\...\__raws" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #38bdf8; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+            <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">📥 Incoming documents folder</label>
+            <input type="text" id="cfgInputDir" required placeholder="C:\Users\you\Documents\Smart PDF Triage\Incoming" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #38bdf8; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
             <span style="font-size: 0.78rem; color: #64748b; margin-top: 0.3rem; display: block;">Scanner & background watcher monitors incoming files exclusively in this folder.</span>
           </div>
 
           <div class="form-group">
-            <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">📤 Organized Output Root Path (`__archive`)</label>
-            <input type="text" id="cfgOutputDir" required placeholder="C:\Users\...\__archive" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #34d399; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+            <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">📤 Sorted documents folder</label>
+            <input type="text" id="cfgOutputDir" required placeholder="C:\Users\you\Documents\Smart PDF Triage\Archive" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #34d399; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
             <span style="font-size: 0.78rem; color: #64748b; margin-top: 0.3rem; display: block;">Target root directory where classified files are sorted by category, subcategory, and year.</span>
           </div>
         </div>
@@ -354,9 +449,9 @@
             <span>⚠️ Danger Zone</span>
           </h4>
           <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.4;">
-            Clearing the registry resets the SQLite database and moves all sorted files from <code>__archive</code> back into the <code>__raws</code> incoming folder for re-indexing.
+            Clearing the registry resets the SQLite database and moves all sorted files from the archive folder back into the incoming folder for re-indexing.
           </p>
-          <button type="button" id="btnClear" class="btn-secondary" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);" title="Clear database registry and return archived files to __raws">🗑️ Clear Registry & Reset Database</button>
+          <button type="button" id="btnClear" class="btn-secondary" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);" title="Clear database registry and return archived files to the incoming folder">🗑️ Clear Registry & Reset Database</button>
         </div>
       </form>
 
@@ -406,7 +501,7 @@
         <button id="btnCloseScanProgress" class="btn-secondary">✕</button>
       </div>
       <div style="margin-bottom: 1rem; color: #94a3b8; font-size: 0.9rem;" id="scanProgressHeader">
-        Scanning incoming PDFs from <code>__raws</code>...
+        Scanning your incoming folder...
       </div>
       <div style="max-height: 420px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 12px; padding: 0.8rem; background: rgba(15, 23, 42, 0.7);">
         <div id="scanProgressList" style="display: flex; flex-direction: column; gap: 0.75rem;">
@@ -431,7 +526,7 @@
 
       <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.2rem;">
         <div style="font-size: 1rem; font-weight: 600; color: var(--accent-blue);" id="relocalizeDocTitle">Document Title</div>
-        <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.3rem;" id="relocalizeCurrentPath">Current Path: __archive/...</div>
+        <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 0.3rem;" id="relocalizeCurrentPath">Current Path: ...</div>
       </div>
 
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
@@ -450,7 +545,7 @@
         </div>
       </div>
 
-      <input type="text" id="relocalizeCustomSubcategory" placeholder="Enter new subcategory slug (e.g. credit_mutuel, employeur_x)..." style="width: 100%; display: none; margin-bottom: 1rem; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color);">
+      <input type="text" id="relocalizeCustomSubcategory" placeholder="Enter new subcategory slug (e.g. credit_mutuel, acme_corp)..." style="width: 100%; display: none; margin-bottom: 1rem; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color);">
 
       <!-- Structured Reason Dropdowns -->
       <div class="form-group">
@@ -502,7 +597,7 @@
         <button class="modal-close" id="btnCloseBlockedFilesModal">&times;</button>
       </div>
       <p style="color:#94a3b8; font-size:0.85rem; margin: 0 0 1rem 0;">
-        These files stayed in <code>__raws/.blocked_files</code> because no text could be extracted from them, or no specific subcategory could be determined (Golden Rule #4). Fix the file (e.g. remove a password, rescan a clearer copy) and it will be automatically re-picked by the next scan.
+        These files were set aside because no text could be extracted from them, or no specific subcategory could be determined (Golden Rule #4). Fix the file (e.g. remove a password, rescan a clearer copy) and it will be automatically re-picked by the next scan.
       </p>
       <div id="blockedFilesList" style="flex: 1; overflow-y: auto;">
         <div style="color: #6b7280; font-style: italic;">Loading...</div>
@@ -535,7 +630,7 @@
           <button id="btnGrandRelocalize" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #a7f3d0;">📍 Move / Relocalize</button>
           <button id="btnGrandEdit" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem;">✏️ Edit Metadata</button>
           <button id="btnGrandCopyText" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #38bdf8;">📋 Copy Text</button>
-          <button id="btnGrandDelete" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #f87171; border-color: rgba(248, 113, 113, 0.4);" title="Unregister document and move file to __raws/.delete_files">🗑️ Delete</button>
+          <button id="btnGrandDelete" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #f87171; border-color: rgba(248, 113, 113, 0.4);" title="Unregister document and move the file to the trash folder">🗑️ Delete</button>
         </div>
       </div>
 
@@ -722,6 +817,7 @@
   <script src="js/ModalsManager.js"></script>
   <script src="js/TriageEventsManager.js"></script>
   <script src="js/ChatAssistantManager.js"></script>
+  <script type="module" src="js/ImageEditorManager.js"></script>
   <script src="js/TriageApp.js"></script>
 </body>
 </html>

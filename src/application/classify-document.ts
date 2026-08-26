@@ -4,8 +4,10 @@ import { logger } from '../infrastructure/logger.js';
 import { cleanAndParseJSON, ruleBasedClassify, buildCategoriesDescriptionStr, reconcileDocumentDate } from '../domain/classification.js';
 import { buildClassificationPrompt, buildEntityExtractionPrompt, buildMarkdownConversionPrompt, ILLEGIBLE_FRAGMENT_MARKER, MarkdownContinuationContext } from '../domain/prompt.js';
 import { refineClassification, resolveCategory, resolveSubcategory, applyEntityPriorityOverride } from '../domain/classification-resolution.js';
+import { auditMarkdownTables, measureContentRecall } from '../domain/markdown-tables.js';
 import { getCategoriesConfig, saveCategoriesConfig } from '../infrastructure/categories-store.js';
 import { getEntityDictionary } from '../infrastructure/entity-dictionary-store.js';
+import { getPromptPersonalization } from '../infrastructure/prompt-personalization-store.js';
 import { ensureOllamaModel, requestClassificationCompletion, requestTextChatCompletion } from '../infrastructure/ollama-client.js';
 
 // Condenses a model's chain-of-thought / reasoning text for structured logging — long enough to
@@ -17,13 +19,42 @@ function truncateForLog(text: string | undefined | null, maxLen = 400): string |
   return trimmed.length > maxLen ? trimmed.slice(0, maxLen) + '…' : trimmed;
 }
 
+// A line longer than the whole chunk budget used to be appended whole, so the "chunk" it produced
+// blew straight past maxChunkSize. That is not hypothetical: an archived tax declaration extracted
+// to 590,166 chars across just 320 lines — 153 of them over 1400 chars, the longest 13,860 — and
+// the resulting ~14k-char chunk went to a model whose num_predict caps the RESPONSE at 4096 tokens.
+// The reply came back truncated but non-empty and passed the `length > 10` success gate as
+// "converted". (An earlier version of this comment claimed that had left the document's markdown at
+// "6% of its raw text" — that ratio turned out to be a whitespace artefact, since these PDFs extract
+// to text that is 92-99% whitespace. The over-long chunk is still a real bug; the 6% was not
+// evidence of it.) Splitting on whitespace keeps words intact; an unbroken run with no whitespace is
+// hard-cut, because exceeding the budget is worse than an ugly seam.
+function splitOverlongLine(line: string, maxChunkSize: number): string[] {
+  const pieces: string[] = [];
+  let rest = line;
+
+  while (rest.length > maxChunkSize) {
+    let cut = rest.lastIndexOf(' ', maxChunkSize);
+    // Ignore a boundary so early that the piece would be mostly empty (and guarantee progress:
+    // cut must always be > 0, or this loop would never terminate).
+    if (cut < maxChunkSize / 2) cut = maxChunkSize;
+    pieces.push(rest.slice(0, cut));
+    rest = rest.slice(cut).replace(/^ +/, '');
+  }
+
+  if (rest.length > 0) pieces.push(rest);
+  return pieces;
+}
+
 export function chunkText(rawText: string, maxChunkSize = 1400): string[] {
   if (!rawText || rawText.length <= maxChunkSize) {
     return [rawText || ''];
   }
 
   const chunks: string[] = [];
-  const lines = rawText.split(/\r?\n/);
+  const lines = rawText.split(/\r?\n/).flatMap(line =>
+    line.length > maxChunkSize ? splitOverlongLine(line, maxChunkSize) : [line]
+  );
   let currentChunk = '';
 
   for (const line of lines) {
@@ -40,6 +71,12 @@ export function chunkText(rawText: string, maxChunkSize = 1400): string[] {
 
   return chunks;
 }
+
+// Below this share of distinctive raw tokens surviving, the conversion has dropped real content.
+// Set from the archive's own distribution: median recall is ~95%, and the documents with verified
+// losses (bank statements missing payee names) sit at 53-69%. 0.80 flags those without firing on
+// ordinary documents.
+const CONTENT_RECALL_WARN_THRESHOLD = 0.80;
 
 const TABLE_ROW_PATTERN = /^\|.*\|\s*$/;
 // A GFM header-separator row: every cell is only dashes/colons/whitespace, e.g. `| --- | :--- |`.
@@ -96,6 +133,17 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
       // fallback below. requestTextChatCompletion has no format constraint.
       const res = await requestTextChatCompletion(system, user);
       const mdSnippet = res.response.trim();
+      // done_reason 'length' means generation stopped at num_predict, not because the model was
+      // finished — the markdown is cut off mid-document. It is still long and plausible-looking, so
+      // the length check below would happily accept it and drop whatever came after the cut. The
+      // raw chunk is worse-formatted but complete, and completeness is Step C's actual contract.
+      if (res.doneReason === 'length') {
+        convertedChunks.push(chunk);
+        fallbackCount++;
+        pendingContinuation = undefined;
+        logger.warn('OLLAMA_AI', `[STEP C] Chunk ${i + 1}/${chunks.length} hit the model's output limit (done_reason=length) — its markdown was truncated mid-chunk, keeping raw text instead`, { filename, chunkIndex: i + 1, totalChunks: chunks.length, chunkChars: chunk.length, truncatedChars: mdSnippet.length });
+        continue;
+      }
       if (mdSnippet && mdSnippet.length > 10) {
         convertedChunks.push(mdSnippet);
         successCount++;
@@ -115,12 +163,17 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
         convertedChunks.push(chunk);
         fallbackCount++;
         pendingContinuation = undefined;
-        logger.debug('OLLAMA_AI', `[STEP C] Chunk ${i + 1}/${chunks.length} returned empty/too-short markdown, keeping raw text chunk`, { filename });
+        logger.warn('OLLAMA_AI', `[STEP C] Chunk ${i + 1}/${chunks.length} returned empty/too-short markdown, keeping raw text chunk`, { filename, chunkIndex: i + 1, totalChunks: chunks.length });
       }
     } catch (err: any) {
+      // The push is the whole point of this branch: Step C's contract with the model is ZERO
+      // CONTENT SKIPPING (prompts/micro_prompt_markdown.md rule 1), so a chunk the model could not
+      // convert must still reach the output as raw text. Omitting it here silently deleted the
+      // chunk from markdown_content — the caller sees a shorter document and no error at all.
+      convertedChunks.push(chunk);
       fallbackCount++;
       pendingContinuation = undefined;
-      logger.debug('OLLAMA_AI', `[STEP C] Chunk ${i + 1}/${chunks.length} conversion failed (${err.message}), keeping raw text chunk`, { filename });
+      logger.warn('OLLAMA_AI', `[STEP C] Chunk ${i + 1}/${chunks.length} conversion failed (${err.message}), keeping raw text chunk`, { filename, chunkIndex: i + 1, totalChunks: chunks.length, error: err.message });
     }
   }
 
@@ -130,7 +183,73 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
     filename, totalChunks: chunks.length, successCount, fallbackCount
   });
 
-  return convertedChunks.join('\n\n');
+  // Table integrity is checked on the ASSEMBLED markdown, not per chunk, because a table split
+  // across a chunk boundary is only visible once the pieces are joined. Measured, never repaired:
+  // a row short of the header has shifted its values one column left, and which cell went missing
+  // cannot be recovered from the output, so guessing would give a figure a meaning the source never
+  // gave it. Without this line the damage was invisible — the only way to find it was to audit the
+  // database after the fact, which is how the Bouygues call-detail tables were caught filing each
+  // call's cost under "Unité(s) décomptée(s)".
+  const assembled = convertedChunks.join('\n\n');
+  const tables = auditMarkdownTables(assembled);
+  if (tables.raggedRows > 0 || tables.headerlessBlocks > 0) {
+    // Only state the symptoms that actually occurred. The two are independent — a document can have
+    // headerless blocks and no ragged rows — and an earlier version always led with the ragged
+    // clause, so a document with 0 ragged rows was told "those rows' values are shifted into the
+    // wrong columns" about no rows at all. A warning that overstates what it found is a warning
+    // people learn to skim past.
+    const parts: string[] = [];
+    if (tables.raggedRows > 0) {
+      const pct = tables.dataRows > 0 ? Math.round((100 * tables.raggedRows) / tables.dataRows) : 0;
+      parts.push(`${tables.raggedRows}/${tables.dataRows} data row(s) (${pct}%) have a different cell count than their header, so those rows' values are shifted into the wrong columns`);
+    }
+    if (tables.headerlessBlocks > 0) {
+      parts.push(`${tables.headerlessBlocks} table block(s) have no header at all (a table split across a chunk boundary)`);
+    }
+    logger.warn(
+      'OLLAMA_AI',
+      `[STEP C] Table integrity problems in '${filename || 'document'}': ${parts.join('; ')}`,
+      {
+        filename,
+        tableBlocks: tables.blocks,
+        dataRows: tables.dataRows,
+        raggedRows: tables.raggedRows,
+        headerlessBlocks: tables.headerlessBlocks,
+        worstBlockLine: tables.worstBlock?.startLine,
+        worstBlockHeaderCells: tables.worstBlock?.headerCells,
+      }
+    );
+  }
+
+  // Step C's contract is ZERO CONTENT SKIPPING; this is the only thing that checks it. Bank
+  // statements were dropping transaction payee names and a closing balance while every card
+  // reference on the same rows survived, and nothing anywhere said so. Skipped for heavily fused
+  // raw text, where unmatchable raw tokens mean the model de-fused correctly rather than lost
+  // anything — see measureContentRecall.
+  const recall = measureContentRecall(rawText, assembled);
+  if (recall.measurable && recall.recall < CONTENT_RECALL_WARN_THRESHOLD && recall.fusionSuspected) {
+    // Fused source text: de-fusing and genuine loss are indistinguishable to any token measure, so
+    // this cannot be asserted. It stays at DEBUG rather than becoming a WARN nobody can act on —
+    // a family of BNP RLV_CHQ_* statements produced ~10 such warnings an hour, every one a false
+    // alarm on markdown that was correct. Still recorded, so an audit can find it.
+    logger.debug('OLLAMA_AI', `[STEP C] Low token recall for '${filename || 'document'}' (${(recall.recall * 100).toFixed(0)}%), but the raw text is run-together — most likely the model split fused words correctly rather than dropping content`, {
+      filename, recallPct: Math.round(recall.recall * 100), missingTokens: recall.missingTokens, totalTokens: recall.totalTokens, fusionSuspected: true,
+    });
+  } else if (recall.measurable && recall.recall < CONTENT_RECALL_WARN_THRESHOLD) {
+    logger.warn(
+      'OLLAMA_AI',
+      `[STEP C] Content preservation below threshold for '${filename || 'document'}': ${(recall.recall * 100).toFixed(0)}% of distinctive raw-text tokens survived into the markdown (${recall.missingTokens}/${recall.totalTokens} missing) — values present in the source are absent from markdown_content`,
+      {
+        filename,
+        recallPct: Math.round(recall.recall * 100),
+        missingTokens: recall.missingTokens,
+        totalTokens: recall.totalTokens,
+        fusionSuspected: recall.fusionSuspected,
+      }
+    );
+  }
+
+  return assembled;
 }
 
 export async function classifyPDFText(rawText: string, filename: string, previousError?: string, now: Date = new Date()): Promise<DocumentMetadata> {
@@ -138,7 +257,9 @@ export async function classifyPDFText(rawText: string, filename: string, previou
 
   const categoriesConfig = getCategoriesConfig();
   const dictionary = getEntityDictionary();
-  const categoriesDescriptionStr = buildCategoriesDescriptionStr(categoriesConfig, dictionary);
+  // rawText, not the Step C markdown: the filter only needs to know which entities this document
+  // mentions, and rawText is available before Step C runs.
+  const categoriesDescriptionStr = buildCategoriesDescriptionStr(categoriesConfig, dictionary, rawText);
 
   let validated: DocumentMetadata;
   let decisionMethod = 'Modular Ollama AI Pipeline — Step A (entity) + Step C (markdown) + Step D (classification), qwen3.5:9b';
@@ -234,7 +355,7 @@ export async function classifyPDFText(rawText: string, filename: string, previou
 
   } catch (err: any) {
     decisionMethod = 'Rule-Based Pattern Classifier';
-    const rb = ruleBasedClassify(rawText, filename, dictionary, CONFIG.PERSONAL_NAME_DENYLIST);
+    const rb = ruleBasedClassify(rawText, filename, dictionary, CONFIG.PERSONAL_NAME_DENYLIST, getPromptPersonalization());
     decisionReason = `Rule-Based fallback: ${rb.reason}`;
     logger.warn('OLLAMA_AI', `Ollama AI request failed for ${filename}: ${err.message}. ${decisionReason}`);
     validated = DocumentMetadataSchema.parse({
@@ -265,7 +386,7 @@ export async function classifyPDFText(rawText: string, filename: string, previou
     validated.subcategorie = subcategoryId;
   } else if (subcategoryId === 'general' && validated.subcategorie !== 'general') {
     logger.warn('OLLAMA_AI', `Rejected ungrounded subcategory slug '${rawSubSlug}' for ${filename} (not found in document content) — trying rule-based fallback`);
-    const rbFallback = ruleBasedClassify(rawText, filename, dictionary, CONFIG.PERSONAL_NAME_DENYLIST);
+    const rbFallback = ruleBasedClassify(rawText, filename, dictionary, CONFIG.PERSONAL_NAME_DENYLIST, getPromptPersonalization());
     if (rbFallback.subcategorie && rbFallback.subcategorie !== 'general') {
       validated.categorie = rbFallback.categorie;
       validated.subcategorie = rbFallback.subcategorie;

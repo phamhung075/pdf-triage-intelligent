@@ -1,5 +1,8 @@
 # Entity Dictionary for Category/Subcategory Auto-Creation Implementation Plan
 
+> ⚠️ **Historical record.** Personal entity names in this document (employers, schools, banks, practitioners) have been replaced with fictional placeholders. Real values live in the gitignored `.prompts.private.json` overlay — see [taxonomy](../../knowledge/taxonomy.md#personal-prompt-overlay).
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the classifier (Qwen's prompt AND the deterministic `ruleBasedClassify` fallback) a curated reference of real-world French entities (banks, energy/telecom providers, insurers, gov/social agencies, health orgs) so new categories/subcategories it invents are more likely to be clean, recognizable names instead of filename noise.
@@ -15,7 +18,7 @@
 - Prompt and `ruleBasedClassify` stay logically aligned, same priority order (Golden Rule #6/#7 — deep semantic reading, company-level separation, never lump).
 - Only Qwen 3.5 (`qwen3.5:9b`) — this change touches prompt text only, never model selection (Golden Rule #14).
 - No new npm dependencies. No test framework introduced — this repo has none today.
-- `entity_dictionary.json` only adds entities NOT already present as real subcategories in `categories.json` today (sfr, edf, foncia, credit_mutuel, societe_generale, bnp_paribas, boursobank, lcl, la_banque_postale, impot, urssaf, france_travail, ameli, gan_sante, clinic_x, allianz, cdiscount, fnac, ecole_x, ecole_y, ecole_z, openclassrooms are excluded).
+- `entity_dictionary.json` only adds entities NOT already present as real subcategories in `categories.json` today (sfr, edf, northwind_realty, credit_mutuel, societe_generale, bnp_paribas, boursobank, lcl, la_banque_postale, impot, urssaf, france_travail, ameli, northstar_sante, lakeside_dental, allianz, cdiscount, fnac, northwind, summit, lakeside, openacademy are excluded).
 - Reference spec: `docs/superpowers/specs/2026-07-28-entity-dictionary-design.md`.
 
 ---
@@ -383,8 +386,8 @@ Change:
   else if (/\b(santé|sante|médical|medical|soins|dentaire|pharmacie|attestation de droits|attestationam|ameli|sécurité sociale|securite sociale|cpam|mutuelle|hospitalisation)\b/i.test(combined)) {
     categorie = 'health';
     if (/\bameli|assurance maladie|cpam|attestationam\b/i.test(combined)) subcategorie = 'ameli';
-    else if (/\bgan\b/i.test(combined)) subcategorie = 'gan_sante';
-    else if (/\bclinic_x|clinic_x\b/i.test(combined)) subcategorie = 'clinic_x';
+    else if (/\bnorthstar\b/i.test(combined)) subcategorie = 'northstar_sante';
+    else if (/\blakeside dental|lakeside dental\b/i.test(combined)) subcategorie = 'lakeside_dental';
   }
 ```
 
@@ -394,8 +397,8 @@ to:
   else if (/\b(santé|sante|médical|medical|soins|dentaire|pharmacie|attestation de droits|attestationam|ameli|sécurité sociale|securite sociale|cpam|mutuelle|hospitalisation)\b/i.test(combined)) {
     categorie = 'health';
     if (/\bameli|assurance maladie|cpam|attestationam\b/i.test(combined)) subcategorie = 'ameli';
-    else if (/\bgan\b/i.test(combined)) subcategorie = 'gan_sante';
-    else if (/\bclinic_x|clinic_x\b/i.test(combined)) subcategorie = 'clinic_x';
+    else if (/\bnorthstar\b/i.test(combined)) subcategorie = 'northstar_sante';
+    else if (/\blakeside dental|lakeside dental\b/i.test(combined)) subcategorie = 'lakeside_dental';
     else {
       const dictHealth = matchEntityDictionary(combined, ['health']);
       if (dictHealth) subcategorie = dictHealth.subcategorie;
@@ -451,7 +454,7 @@ Insert:
 Change:
 
 ```typescript
-  else if (/\b(assurance auto|assurance habitation|prévoyance|prevoyance|responsabilité civile|allianz|macif|maaf|a2a)\b/i.test(combined)) {
+  else if (/\b(assurance auto|assurance habitation|prévoyance|prevoyance|responsabilité civile|allianz|macif|maaf|polx)\b/i.test(combined)) {
     categorie = 'insurance';
     if (/\ballianz\b/i.test(combined)) subcategorie = 'allianz';
   }
@@ -460,7 +463,7 @@ Change:
 to:
 
 ```typescript
-  else if (/\b(assurance auto|assurance habitation|prévoyance|prevoyance|responsabilité civile|allianz|macif|maaf|a2a)\b/i.test(combined) || matchEntityDictionary(combined, ['insurance'])) {
+  else if (/\b(assurance auto|assurance habitation|prévoyance|prevoyance|responsabilité civile|allianz|macif|maaf|polx)\b/i.test(combined) || matchEntityDictionary(combined, ['insurance'])) {
     categorie = 'insurance';
     if (/\ballianz\b/i.test(combined)) subcategorie = 'allianz';
     else {
@@ -501,7 +504,7 @@ to:
 Change:
 
 ```typescript
-    else if (/\bfoncia\b/i.test(combined)) subcategorie = 'foncia';
+    else if (/\bnorthwind_realty\b/i.test(combined)) subcategorie = 'northwind_realty';
     else {
       // Dynamic Subcategory Extraction from Filename Words
 ```
@@ -509,7 +512,7 @@ Change:
 to:
 
 ```typescript
-    else if (/\bfoncia\b/i.test(combined)) subcategorie = 'foncia';
+    else if (/\bnorthwind_realty\b/i.test(combined)) subcategorie = 'northwind_realty';
     else if (matchEntityDictionary(combined, ALL_ENTITY_DOMAINS)) {
       const dictAny = matchEntityDictionary(combined, ALL_ENTITY_DOMAINS)!;
       categorie = dictAny.categorie;

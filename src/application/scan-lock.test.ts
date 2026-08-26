@@ -12,6 +12,9 @@ import { spawn, ChildProcess } from 'child_process';
 let tempBaseDir: string;
 
 vi.mock('../infrastructure/settings.js', () => ({
+  // DATA_DIR falls back to BASE_DIR when PDF_TRIAGE_DATA_DIR is unset, which is what a git
+  // checkout does — so the lock files land in the same temp dir the rest of the test uses.
+  get DATA_DIR() { return tempBaseDir; },
   get BASE_DIR() { return tempBaseDir; },
 }));
 
@@ -85,4 +88,63 @@ describe('acquireScanLock', () => {
       child.kill();
     }
   }, 10_000);
+});
+
+describe('acquireScanLock — same-process re-entry', () => {
+  it('rejects a SECOND acquisition while the first is still held', async () => {
+    // The regression this guards: readActiveLockHolder deliberately reports "free" when the lock
+    // file holds this same PID (see the test above, which pins that intent), so the FILE alone
+    // could never stop a second scan starting inside one process. That is exactly what happened
+    // when the user pressed Stop — which cleared the in-memory isAutoScanning guard without
+    // cancelling the running loop — and then pressed Scan again. Two runTriageScan loops then
+    // walked the same __raws listing: one moved a file to __archive between the other's directory
+    // read and its statSync (ENOENT), and the loser of a classify race hit
+    // `UNIQUE constraint failed: documents.checksum` and shunted an already-archived user document
+    // into .duplicates_files.
+    const { acquireScanLock, ScanInProgressError } = await freshScanLock();
+
+    const release = acquireScanLock();
+    expect(() => acquireScanLock()).toThrow(ScanInProgressError);
+
+    release();
+  });
+
+  it('allows a new acquisition once the first is released', async () => {
+    const { acquireScanLock } = await freshScanLock();
+    acquireScanLock()();
+    expect(() => acquireScanLock()()).not.toThrow();
+  });
+
+  it('makes release idempotent, so a stale handle cannot delete a lock a later run owns', async () => {
+    // Both concurrent runs used to hold a release fn that deleted the file on PID match, so
+    // whichever finished first unlocked .scan.lock while the other was still running — which then
+    // let `npm run scan` or the MCP server start a third pipeline on top of it.
+    const { acquireScanLock } = await freshScanLock();
+
+    const staleRelease = acquireScanLock();
+    staleRelease();
+    staleRelease(); // no-op
+
+    const laterRun = acquireScanLock();
+    expect(fs.existsSync(lockFilePath())).toBe(true);
+
+    staleRelease();
+    expect(fs.existsSync(lockFilePath())).toBe(true);
+
+    laterRun();
+    expect(fs.existsSync(lockFilePath())).toBe(false);
+  });
+
+  it('frees in-process ownership even when the scan body throws', async () => {
+    const { acquireScanLock } = await freshScanLock();
+
+    const release = acquireScanLock();
+    try {
+      throw new Error('scan blew up');
+    } catch {
+      release();
+    }
+
+    expect(() => acquireScanLock()()).not.toThrow();
+  });
 });

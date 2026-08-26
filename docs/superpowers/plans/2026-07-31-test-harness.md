@@ -1,5 +1,8 @@
 # Test Harness for Pure Classification/Path Logic Implementation Plan
 
+> ⚠️ **Historical record.** Personal entity names in this document (employers, schools, banks, practitioners) have been replaced with fictional placeholders. Real values live in the gitignored `.prompts.private.json` overlay — see [taxonomy](../../knowledge/taxonomy.md#personal-prompt-overlay).
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Stand up a Vitest unit test suite covering the pure/near-pure logic in `ai.service.ts`, `config.ts`, `document.schema.ts`, and `triage.service.ts`'s taxonomy/path helpers — including a regression test locking in today's `think:false` fix — so a later DDD restructuring has a safety net.
@@ -333,12 +336,12 @@ git commit -m "test: cover isGroundedSubcategorySlug guard (generic words, perso
 describe('ruleBasedClassify', () => {
   it('classifies a pay slip under bulletin_salaire (never invoices), extracting employer + DD/MM/YYYY date', () => {
     const result = ruleBasedClassify(
-      'Bulletin de salaire EmployeurX Salaire brut 3000 Net a payer 2400 01/03/2023',
+      'Bulletin de salaire AcmeCorp Salaire brut 3000 Net a payer 2400 01/03/2023',
       'bulletin_mars.pdf'
     );
     expect(result).toEqual({
       categorie: 'bulletin_salaire',
-      subcategorie: 'employeur_x',
+      subcategorie: 'acme_corp',
       title: 'bulletin mars',
       date: '2023-03-01',
     });
@@ -361,7 +364,7 @@ describe('ruleBasedClassify', () => {
 
   it('does NOT misfile a bank statement as impot just because a transaction row mentions impots (Golden Rule #6 guard)', () => {
     const result = ruleBasedClassify(
-      'RELEVE DE COMPTE Credit Mutuel Marseille PRLV IMPOTS DGFIP SOLDE CREDITEUR 1234.56',
+      'RELEVE DE COMPTE Credit Mutuel Springfield PRLV IMPOTS DGFIP SOLDE CREDITEUR 1234.56',
       'releve.pdf'
     );
     expect(result.categorie).toBe('administrative');

@@ -12,7 +12,22 @@
 | `CATEGORIES_FILE`  | hard-coded, committed (generic starter taxonomy) | `<BASE_DIR>/categories.json`           |
 | `CATEGORIES_PRIVATE_FILE` | hard-coded, gitignored (your real, auto-created taxonomy) | `<BASE_DIR>/.categories.private.json` |
 | `SETTINGS_FILE`    | hard-coded                         | `<BASE_DIR>/settings.json`                           |
-| `PORT`             | env › default                      | `3000`                                               |
+| `PORT`             | env › default                      | `3971`                                               |
+
+## Resource requirements
+
+Measured, not estimated — see [README → System Requirements](../../README.md#-system-requirements)
+for the full tables and the storage breakdown. The short version:
+
+| | |
+| --- | --- |
+| App processes (RAM) | ~1.5 GB — PaddleOCR service ~780 MB, Node dev server ~540 MB, watcher + `ollama serve` ~130 MB |
+| `qwen3.5:9b` | 6.6 GB resident at `num_ctx: 16384`. On GPU that is **VRAM**, so 8 GB is the floor — on an 8 GB card it loads at 100% GPU with ~580 MB to spare. Without a GPU it is system RAM instead. |
+| Disk | ~9.8 GB installed, plus **≈158 KB per archived document** in SQLite |
+| Throughput | ~2 min/document overall: 30-60s for a digital text layer (GPU-bound), 120-230s when OCR is needed (**CPU**-bound — the GPU does not accelerate PaddleOCR) |
+
+Two things that grow without bound and nothing prunes: `logs/triage_debug.log` and
+`__raws/.delete_files/img_converted/`.
 
 ## Ollama
 
@@ -46,6 +61,21 @@ the primary OCR engine in `pdf-extractor.ts` and the orientation tiebreaker in
 `orientation-detector.ts`, with Tesseract kept as an availability fallback if this service
 isn't reachable. See `paddleocr-server/README.md` for one-time setup.
 
+## MCP HTTP transport
+
+| Key               | Source        | Default   |
+| ------------------ | ------------- | --------- |
+| `MCP_HTTP_PORT`    | env › default | `3972`    |
+| `MCP_HTTP_HOST`    | env › default | `0.0.0.0` |
+
+`npm run mcp` serves stdio (unauthenticated, local process-spawn only) and Streamable HTTP
+(bearer-token authenticated) at the same time from one process — see the [API
+reference](./api-reference.md#mcp-tools-srcinfrastructuremcpmcp-serverts) and
+[mcp-integrator](../agents/mcp-integrator.md). The HTTP port defaults to LAN-reachable
+(`0.0.0.0`), guarded by the token in the gitignored `.mcp-api-token` file (auto-generated on
+first start, printed to console); set `MCP_HTTP_HOST=127.0.0.1` to restrict it to this
+machine only.
+
 ## `settings.json` shape
 
 ```json
@@ -61,7 +91,7 @@ Written by `updateConfig()`; reloaded on every scan via `reloadConfigFromDisk()`
 
 ## Environment variables
 
-`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PORT`, `VISION_LAB_PORT`, `PADDLEOCR_HOST`, `PADDLEOCR_SPAWN_CMD`.
+`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PORT`, `PDF_TRIAGE_HOST`, `VISION_LAB_PORT`, `PADDLEOCR_HOST`, `PADDLEOCR_SPAWN_CMD`, `MCP_HTTP_PORT`, `MCP_HTTP_HOST`.
 
 Loaded from `.env` via `dotenv` when the process starts.
 
@@ -78,8 +108,8 @@ Loaded from `.env` via `dotenv` when the process starts.
 
 ## Server ports
 
-Web/API/SSE all on `PORT` (`3000` default). MCP is stdio-only, no port.
+Web/API/SSE all on `PORT` (`3971` default, bound to `HOST`/`PDF_TRIAGE_HOST`, default `127.0.0.1`). Vision Lab on `VISION_LAB_PORT` (`3179`). MCP stdio has no port; MCP's Streamable HTTP transport listens on `MCP_HTTP_PORT` (`3972`, bound to `MCP_HTTP_HOST`, default `0.0.0.0` — see [MCP HTTP transport](#mcp-http-transport) above).
 
 ## `.gitignore` awareness
 
-`node_modules/`, `pdf_triage.db`, `logs/`, `settings.json` (personal) are ignored. `categories.json` is committed because it's the taxonomy source of truth.
+`node_modules/`, `pdf_triage.db`, `logs/`, `settings.json` (personal), `.mcp-api-token` (MCP HTTP bearer token), `__packages/` (zips built by `package_documents`) are ignored. `categories.json` is committed because it's the taxonomy source of truth.

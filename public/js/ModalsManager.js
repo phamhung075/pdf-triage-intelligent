@@ -28,7 +28,7 @@ class ModalsManager {
                     }
                     else {
                         customInput.value = '';
-                        customInput.placeholder = 'Enter new subcategory slug (e.g. credit_mutuel, employeur_x)...';
+                        customInput.placeholder = 'Enter new subcategory slug (e.g. credit_mutuel, acme_corp)...';
                     }
                     customInput.focus();
                 }
@@ -642,7 +642,7 @@ class ModalsManager {
             const btnDel = document.getElementById('btnGrandDelete');
             if (btnDel) {
                 btnDel.onclick = async () => {
-                    if (!confirm(`Are you sure you want to delete '${doc.title || doc.original_filename}'?\n\nThis will unregister the document from the database and move the physical file to __raws/.delete_files.`))
+                    if (!confirm(`Are you sure you want to delete '${doc.title || doc.original_filename}'?\n\nThis will unregister the document from the database and move the file to the trash folder.`))
                         return;
                     btnDel.disabled = true;
                     const originalText = btnDel.innerHTML;
@@ -651,7 +651,7 @@ class ModalsManager {
                         const delRes = await fetch(`/api/documents/${doc.id}`, { method: 'DELETE' });
                         const delData = await delRes.json();
                         if (delRes.ok && delData.success) {
-                            this.app.toast.success(delData.message || '🗑️ Document deleted and moved to __raws/.delete_files');
+                            this.app.toast.success(delData.message || '🗑️ Document deleted and moved to the trash folder');
                             this.closeGrandViewerModal();
                             this.app.documentGrid.loadDocuments();
                         }
@@ -671,6 +671,8 @@ class ModalsManager {
         }
         catch (err) {
             this.app.toast.error('Failed to open Grand Viewer: ' + err.message);
+            if (textEl)
+                textEl.textContent = '⚠️ Failed to load document text: ' + err.message;
         }
     }
     closeGrandViewerModal() {
@@ -731,7 +733,7 @@ class ModalsManager {
             }
             else {
                 customInput.value = '';
-                customInput.placeholder = 'Enter new subcategory slug (e.g. credit_mutuel, employeur_x)...';
+                customInput.placeholder = 'Enter new subcategory slug (e.g. credit_mutuel, acme_corp)...';
             }
         }
         else {

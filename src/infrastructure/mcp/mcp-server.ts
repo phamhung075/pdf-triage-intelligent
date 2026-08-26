@@ -1,7 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import express from 'express';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -10,10 +13,11 @@ import { getAllDocuments, getDocumentById, updateDocumentRecord } from '../db/da
 import { getCategoriesConfig } from '../categories-store.js';
 import { runTriageScan } from '../../application/triage-scan.js';
 import { ScanInProgressError } from '../../application/scan-lock.js';
-import { relocalizeFileIfNeeded, ensureCategoryAndSubcategoryExist } from '../../application/relocalize-document.js';
+import { relocalizeFileIfNeeded, ensureCategoryAndSubcategoryExist, findActualFileOnDisk } from '../../application/relocalize-document.js';
 import { isForbiddenSubcategory } from '../../domain/taxonomy.js';
 import { syncJSONRegistry } from '../json-registry.js';
 import { UpdateDocumentSchema } from '../../domain/document.schema.js';
+import { CONFIG, BASE_DIR } from '../settings.js';
 
 // Extracted from the ListToolsRequestSchema/CallToolRequestSchema closures that used to
 // live inline inside startMCPServer() so they can be unit-tested directly, without
@@ -113,6 +117,18 @@ export async function listMcpTools() {
             docId: { type: 'number', description: 'Document ID' }
           },
           required: ['docId']
+        }
+      },
+      {
+        name: 'package_documents',
+        description: 'Build a .zip package of documents for handing to a third party (e.g. a housing/tax/bank dossier). Provide either an explicit docIds list, or a dossierType free-text query (same matching as prepare_dossier) to resolve the document set automatically. Writes the zip to disk under __packages/ and returns its path plus which requested documents (if any) had no file on disk.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            docIds: { type: 'array', items: { type: 'number' }, description: 'Explicit document IDs to include. Provide this or dossierType.' },
+            dossierType: { type: 'string', description: 'Free-text dossier query (e.g. "housing", "3 last pay slips") used to auto-resolve documents when docIds is not given.' },
+            zipName: { type: 'string', description: 'Optional filename for the zip (default: an auto-generated name from dossierType or timestamp).' }
+          }
         }
       }
     ]
@@ -379,6 +395,70 @@ export async function handleMcpToolCall(name: string, args: Record<string, unkno
       };
     }
 
+    if (name === 'package_documents') {
+      const explicitIds = Array.isArray(args?.docIds) ? (args!.docIds as unknown[]).map(Number).filter(Number.isInteger) : [];
+      const dossierType = (args?.dossierType as string) || '';
+
+      if (explicitIds.length === 0 && !dossierType) {
+        return {
+          content: [{ type: 'text', text: 'Error: provide either docIds or dossierType.' }],
+          isError: true
+        };
+      }
+
+      let docs;
+      if (explicitIds.length > 0) {
+        docs = (await Promise.all(explicitIds.map(id => getDocumentById(id)))).filter((d): d is NonNullable<typeof d> => !!d);
+      } else {
+        const { searchRelevantDocuments } = await import('../../application/ai-chat-assistant.js');
+        docs = await searchRelevantDocuments(dossierType);
+      }
+
+      const zipFiles: Array<{ name: string; path: string }> = [];
+      const missingDocIds: number[] = [];
+      for (const doc of docs) {
+        const fileOnDisk = findActualFileOnDisk(doc);
+        if (fileOnDisk && fs.existsSync(fileOnDisk)) {
+          const ext = path.extname(fileOnDisk) || '.pdf';
+          const baseTitle = (doc.title || doc.original_filename || `doc_${doc.id}`).replace(/[\\/?%*:|"<>]/g, '_');
+          const fileNameInZip = baseTitle.endsWith(ext) ? baseTitle : `${baseTitle}${ext}`;
+          zipFiles.push({ name: fileNameInZip, path: fileOnDisk });
+        } else {
+          missingDocIds.push(doc.id);
+        }
+      }
+
+      if (zipFiles.length === 0) {
+        return {
+          content: [{ type: 'text', text: `Error: none of the ${docs.length} resolved document(s) have a file on disk. Missing IDs: ${missingDocIds.join(', ') || 'n/a'}` }],
+          isError: true
+        };
+      }
+
+      const { createZipArchive } = await import('../zip-builder.js');
+      const zipBuffer = createZipArchive(zipFiles);
+
+      const packagesDir = path.join(BASE_DIR, '__packages');
+      if (!fs.existsSync(packagesDir)) fs.mkdirSync(packagesDir, { recursive: true });
+      const rawName = (args?.zipName as string) || (dossierType ? `${dossierType}_package` : `documents_package_${Date.now()}`);
+      const safeName = rawName.replace(/[^a-zA-Z0-9_.-]/g, '_');
+      const zipFileName = safeName.endsWith('.zip') ? safeName : `${safeName}.zip`;
+      const zipPath = path.join(packagesDir, zipFileName);
+      fs.writeFileSync(zipPath, zipBuffer);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            zipPath,
+            fileCount: zipFiles.length,
+            includedDocIds: docs.filter(d => !missingDocIds.includes(d.id)).map(d => d.id),
+            missingDocIds
+          }, null, 2)
+        }]
+      };
+    }
+
     return {
       content: [{ type: 'text', text: `Unknown tool name: ${name}` }],
       isError: true
@@ -391,27 +471,109 @@ export async function handleMcpToolCall(name: string, args: Record<string, unkno
   }
 }
 
-export async function startMCPServer(): Promise<void> {
+// One MCP tool-server instance per transport connection — the SDK's Server.connect() is
+// 1:1 with a transport. stdio gets a single long-lived instance (one client for the whole
+// process lifetime); each stateless HTTP request gets its own short-lived instance (see
+// startMcpHttpTransport below) since there is no persistent client to keep it alive for.
+function createToolServer(): Server {
   const server = new Server(
-    {
-      name: 'pdf-triage-agent-mcp',
-      version: '1.0.0',
-    },
-    {
-      capabilities: {
-        tools: {},
-      },
-    }
+    { name: 'pdf-triage-agent-mcp', version: '1.0.0' },
+    { capabilities: { tools: {} } }
   );
-
   server.setRequestHandler(ListToolsRequestSchema, async () => listMcpTools());
-
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
     return handleMcpToolCall(name, args);
   });
+  return server;
+}
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+const MCP_TOKEN_FILE = path.join(BASE_DIR, '.mcp-api-token');
+
+// Every HTTP MCP call is authenticated by this token (stdio has no equivalent because
+// spawning the process locally is itself the access boundary there). Generated once and
+// persisted to a gitignored file rather than settings.json, matching the dedicated-file
+// pattern .categories.private.json / .prompts.private.json already use for secrets that
+// must never be committed. Printed to the console on every `npm run mcp` start so it's
+// easy to copy into an agent's config; never logged anywhere else.
+function getOrCreateMcpApiToken(): string {
+  if (fs.existsSync(MCP_TOKEN_FILE)) {
+    const existing = fs.readFileSync(MCP_TOKEN_FILE, 'utf-8').trim();
+    if (existing) return existing;
+  }
+  const token = crypto.randomBytes(24).toString('hex');
+  fs.writeFileSync(MCP_TOKEN_FILE, token, 'utf-8');
+  return token;
+}
+
+function startMcpHttpTransport(): void {
+  const token = getOrCreateMcpApiToken();
+  const app = express();
+  app.use(express.json());
+
+  app.post('/mcp', async (req, res) => {
+    const authHeader = req.headers['authorization'] || '';
+    const presented = typeof authHeader === 'string' && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const authorized = presented.length === token.length &&
+      crypto.timingSafeEqual(Buffer.from(presented), Buffer.from(token));
+    if (!authorized) {
+      res.status(401).json({ error: 'Unauthorized — missing or invalid Bearer token.' });
+      return;
+    }
+
+    // Stateless mode: no session ID, no server-initiated push — every request gets a fresh
+    // Server + Transport pair, torn down once the response completes. This project's tools
+    // are all simple request/response calls, so there's nothing a persistent session would
+    // buy over this, and it avoids having to manage a session-ID map across requests.
+    const server = createToolServer();
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    res.on('close', () => {
+      transport.close();
+      server.close();
+    });
+    try {
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    } catch (err: any) {
+      console.error('MCP HTTP request error:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
+    }
+  });
+
+  // The HTTP transport is a SECONDARY surface: stdio has already connected by the time this runs,
+  // and `npm run mcp` is spawned once per client, so two clients (Claude Desktop + Claude Code) —
+  // or one stale process — both try to bind MCP_HTTP_PORT. Without a listener, Node turns that
+  // EADDRINUSE into an uncaught exception and kills the process, taking the perfectly healthy
+  // stdio transport down with it. Degrade to stdio-only instead.
+  const httpServer = app.listen(CONFIG.MCP_HTTP_PORT, CONFIG.MCP_HTTP_HOST, () => {
+    const displayHost = CONFIG.MCP_HTTP_HOST === '0.0.0.0' ? '<this-machine-LAN-IP>' : CONFIG.MCP_HTTP_HOST;
+    console.error(`PDF Triage MCP Server listening over HTTP at http://${displayHost}:${CONFIG.MCP_HTTP_PORT}/mcp`);
+    console.error(`  Auth: send header  Authorization: Bearer ${token}`);
+    console.error(`  Token file: ${MCP_TOKEN_FILE} (gitignored — do not commit or share)`);
+    if (CONFIG.MCP_HTTP_HOST === '0.0.0.0') {
+      console.error('  Reachable from any device on your LAN. Set MCP_HTTP_HOST=127.0.0.1 to restrict to this machine only.');
+    }
+  });
+
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `PDF Triage MCP Server: port ${CONFIG.MCP_HTTP_PORT} is already in use — continuing with stdio only. ` +
+        `Another MCP client is probably already serving HTTP on it; set MCP_HTTP_PORT to use a different one.`
+      );
+      return;
+    }
+    console.error(`PDF Triage MCP Server: HTTP transport failed to start (${err.code || 'unknown'}: ${err.message}) — continuing with stdio only.`);
+  });
+}
+
+export async function startMCPServer(): Promise<void> {
+  const stdioServer = createToolServer();
+  const stdioTransport = new StdioServerTransport();
+  await stdioServer.connect(stdioTransport);
   console.error('PDF Triage MCP Server connected via stdio');
+
+  startMcpHttpTransport();
 }

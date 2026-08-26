@@ -2,12 +2,21 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "lib": [
+      "DOM",
+      "DOM.Iterable",
+      "ES2022"
+    ],
     "strict": false,
     "noImplicitAny": false,
     "skipLibCheck": true,
     "outDir": "./public/js",
     "rootDir": "./public/ts"
   },
-  "include": ["public/ts/**/*"]
+  "include": [
+    "public/ts/**/*"
+  ],
+  "exclude": [
+    "public/ts/**/*.test.ts"
+  ]
 }

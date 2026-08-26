@@ -80,16 +80,25 @@ export const SystemSettingsSchema = z.object({
 // null/undefined to the same "" default a real absent field already got.
 const nullableOptionalString = z.string().nullable().optional().transform((v) => v ?? "");
 
+// Same null-tolerance as nullableOptionalString, for the one array field. Qwen returns
+// "tags": null about as often as it omits the key.
+const nullableOptionalStringArray = z.array(z.string()).nullable().optional().transform((v) => v ?? []);
+
 export const DocumentMetadataSchema = z.object({
-  thinking: z.string().optional().default(""),
+  // Every non-required field below is null-tolerant. The previous pass fixed only the contact_*
+  // and amount fields, leaving these six on plain .default(""), which handles an ABSENT key but
+  // still throws "Expected string, received null" on an explicit JSON null — the exact failure
+  // the comment above describes, just on a different set of keys. One null `registre` or `date`
+  // discarded the whole Step A/C/D result and downgraded the document to the rule-based fallback.
+  thinking: nullableOptionalString,
   titre: z.string().min(1, "Titre est requis"),
-  registre: z.string().default(""),
-  date: z.string().default(""),
+  registre: nullableOptionalString,
+  date: nullableOptionalString,
   categorie: z.string().min(1, "Catégorie est requise"),
-  subcategorie: z.string().default(""),
-  summary: z.string().default(""),
-  tags: z.array(z.string()).default([]),
-  markdown_content: z.string().default(""),
+  subcategorie: nullableOptionalString,
+  summary: nullableOptionalString,
+  tags: nullableOptionalStringArray,
+  markdown_content: nullableOptionalString,
   total_amount: nullableOptionalString,
   vat_amount: nullableOptionalString,
   siren: nullableOptionalString,

@@ -10,6 +10,7 @@ import { extractPDFContent } from '../infrastructure/pdf-extractor.js';
 import { moveBackToRaws, findActualFileOnDisk, relocalizeFileIfNeeded } from './relocalize-document.js';
 import { ruleBasedClassify, extractRuleBasedContact } from '../domain/classification.js';
 import { getEntityDictionary } from '../infrastructure/entity-dictionary-store.js';
+import { getPromptPersonalization } from '../infrastructure/prompt-personalization-store.js';
 import { classifyPDFText } from './classify-document.js';
 import { generateEmbedding } from '../infrastructure/ollama-client.js';
 import { syncJSONRegistry } from '../infrastructure/json-registry.js';
@@ -99,7 +100,7 @@ export async function repairRegistry(onProgress?: (event: any) => void): Promise
         const isGeneric = !currentSub || currentSub === 'general' || currentSub === 'other' || currentSub === 'divers' || currentCat === 'personal';
 
         if (isGeneric) {
-          const rb = ruleBasedClassify(raw_text || currentText, file, getEntityDictionary(), CONFIG.PERSONAL_NAME_DENYLIST);
+          const rb = ruleBasedClassify(raw_text || currentText, file, getEntityDictionary(), CONFIG.PERSONAL_NAME_DENYLIST, getPromptPersonalization());
           if (rb.subcategorie !== 'general' && rb.subcategorie !== 'other' && rb.subcategorie !== 'divers') {
             currentCat = rb.categorie;
             currentSub = rb.subcategorie;
@@ -117,7 +118,9 @@ export async function repairRegistry(onProgress?: (event: any) => void): Promise
           }
         } else {
           const categoriesConfig = getCategoriesConfig();
-          const canonicalCat = findCanonicalCategoryForSubcategory(currentSub, categoriesConfig);
+          // currentCat is passed so an ambiguous slug (one living under several categories) keeps
+          // the placement classification already chose, instead of being relocated by array order.
+          const canonicalCat = findCanonicalCategoryForSubcategory(currentSub, categoriesConfig, currentCat);
           if (canonicalCat && canonicalCat !== currentCat) {
             logger.info('REPAIR', `Canonical category changed for doc ID ${existing.id} (${file}) subcategory '${currentSub}': ${currentCat} -> ${canonicalCat}`);
             currentCat = canonicalCat;

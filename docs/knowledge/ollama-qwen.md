@@ -32,6 +32,52 @@ await ollama.generate({
 
 Text is truncated to 4000 chars before sending (`textSnippet`).
 
+## Step C — chunked Markdown conversion
+
+`markdown_content` is **not** produced by the classification call. `convertRawTextToZeroLossMarkdown()`
+(`src/application/classify-document.ts`) runs its own pass before Step D:
+
+1. `chunkText(rawText, 1400)` splits the raw text on line boundaries into ~1400-char chunks.
+2. Each chunk goes to `requestTextChatCompletion` — **not** `requestClassificationCompletion`.
+   The latter forces `format:'json'` grammar-constrained decoding, which garbles free-form Markdown
+   and silently degraded nearly every chunk to the raw-text fallback.
+3. Chunks are converted independently, then joined with a blank line.
+
+`prompts/micro_prompt_markdown.md` is the chunk prompt. Its rule 1 is the contract the rest of this
+section exists to protect: **zero content skipping**.
+
+### Continuation context
+
+A chunk boundary can land in the middle of a table. `detectOpenTableTail()` inspects a chunk's
+output: if its last non-blank line is a table data row with a header + separator above it *in the
+same chunk*, that header/separator is threaded into the next chunk's prompt as
+`MarkdownContinuationContext` so the model continues the same table instead of opening a new one.
+
+Its limit is worth knowing: detection needs the separator row to be **in the same chunk**. When the
+split lands before the model has emitted a separator, the next chunk starts with a bare data row and
+the output contains a headerless "orphan" table block. Measured on the live registry, 24.2% of
+archived documents carry at least one malformed table block (ragged rows, a table restarted
+mid-block, or an orphan) — dense grid layouts like payslips are the worst affected.
+
+### Two failure modes, both fall back to raw text
+
+Neither is an error to the caller — Step C always returns *something*, so callers cannot distinguish
+a fully converted document from a partly raw one except through the log:
+
+| Situation | Behaviour |
+| --- | --- |
+| Model returns empty / ≤10 chars | The **raw chunk** is kept verbatim; counted as a fallback. |
+| Model call throws (timeout, socket reset, model unloaded) | The **raw chunk** is kept verbatim; counted as a fallback. |
+
+Both log at `WARN` with `chunkIndex`/`totalChunks`, and a per-document summary line reports
+`successCount`/`fallbackCount`. A document whose markdown is much shorter than its `raw_text` means
+chunks were lost, not merely unconverted — grep `[STEP C]` for that document.
+
+> Historical note: the throw branch used to increment the fallback counter *without* keeping the
+> chunk, so a failed chunk was deleted outright — a 4-chunk document came back as chunks 1, 3, 4
+> with no error surfaced anywhere. Six archived France Travail / Pôle Emploi documents still carry
+> `markdown_content` at 6–14% of their `raw_text` from that period and need re-processing.
+
 ## JSON parsing
 
 `cleanAndParseJSON()`:
@@ -54,7 +100,7 @@ After parse, the code corrects:
 
 Before returning `validated`:
 1. Normalize the category slug (`normalizeSlug`).
-2. If the category is not in `categories.json` (id or alias), append a new entry with sensible name/description, `saveCategoriesConfig()` (which triggers `CATEGORIES_UPDATED` SSE).
+2. If the category is not in the merged taxonomy (id or alias), append a new entry with sensible name/description, `saveCategoriesConfig()` (which triggers `CATEGORIES_UPDATED` SSE). The merged taxonomy is `categories.json` + `.categories.private.json`; the write lands in the **private** file only (Golden Rule #5).
 3. Do the same for the subcategory. Strip trailing 4–8 digit chunks that leak dates. If the slug is a year (`/^\d{4}$/`), coerce to `general` (this then trips the strict fail guard elsewhere).
 
 ## The system prompt
@@ -62,6 +108,22 @@ Before returning `validated`:
 Encodes the entire [classification-flow](../workflows/classification-flow.md). Any change to the priority order must be mirrored there and in `ruleBasedClassify()` — the two must stay logically aligned.
 
 `buildClassificationPrompt()` (`src/domain/prompt.ts`) also takes a `now: Date` (default `new Date()`) and injects `{{CURRENT_DATE}}` — formatted by `formatLocalDate()` using local calendar fields, not `toISOString()`, to avoid a UTC-shift date-off-by-one for timezones ahead of UTC — into `prompts/formatting_rules.md`. This grounds the model in today's date so it can reject an ambiguous two-digit-year date that would land in the future or contradict the document's stated period, and reminds it not to conflate the document's own issuance date (`date`) with a validity/expiration date (`expiry_date`).
+
+## Personal prompt overlay
+
+The committed `prompts/` templates are generic and publishable. Personal classification
+signals (real employers, bank product/filename codes, clinics, schools, scanner prefixes)
+come from the gitignored `.prompts.private.json` and are injected into two placeholders at
+build time — `{{USER_PRIORITY_RULES}}` (rendered as a STEP 0 ahead of the generic STEP 1 in
+`prompts/classification_rules.md`) and `{{USER_KNOWN_ENTITIES}}` (Step A entity extraction
+in `prompts/micro_prompt_entity.md`). Both render to the empty string when the file is
+absent.
+
+The same overlay also drives `ruleBasedClassify()` through `matchPriorityRules()`, so the prompt
+and the deterministic fallback stay aligned on user-specific signals instead of one of them
+silently keeping literals the other dropped. See
+[taxonomy](taxonomy.md#personal-prompt-overlay) for the shape, the matching rules, and the
+Golden Rule #6 exception.
 
 ## `previousError` retry
 

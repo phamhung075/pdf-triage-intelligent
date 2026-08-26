@@ -1,13 +1,15 @@
 import express from 'express';
 import path from 'path';
+import os from 'os';
 import fs from 'fs';
 import { pathToFileURL } from 'url';
 import { exec, spawn } from 'child_process';
 import { Ollama } from 'ollama';
 import { z } from 'zod';
-import { CONFIG, BASE_DIR, updateConfig } from '../settings.js';
+import { CONFIG, BASE_DIR, DATA_DIR, updateConfig, isFirstRun, ensureDirectoriesExist } from '../settings.js';
 import { getAllDocuments, getDocumentById, updateDocumentRecord, getDb, getCategorySubcategoryStats, getBlockedFile, getAllBlockedFiles } from '../db/database.js';
 import { checkModelCanGenerate } from '../ollama-client.js';
+import { takeOverPaddleOcrServer } from '../paddleocr-client.js';
 import { getCategoriesConfig, saveCategoriesConfig, setOnCategoryCreatedCallback } from '../categories-store.js';
 import { syncJSONRegistry } from '../json-registry.js';
 import { clearRegistryAndMoveArchiveToRaws } from '../../application/clear-registry.js';
@@ -15,7 +17,7 @@ import { repairRegistry } from '../../application/repair-registry.js';
 import { runTriageScan } from '../../application/triage-scan.js';
 import { relocalizeFileIfNeeded, findActualFileOnDisk, reclassifyAndRelocalizeDocument, ensureCategoryAndSubcategoryExist, deleteDocumentAndMoveToTrash } from '../../application/relocalize-document.js';
 import { getPDFsRecursively } from '../pdf-scanner.js';
-import { isForbiddenSubcategory, isPathInsideDir } from '../../domain/taxonomy.js';
+import { isForbiddenSubcategory, isPathInsideDir, mergeSubcategoryInTaxonomy } from '../../domain/taxonomy.js';
 import { logger, getRecentLogs, getGroupedSessionLogs, logEmitter } from '../logger.js';
 import { UpdateDocumentSchema, SystemSettingsSchema, CategoriesConfigSchema } from '../../domain/document.schema.js';
 import { readActiveLockHolder, acquireProcessLock, killProcessOnPort } from '../pid-lock.js';
@@ -23,6 +25,30 @@ import { getManualDecisions } from '../manual-decisions-store.js';
 import { PDFDocument } from 'pdf-lib';
 import { getTaskState, startTask, updateTaskProgress, finishTask, failTask, setTaskBroadcaster, resetTaskState } from './task-state.js';
 import { processChatQuery } from '../../application/ai-chat-assistant.js';
+
+/**
+ * Resolves a caller-supplied path and asserts it is inside a managed directory.
+ *
+ * Every path this server legitimately touches lives under INPUT_DIR (__raws) or OUTPUT_ROOT_DIR
+ * (__archive). Endpoints that took a path straight from the request body and only checked
+ * existsSync would happily read any file the Node process can — an SSH key, another app's .env —
+ * and, for the PDF tools, write a derivative of it into __raws, where the auto-watcher then
+ * classifies and archives it into the searchable registry. Returns null when the path escapes.
+ */
+function resolveManagedPath(candidate: unknown): string | null {
+  if (typeof candidate !== 'string' || candidate.trim().length === 0) return null;
+  const absPath = path.resolve(candidate);
+  if (!isPathInsideDir(absPath, CONFIG.INPUT_DIR) && !isPathInsideDir(absPath, CONFIG.OUTPUT_ROOT_DIR)) {
+    return null;
+  }
+  return absPath;
+}
+
+// Mirrors IMAGE_EXTENSIONS in application/convert-image-document.ts — anything the vision
+// pipeline can turn into a page. Kept as its own set so the HTTP layer validates the upload
+// before writing it, rather than letting an unsupported file sit in the incoming folder failing
+// conversion on every scan tick.
+const IMPORTABLE_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff']);
 
 export function createWebServer(): express.Express {
   const app = express();
@@ -266,6 +292,36 @@ export function createWebServer(): express.Express {
   });
 
   // Get system config
+  // Setup state for the first-run screen. Kept separate from GET /api/config because the dashboard
+  // asks for it on every load, before it knows whether the app is usable at all — and because
+  // CONFIG always has *some* value for input_dir/output_root_dir (a default under DATA_DIR), so
+  // reading those cannot tell you whether the user ever chose them.
+  app.get('/api/config/setup-state', (req, res) => {
+    try {
+      // Suggested folders for a brand-new install. Deliberately NOT CONFIG.INPUT_DIR /
+      // OUTPUT_ROOT_DIR: unconfigured, those resolve under DATA_DIR, which for a packaged app is
+      // %APPDATA% — a hidden system folder nobody wants their documents living in. Somewhere under
+      // the user's own Documents is what a person would actually pick.
+      const documents = path.join(os.homedir(), 'Documents', 'Smart PDF Triage');
+      const firstRun = isFirstRun();
+
+      res.json({
+        configured: !firstRun,
+        dataDir: DATA_DIR,
+        defaults: {
+          // On first run offer the friendly suggestion; afterwards report what is really in use.
+          input_dir: firstRun ? path.join(documents, 'Incoming') : CONFIG.INPUT_DIR,
+          output_root_dir: firstRun ? path.join(documents, 'Archive') : CONFIG.OUTPUT_ROOT_DIR,
+          language: CONFIG.LANGUAGE,
+          ollama_host: CONFIG.OLLAMA_HOST,
+          ollama_model: CONFIG.OLLAMA_MODEL,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/config', (req, res) => {
     try {
       res.json({
@@ -420,7 +476,9 @@ export function createWebServer(): express.Express {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // Deliberately NO Access-Control-Allow-Origin — see the no-CORS rationale at the top of
+    // createWebServer(). This stream carries original filenames, resolved entity categories and
+    // decision traces; a wildcard here would let any page open in another tab read all of it.
 
     // Send initial snapshot
     const initialLogs = getRecentLogs(100);
@@ -534,24 +592,11 @@ export function createWebServer(): express.Express {
         return res.json({ message: 'Subcategory name unchanged', count: 0 });
       }
 
+      // Rename and merge are the same gesture; mergeSubcategoryInTaxonomy handles both, including
+      // the case where the destination already exists (which would otherwise leave two entries
+      // sharing one id). Unit-tested in src/domain/taxonomy.test.ts.
       const config = getCategoriesConfig();
-      const catObj = config.categories.find(c => c.id === category.toLowerCase().trim());
-      if (catObj && catObj.subcategories) {
-        const subObj = catObj.subcategories.find(s => s.id === cleanOld);
-        if (subObj) {
-          subObj.id = cleanNew;
-          subObj.name = cleanNew.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-          if (!subObj.aliases) subObj.aliases = [];
-          if (!subObj.aliases.includes(cleanNew)) subObj.aliases.push(cleanNew);
-        } else {
-          catObj.subcategories.push({
-            id: cleanNew,
-            name: cleanNew.split('_').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-            aliases: [cleanNew]
-          });
-        }
-        saveCategoriesConfig(config.categories);
-      }
+      saveCategoriesConfig(mergeSubcategoryInTaxonomy(config.categories, category, cleanOld, cleanNew));
 
       const allDocs = await getAllDocuments();
       const matchingDocs = allDocs.filter(d => d.category.toLowerCase() === category.toLowerCase().trim() && (d.subcategory || '').toLowerCase() === cleanOld);
@@ -713,6 +758,64 @@ export function createWebServer(): express.Express {
     }
   });
 
+  /**
+   * Imports photographs into the incoming folder so the normal pipeline converts and files them.
+   *
+   * One image per request, sent as a raw body rather than JSON or multipart:
+   *   - JSON would mean base64, inflating every photo by a third, and the global express.json()
+   *     limit (100 kB) rejects a phone photo long before the route is reached. A route-level
+   *     parser cannot help, because the global one runs first.
+   *   - multipart would mean adding multer for a single endpoint.
+   * express.raw() with its own content type sidesteps both: the global JSON parser ignores it.
+   *
+   * The file is written, not converted here. Dropping it in the incoming folder is exactly what
+   * happens when the user copies a photo in by hand, so it goes through the same conversion,
+   * classification and filing path with no second implementation to keep in sync.
+   */
+  app.post('/api/images/import',
+    express.raw({ type: 'application/octet-stream', limit: '64mb' }),
+    (req, res) => {
+      try {
+        const raw = (req.query.filename as string) || '';
+        // basename() then a strict slug: the name comes from the browser and lands in a
+        // path.join(). Anything outside [A-Za-z0-9._-] is collapsed rather than trusted.
+        const safeName = path.basename(raw).replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^[._-]+/, '');
+        const ext = path.extname(safeName).toLowerCase();
+
+        if (!IMPORTABLE_IMAGE_EXTENSIONS.has(ext)) {
+          return res.status(400).json({
+            error: `Unsupported image type '${ext || '(none)'}'. Accepted: ${[...IMPORTABLE_IMAGE_EXTENSIONS].join(', ')}`,
+          });
+        }
+        if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+          return res.status(400).json({ error: 'Empty image body.' });
+        }
+
+        ensureDirectoriesExist();
+
+        const base = path.basename(safeName, ext) || 'image';
+        let target = path.join(CONFIG.INPUT_DIR, `${base}${ext}`);
+        for (let attempt = 1; ; attempt++) {
+          try {
+            // 'wx' so an import can never overwrite a file already waiting in the incoming folder.
+            fs.writeFileSync(target, req.body, { flag: 'wx' });
+            break;
+          } catch (err: any) {
+            if (err?.code !== 'EEXIST') throw err;
+            if (attempt > 50) {
+              return res.status(409).json({ error: 'Could not find a free filename in the incoming folder.' });
+            }
+            target = path.join(CONFIG.INPUT_DIR, `${base}_${attempt}${ext}`);
+          }
+        }
+
+        logger.info('IMPORT', `Imported image into the incoming folder`, { target, bytes: req.body.length });
+        res.json({ message: 'Image imported', path: target, filename: path.basename(target) });
+      } catch (err: any) {
+        res.status(500).json({ error: err.message });
+      }
+    });
+
   // Merge multiple PDF files into one PDF
   app.post('/api/pdf/merge', async (req, res) => {
     try {
@@ -724,10 +827,14 @@ export function createWebServer(): express.Express {
       const mergedPdf = await PDFDocument.create();
 
       for (const fp of filepaths) {
-        if (!fs.existsSync(fp)) {
+        const absFp = resolveManagedPath(fp);
+        if (!absFp) {
+          return res.status(403).json({ error: 'Path is outside the managed input/output directories — not allowed.' });
+        }
+        if (!fs.existsSync(absFp)) {
           return res.status(404).json({ error: `PDF file not found on disk: ${fp}` });
         }
-        const pdfBytes = fs.readFileSync(fp);
+        const pdfBytes = fs.readFileSync(absFp);
         const pdfDoc = await PDFDocument.load(pdfBytes);
         const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
         copiedPages.forEach((page) => mergedPdf.addPage(page));
@@ -856,11 +963,15 @@ export function createWebServer(): express.Express {
   app.post('/api/pdf/split', async (req, res) => {
     try {
       const { filepath } = req.body || {};
-      if (!filepath || !fs.existsSync(filepath)) {
+      const absFilepath = resolveManagedPath(filepath);
+      if (filepath && !absFilepath) {
+        return res.status(403).json({ error: 'Path is outside the managed input/output directories — not allowed.' });
+      }
+      if (!absFilepath || !fs.existsSync(absFilepath)) {
         return res.status(400).json({ error: 'Valid PDF filepath is required.' });
       }
 
-      const pdfBytes = fs.readFileSync(filepath);
+      const pdfBytes = fs.readFileSync(absFilepath);
       const pdfDoc = await PDFDocument.load(pdfBytes);
       const pageCount = pdfDoc.getPageCount();
 
@@ -868,7 +979,7 @@ export function createWebServer(): express.Express {
         return res.status(400).json({ error: 'PDF only has 1 page; splitting requires a multi-page PDF.' });
       }
 
-      const stem = path.basename(filepath, path.extname(filepath));
+      const stem = path.basename(absFilepath, path.extname(filepath));
       const createdFiles: string[] = [];
 
       for (let i = 0; i < pageCount; i++) {
@@ -893,6 +1004,44 @@ export function createWebServer(): express.Express {
     }
   });
 
+  /**
+   * Serves the photograph a document was made from, for the manual editor.
+   *
+   * 404 rather than an error when there is none: documents that arrived as PDFs never had one,
+   * and anything converted before source retention existed had its photo deleted outright. The
+   * UI uses that to decide whether to offer "Re-edit" at all.
+   */
+  app.get('/api/documents/:id/source-image', async (req, res) => {
+    try {
+      const doc = await getDocumentById(parseInt(req.params.id, 10));
+      if (!doc) return res.status(404).json({ error: 'Document not found' });
+      if (!doc.source_image_path) {
+        return res.status(404).json({ error: 'This document has no retained source image.' });
+      }
+
+      // Same boundary rule as every other path taken from stored state — the column is written by
+      // the pipeline, but it is still a path being handed to fs.
+      const absPath = resolveManagedPath(doc.source_image_path);
+      if (!absPath) {
+        return res.status(403).json({ error: 'Source image is outside the managed directories.' });
+      }
+      if (!fs.existsSync(absPath)) {
+        return res.status(404).json({ error: 'Source image is no longer on disk.' });
+      }
+
+      const ext = path.extname(absPath).toLowerCase();
+      const mime = ext === '.png' ? 'image/png'
+        : ext === '.webp' ? 'image/webp'
+        : ext === '.bmp' ? 'image/bmp'
+        : (ext === '.tiff' || ext === '.tif') ? 'image/tiff'
+        : 'image/jpeg';
+      res.setHeader('Content-Type', mime);
+      res.sendFile(absPath);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Serve PDF file by path inline to browser
   app.get('/api/documents/file-by-path', (req, res) => {
     try {
@@ -905,8 +1054,8 @@ export function createWebServer(): express.Express {
       // package.json, or worse — SSH keys, other apps' .env files) with only an existsSync
       // check and no boundary validation. Every legitimate file this endpoint is meant to serve
       // lives inside INPUT_DIR or OUTPUT_ROOT_DIR — reject anything else before even touching fs.
-      const absPath = path.resolve(targetPath);
-      if (!isPathInsideDir(absPath, CONFIG.INPUT_DIR) && !isPathInsideDir(absPath, CONFIG.OUTPUT_ROOT_DIR)) {
+      const absPath = resolveManagedPath(targetPath);
+      if (!absPath) {
         return res.status(403).json({ error: 'Path is outside the managed input/output directories — not allowed.' });
       }
 
@@ -1153,6 +1302,10 @@ export function createWebServer(): express.Express {
     res.on('error', cleanup);
   });
 
+  // Set by POST /api/triage/unlock, cleared when a new scan starts. Polled per file by
+  // runTriageScan so "Stop" actually stops rather than just dropping the re-entry guard.
+  let scanAbortRequested = false;
+
   function broadcastTriageEvent(event: any) {
     const payload = `data: ${JSON.stringify(event)}\n\n`;
     triageSseClients.forEach(client => {
@@ -1164,6 +1317,9 @@ export function createWebServer(): express.Express {
 
   // Forcefully clear active operation locks (manual stop by user)
   app.post('/api/triage/unlock', (req, res) => {
+    // Ask the running loop to stop at its next file boundary. Clearing isAutoScanning alone never
+    // stopped anything — it only re-opened the door for a second concurrent scan.
+    scanAbortRequested = true;
     isAutoScanning = false;
     // Suppress auto-watcher for 60 seconds so it doesn't immediately re-trigger
     manualStopCooldownUntil = Date.now() + 60_000;
@@ -1204,6 +1360,7 @@ export function createWebServer(): express.Express {
 
         if (unblocked.length > 0) {
           logger.info('AUTO_WATCHER', `Auto-scan triggered: Found ${unblocked.length} incoming PDF(s) in __raws`);
+          scanAbortRequested = false;
           startTask('SCAN', unblocked.length, `Auto-scanning ${unblocked.length} incoming PDF(s) in __raws...`);
           try {
             const result = await runTriageScan((evt) => {
@@ -1213,7 +1370,7 @@ export function createWebServer(): express.Express {
                 updateTaskProgress(evt.scannedCount || evt.processedCount || 0, evt.filename, evt.stage, evt.message, evt.totalFiles);
               }
               broadcastTriageEvent(evt);
-            });
+            }, () => scanAbortRequested);
             finishTask(result, `Auto-scan completed. Processed ${result.processedCount || 0} file(s).`);
           } catch (scanErr: any) {
             failTask(scanErr.message);
@@ -1234,6 +1391,7 @@ export function createWebServer(): express.Express {
       return;
     }
     isAutoScanning = true;
+    scanAbortRequested = false;
     startTask('SCAN', 0, 'Initializing triage scan...');
     try {
       const result = await runTriageScan((evt) => {
@@ -1243,7 +1401,7 @@ export function createWebServer(): express.Express {
           updateTaskProgress(evt.scannedCount || evt.processedCount || 0, evt.filename, evt.stage, evt.message, evt.totalFiles);
         }
         broadcastTriageEvent(evt);
-      });
+      }, () => scanAbortRequested);
       finishTask(result, `Triage scan completed. Processed ${result.processedCount || 0} file(s).`);
       res.json({ message: 'Triage scan completed', ...result });
     } catch (err: any) {
@@ -1275,7 +1433,11 @@ function contentDispositionAttachment(filename: string): string {
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
-const PID_LOCK_FILE = path.join(BASE_DIR, '.server.lock');
+// DATA_DIR, not BASE_DIR: the lock is writable per-install state, and BASE_DIR for a packaged app
+// is resources/app — a folder an upgrade replaces wholesale and which a real install (Program
+// Files) may not even be writable. It also makes the lock mean what it should: one server per data
+// directory, rather than one per copy of the application files.
+const PID_LOCK_FILE = path.join(DATA_DIR, '.server.lock');
 
 // Prevent two instances of this server (e.g. a stale tsx-watch child that hasn't
 // exited yet plus a freshly-spawned one) from running their auto-watchers
@@ -1293,8 +1455,21 @@ function acquireSingleInstanceLock(): void {
   process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
 }
 
-export function startWebServer(port: number = CONFIG.PORT): void {
+export async function startWebServer(port: number = CONFIG.PORT): Promise<void> {
   acquireSingleInstanceLock();
+
+  // Same contract as the HTTP port takeover below, applied to the PaddleOCR sidecar: a restart must
+  // mean current code. The service is a separate Python process that outlives this one and answers
+  // /health even when it is running stale code, so without this an edit under paddleocr-server/
+  // never loads until the user hunts down the PID themselves.
+  //
+  // Awaited rather than fire-and-forget: the 10s auto-watcher can start a scan shortly after boot,
+  // and a kill landing after that would take out a server the first OCR call had just spawned.
+  const restarted = await takeOverPaddleOcrServer();
+  if (restarted) {
+    console.log('Restarted the PaddleOCR service so it picks up the current paddleocr-server/ code.');
+  }
+
   attemptListen(port, true);
 }
 

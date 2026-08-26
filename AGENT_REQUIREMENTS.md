@@ -76,7 +76,7 @@ flowchart TD
 6. **Nested Subcategory Hierarchy (Sub on Sub)**:
    - Supports multi-level nested subcategories on disk & UI:
      `__archive / <category> / <sub_1> / <sub_2> / <YYYY> / <filename>.pdf`
-     e.g., `__archive / education / ecole_x / bachelor / 2026 / document.pdf`.
+     e.g., `__archive / education / <school_slug> / bachelor / 2026 / document.pdf`.
 7. **Canonical Path Structure**:
    - **With Subcategory**: `__archive / <category> / <subcategory> / <YYYY> / <filename>.pdf`
    - **Without Subcategory**: `__archive / <category> / <YYYY> / <filename>.pdf`

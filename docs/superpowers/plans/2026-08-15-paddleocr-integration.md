@@ -16,7 +16,7 @@
 - Never throw out of a PaddleOCR call site in `pdf-extractor.ts`/`orientation-detector.ts` uncaught — always degrade to the existing Tesseract path, matching the pipeline's existing never-crash-the-scan philosophy.
 - Node config additions follow the exact `CONFIG.OLLAMA_HOST`/`CONFIG.VISION_LAB_PORT` pattern in `src/infrastructure/settings.ts` (env override, sane default, no `settings.json` entry needed).
 - Do not touch Vision Lab crop-detection code (`crop-detector.ts`, `flood-crop.ts`) — unrelated subsystem.
-- Do not commit anything touching the user's personal test images in `C:\Users\<user>\Pictures\test\` — not applicable to this feature (no such files are touched), noted here only because it's a standing constraint for this repo/session.
+- Do not commit anything touching the user's personal test images in `<user-home>\Pictures\test` — not applicable to this feature (no such files are touched), noted here only because it's a standing constraint for this repo/session.
 
 ---
 

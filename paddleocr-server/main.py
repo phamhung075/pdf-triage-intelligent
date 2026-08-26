@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# Whether the background warm-up is still running. The client polls /ready and waits while this is
+# True; `warming: False` with `ocr: False` is its signal that nothing more is coming (warm-up
+# finished or failed) so it should stop waiting rather than burn its whole budget.
+_warm_state = {"warming": False}
+
 
 @app.on_event("startup")
 def warm_models() -> None:
@@ -32,22 +37,42 @@ def warm_models() -> None:
     """
 
     def _warm() -> None:
-        for name, load in (
-            ("orientation", paddleocr_engine._get_orientation_model),
-            ("ocr", paddleocr_engine._get_ocr),
-        ):
-            try:
-                load()
-                logger.info("Warmed %s model", name)
-            except Exception:
-                logger.exception("Failed to warm %s model", name)
+        try:
+            for name, load in (
+                ("orientation", paddleocr_engine._get_orientation_model),
+                ("ocr", paddleocr_engine._get_ocr),
+            ):
+                try:
+                    load()
+                    logger.info("Warmed %s model", name)
+                except Exception:
+                    logger.exception("Failed to warm %s model", name)
+        finally:
+            # Cleared even when every load raised — see _warm_state above.
+            _warm_state["warming"] = False
 
+    # Set BEFORE the thread starts, so a /ready that lands in the gap still reports warming.
+    _warm_state["warming"] = True
     threading.Thread(target=_warm, name="warm-models", daemon=True).start()
 
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    """Whether the heavy models are loaded — distinct from /health, which answers immediately.
+
+    /health deliberately answers before the models are warm so the TypeScript client's ~15s spawn
+    poll succeeds; the process IS up, it just cannot infer yet. Treating that as "ready" meant the
+    client started its OCR timeout while the models were still loading, so a cold start after a
+    restart burned the entire inference budget on startup and the page silently fell back to
+    Tesseract. /ready lets the client wait for warm models under a separate budget.
+    """
+    models = paddleocr_engine.models_ready()
+    return {"ready": models["ocr"], "warming": _warm_state["warming"], **models}
 
 
 # These two endpoints are deliberately `def`, NOT `async def`.

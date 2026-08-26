@@ -108,8 +108,7 @@
         "logement",
         "domicile",
         "hebergement",
-        "loyer",
-        "foncia"
+        "loyer"
       ],
       "subcategories": []
     },

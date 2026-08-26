@@ -20,18 +20,18 @@ describe('Modular Micro-Prompt Pipeline & Utilities', () => {
   });
 
   it('sanitizeDocumentNoise removes browser extension and PDF properties litter', () => {
-    const rawWithLitter = `[Propriétés Document: chrome-extension___mhjfbmdgcfjbbpaeojofohoefgiehjai_edge_pdf_index.html | Lyes SELAHI]
+    const rawWithLitter = `[Propriétés Document: chrome-extension___mhjfbmdgcfjbbpaeojofohoefgiehjai_edge_pdf_index.html | Jane Doe]
 [OCR Extracted Text]
 QPtmp000123
 BULLETIN DE SALAIRE
-SAS FOURNISSEUR X`;
+SAS GLOBEX CONSEIL`;
 
     const cleaned = sanitizeDocumentNoise(rawWithLitter);
     expect(cleaned).not.toContain('[Propriétés Document:');
     expect(cleaned).not.toContain('[OCR Extracted Text]');
     expect(cleaned).not.toContain('QPtmp000123');
     expect(cleaned).toContain('BULLETIN DE SALAIRE');
-    expect(cleaned).toContain('SAS FOURNISSEUR X');
+    expect(cleaned).toContain('SAS GLOBEX CONSEIL');
   });
 
   it('buildEntityExtractionPrompt creates a focused Step A prompt', () => {

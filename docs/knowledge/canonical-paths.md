@@ -21,7 +21,7 @@ Implemented in `computeCanonicalPath()` (`src/domain/taxonomy.ts`).
 
 - `toLowerCase().trim()`.
 - If subcategory is a bare year (`isYearString`), coerce to `general` (which will then trip the fail guard for new docs; used mostly by legacy migration paths).
-- Subcategory split on `/` and `\` to support multi-level nesting (`ecole_x/bachelor` → `ecole_x`, `bachelor`).
+- Subcategory split on `/` and `\` to support multi-level nesting (`school_slug/bachelor` → `school_slug`, `bachelor`).
 
 ## Move semantics — `relocalizeFileIfNeeded()`
 

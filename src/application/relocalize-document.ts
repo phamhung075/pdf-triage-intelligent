@@ -224,8 +224,37 @@ export async function reclassifyAndRelocalizeDocument(
     };
   }
 
-  const { raw_text } = await extractPDFContent(actualPath);
-  const textToAnalyze = (raw_text && raw_text.trim().length > 10) ? raw_text : (doc.raw_text || '');
+  const extracted = await extractPDFContent(actualPath);
+  const freshText = extracted.raw_text || '';
+  const storedText = doc.raw_text || '';
+
+  // A re-analysis must never make the record WORSE than it already was.
+  //
+  // The file's bytes are unchanged, so the stored text — produced by a healthy extraction — is
+  // strictly the better input whenever the fresh one came out of the Tesseract availability
+  // fallback instead of PaddleOCR. The two engines are not comparable on a photographed document:
+  // on a photographed ID card PaddleOCR returned the clean numbered form fields where Tesseract
+  // returned line noise ('3 > U NI NV me').
+  //
+  // The old test here was `raw_text.trim().length > 10` — a LIVENESS check, not a quality one. It
+  // could not tell the two apart, so 346 chars of OCR noise replaced 433 chars of clean text and
+  // the title, date, summary and markdown were all rebuilt from the noise. The document was then
+  // physically moved into the wrong year folder, with nothing in the record to say why.
+  const freshUsable = freshText.trim().length > 10;
+  const rejectDegraded = !!extracted.ocr_degraded && storedText.trim().length > 10;
+  if (rejectDegraded) {
+    logger.warn(
+      'RELOCALIZE',
+      `Re-extraction of '${path.basename(actualPath)}' fell back to the degraded OCR engine ` +
+      `(${freshText.trim().length} chars) — keeping the ${storedText.trim().length} chars of stored ` +
+      `text from the original extraction rather than re-analyzing from worse input.`,
+      { documentId: id }
+    );
+  }
+  // Degraded text still beats NO text: the guard prevents a downgrade, it does not make
+  // re-analysis impossible for a document that never had usable text to begin with.
+  const useFreshText = freshUsable && !rejectDegraded;
+  const textToAnalyze = useFreshText ? freshText : storedText;
 
   let newCategory = doc.category;
   let newSubcategory = doc.subcategory;
@@ -267,7 +296,11 @@ export async function reclassifyAndRelocalizeDocument(
     summary: newSummary,
     markdown_content: newMarkdown,
     new_path: newPath,
-    status: 'MOVED'
+    status: 'MOVED',
+    // Persist the text the rest of this update was actually derived from. Leaving it behind is
+    // what let the record contradict itself — a conclusion rebuilt from new text sitting next to
+    // the old evidence, with no way for the user (or the next reader) to see the mismatch.
+    ...(useFreshText ? { raw_text: freshText } : {})
   });
 
   if (doc.category !== newCategory || doc.subcategory !== newSubcategory || userFeedbackReason || explicitCategory) {

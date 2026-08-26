@@ -1,12 +1,15 @@
 # Entity Dictionary for Category/Subcategory Auto-Creation
 
+> ⚠️ **Historical record.** Personal entity names in this document (employers, schools, banks, practitioners) have been replaced with fictional placeholders. Real values live in the gitignored `.prompts.private.json` overlay — see [taxonomy](../../knowledge/taxonomy.md#personal-prompt-overlay).
+
+
 Date: 2026-07-28
 Owner: classification-expert
 
 ## Problem
 
 `categories.json` accumulates junk subcategories over time: `Dcyjxe9mt9i7un7tolhu`,
-`Dupond`, `TitreExemple`, `Page`, `Bon`, `Exemple`, `Export`. These are not
+`Dupond`, `Titrenom`, `Page`, `Bon`, `Exemple`, `Export`. These are not
 hallucinations from Qwen — they trace to `ruleBasedClassify()`'s last-resort
 branch (`src/services/ai.service.ts:239-249`), which fires when the Ollama
 call fails/times out and no other regex signal matched: it takes the first
@@ -47,9 +50,9 @@ Assurance), social/admin agencies (CAF, CNAV, CARSAT, MSA, Préfecture, ANTS),
 and health orgs (Alan, Harmonie Mutuelle, Malakoff Humanis).
 
 Entries already present as real subcategories in `categories.json` today
-(sfr, edf, foncia, credit_mutuel, societe_generale, bnp_paribas, boursobank,
-lcl, la_banque_postale, impot, urssaf, france_travail, ameli, gan_sante,
-clinic_x, allianz, cdiscount, fnac, ecole_x, ecole_y, ecole_z, openclassrooms)
+(sfr, edf, northwind_realty, credit_mutuel, societe_generale, bnp_paribas, boursobank,
+lcl, la_banque_postale, impot, urssaf, france_travail, ameli, northstar_sante,
+lakeside_dental, allianz, cdiscount, fnac, northwind, summit, lakeside, openacademy)
 are deliberately excluded — this file only adds what's missing, kept to
 ~40 entries so prompt size stays small.
 

@@ -1,5 +1,8 @@
 # DDD Light-Layering Restructure Implementation Plan
 
+> ⚠️ **Historical record.** Personal entity names in this document (employers, schools, banks, practitioners) have been replaced with fictional placeholders. Real values live in the gitignored `.prompts.private.json` overlay — see [taxonomy](../../knowledge/taxonomy.md#personal-prompt-overlay).
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reorganize `src/` into `domain/` (pure, zero I/O), `application/` (orchestration), `infrastructure/` (I/O adapters) with no behavior change, using Phase 1's 69-test suite as the regression net.
@@ -595,7 +598,7 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
   // used to guard the gov (7b) and insurance-dictionary (8) branches so a
   // Crédit Mutuel relevé isn't misfiled via a transaction-row mention of
   // CAF / AXA / etc. (Golden Rule #6 "archetypal trap").
-  const looksLikeBankStatement = /\b(relev[ée] de compte|solde cr[ée]diteur|c\/c eurocompte)\b/i.test(combined);
+  const looksLikeBankStatement = /\b(relev[ée] de compte|solde cr[ée]diteur|c\/c myproduct)\b/i.test(combined);
 
   let categorie = 'administrative';
   let subcategorie = 'general';
@@ -603,17 +606,17 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
   // Specific Bulletin de Salaire / Pay Slips Category (SEPARATE FROM INVOICES / FACTURES!)
   if (/bulletindesalaire|bulletin de salaire|bulletin de paie|fiche de paie/i.test(combined)) {
     categorie = 'bulletin_salaire';
-    if (/globex|globex/i.test(combined)) subcategorie = 'globex';
-    else if (/ecole_x/i.test(combined)) subcategorie = 'ecole_x';
-    else if (/ecole_y/i.test(combined)) subcategorie = 'ecole_y';
-    else if (/capgemini/i.test(combined)) subcategorie = 'capgemini';
-    else if (/pacifique/i.test(combined) || /2017|2018/.test(filename)) subcategorie = 'employeur_x';
+    if (/globex_sarl|globexsarl/i.test(combined)) subcategorie = 'globex_sarl';
+    else if (/northwind/i.test(combined)) subcategorie = 'northwind';
+    else if (/summit/i.test(combined)) subcategorie = 'summit';
+    else if (/globex_consulting/i.test(combined)) subcategorie = 'globex_consulting';
+    else if (/acmecorp/i.test(combined) || /2017|2018/.test(filename)) subcategorie = 'acme_corp';
     else subcategorie = 'divers';
   }
   // Specific Internship Attestations
-  else if (/attestationstageglobex|globex/i.test(combined)) {
+  else if (/attestationstageglobexsarl|globexsarl/i.test(combined)) {
     categorie = 'education';
-    subcategorie = 'globex';
+    subcategorie = 'globex_sarl';
   }
   // Specific 2DDoc Contract Holder Domicile Proof Attestations
   else if (/attestationtitulairecontrat2ddoc|2ddoc/i.test(combined)) {
@@ -634,27 +637,27 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
   else if (/\b(santé|sante|médical|medical|soins|dentaire|pharmacie|attestation de droits|attestationam|ameli|sécurité sociale|securite sociale|cpam|mutuelle|hospitalisation)\b/i.test(combined)) {
     categorie = 'health';
     if (/\bameli|assurance maladie|cpam|attestationam\b/i.test(combined)) subcategorie = 'ameli';
-    else if (/\bgan\b/i.test(combined)) subcategorie = 'gan_sante';
-    else if (/\bclinic_x|clinic_x\b/i.test(combined)) subcategorie = 'clinic_x';
+    else if (/\bnorthstar\b/i.test(combined)) subcategorie = 'northstar_sante';
+    else if (/\blakeside dental|lakeside dental\b/i.test(combined)) subcategorie = 'lakeside_dental';
     else {
       const dictHealth = matchEntityDictionary(combined, ['health'], dictionary);
       if (dictHealth) subcategorie = dictHealth.subcategorie;
     }
   }
   // 3. Housing & Domicile Proof
-  else if (/\b(justificatif de domicile|attestation d'hébergement|attestation hebergement|attestation cercles|declarationhonneur|quittance de loyer|foncia|logement)\b/i.test(combined)) {
+  else if (/\b(justificatif de domicile|attestation d'hébergement|attestation hebergement|attestation partenaire|declarationhonneur|quittance de loyer|northwind_realty|logement)\b/i.test(combined)) {
     categorie = 'housing';
-    if (/\bfoncia\b/i.test(combined)) subcategorie = 'foncia';
+    if (/\bnorthwind_realty\b/i.test(combined)) subcategorie = 'northwind_realty';
     else subcategorie = 'justificatif_domicile';
   }
   // 4. Education & Academic Diplomas
-  else if (/\b(formation|bachelor|étudiant|scolarité|inscription|ecole_y|ecole_x|ecole_z|openclassrooms|école|université|diplôme|diplome|bulletinscolaire|certificat|alternance|l1informatique)\b/i.test(combined)) {
+  else if (/\b(formation|bachelor|étudiant|scolarité|inscription|summit|northwind|lakeside|openacademy|école|université|diplôme|diplome|bulletinscolaire|certificat|alternance|l1computing)\b/i.test(combined)) {
     categorie = 'education';
-    if (/\becole_x\b/i.test(combined)) subcategorie = 'ecole_x';
-    else if (/\becole_y\b/i.test(combined)) subcategorie = 'ecole_y';
-    else if (/\becole_z\b/i.test(combined)) subcategorie = 'ecole_z';
-    else if (/\bopenclassrooms\b/i.test(combined)) subcategorie = 'openclassrooms';
-    else if (/\bdiplome|diplôme|bulletinscolaire|certificat|l1informatique\b/i.test(combined)) subcategorie = 'diplomes';
+    if (/\bnorthwind\b/i.test(combined)) subcategorie = 'northwind';
+    else if (/\bsummit\b/i.test(combined)) subcategorie = 'summit';
+    else if (/\blakeside\b/i.test(combined)) subcategorie = 'lakeside';
+    else if (/\bopenacademy\b/i.test(combined)) subcategorie = 'openacademy';
+    else if (/\bdiplome|diplôme|bulletinscolaire|certificat|l1computing\b/i.test(combined)) subcategorie = 'diplomes';
   }
   // 5. Contracts & General Conditions
   else if (/\b(contrat de travail|cdi|cdd|avenant au contrat|cg de mon contrat|conditions générales|notice-attestation-employeur|attestation-employeur|engagement|convention collective)\b/i.test(combined)) {
@@ -702,7 +705,7 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     subcategorie = dictGov.subcategorie;
   }
   // 8. Insurance / Assurances
-  else if (/\b(assurance auto|assurance habitation|prévoyance|prevoyance|responsabilité civile|allianz|macif|maaf|a2a)\b/i.test(combined) || (!looksLikeBankStatement && matchEntityDictionary(combined, ['insurance'], dictionary))) {
+  else if (/\b(assurance auto|assurance habitation|prévoyance|prevoyance|responsabilité civile|allianz|macif|maaf|polx)\b/i.test(combined) || (!looksLikeBankStatement && matchEntityDictionary(combined, ['insurance'], dictionary))) {
     categorie = 'insurance';
     if (/\ballianz\b/i.test(combined)) subcategorie = 'allianz';
     else {
@@ -711,7 +714,7 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     }
   }
   // 9. Banks / Finance
-  else if (/\b(caisse de credit mutuel|crédit mutuel|credit mutuel|ccm marseille|creditmutuel)\b/i.test(combined)) {
+  else if (/\b(caisse de credit mutuel|crédit mutuel|credit mutuel|ccm springfield|creditmutuel)\b/i.test(combined)) {
     categorie = 'administrative';
     subcategorie = 'credit_mutuel';
   } else if (/\b(société générale|societe generale)\b/i.test(combined)) {
@@ -739,7 +742,7 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     categorie = 'recruitment';
   }
   // 11. Correspondence
-  else if (/\b(yahoo mail|courrier|lettre|email|mail|recommandé|notification)\b/i.test(combined)) {
+  else if (/\b(webmail|courrier|lettre|email|mail|recommandé|notification)\b/i.test(combined)) {
     categorie = 'correspondence';
   }
   // 12. Technical
@@ -753,15 +756,15 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
 
   // Exact Subcategory Fallbacks & Dynamic Subcategory Generation from Filename Keywords
   if (subcategorie === 'general') {
-    if (/\becole_x\b/i.test(combined)) subcategorie = 'ecole_x';
-    else if (/\becole_y\b/i.test(combined)) subcategorie = 'ecole_y';
-    else if (/\becole_z\b/i.test(combined)) subcategorie = 'ecole_z';
-    else if (/\bopenclassrooms\b/i.test(combined)) subcategorie = 'openclassrooms';
+    if (/\bnorthwind\b/i.test(combined)) subcategorie = 'northwind';
+    else if (/\bsummit\b/i.test(combined)) subcategorie = 'summit';
+    else if (/\blakeside\b/i.test(combined)) subcategorie = 'lakeside';
+    else if (/\bopenacademy\b/i.test(combined)) subcategorie = 'openacademy';
     else if (/\bcarrefour\b/i.test(combined)) subcategorie = 'carrefour';
     else if (/\bkairos\b/i.test(combined)) subcategorie = 'kairos';
     else if (/\ballianz\b/i.test(combined)) subcategorie = 'allianz';
-    else if (/\b(gan|gan santé|gan assurances)\b/i.test(combined)) subcategorie = 'gan_sante';
-    else if (/\bcapgemini\b/i.test(combined)) subcategorie = 'capgemini';
+    else if (/\b(northstar|northstar santé|northstar assurances)\b/i.test(combined)) subcategorie = 'northstar_sante';
+    else if (/\bglobex_consulting\b/i.test(combined)) subcategorie = 'globex_consulting';
     else if (/\b(sfr|red by sfr)\b/i.test(combined)) subcategorie = 'sfr';
     else if (/\bedf\b/i.test(combined)) subcategorie = 'edf';
     else if (/\bengie\b/i.test(combined)) subcategorie = 'engie';
@@ -772,7 +775,7 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     else if (/\bcdiscount\b/i.test(combined)) subcategorie = 'cdiscount';
     else if (/\bamazon\b/i.test(combined)) subcategorie = 'amazon';
     else if (/\bfnac\b/i.test(combined)) subcategorie = 'fnac';
-    else if (/\bfoncia\b/i.test(combined)) subcategorie = 'foncia';
+    else if (/\bnorthwind_realty\b/i.test(combined)) subcategorie = 'northwind_realty';
     else if (matchEntityDictionary(combined, ALL_ENTITY_DOMAINS, dictionary)) {
       const dictAny = matchEntityDictionary(combined, ALL_ENTITY_DOMAINS, dictionary)!;
       categorie = dictAny.categorie;
@@ -1065,14 +1068,14 @@ describe('isGroundedSubcategorySlug', () => {
 describe('ruleBasedClassify', () => {
   it('classifies a pay slip under bulletin_salaire (never invoices), extracting employer + DD/MM/YYYY date', () => {
     const result = ruleBasedClassify(
-      'Bulletin de salaire EmployeurX Salaire brut 3000 Net a payer 2400 01/03/2023',
+      'Bulletin de salaire AcmeCorp Salaire brut 3000 Net a payer 2400 01/03/2023',
       'bulletin_mars.pdf',
       EMPTY_DICTIONARY,
       DEFAULT_PERSONAL_NAME_DENYLIST
     );
     expect(result).toEqual({
       categorie: 'bulletin_salaire',
-      subcategorie: 'employeur_x',
+      subcategorie: 'acme_corp',
       title: 'bulletin mars',
       date: '2023-03-01',
     });
@@ -1097,7 +1100,7 @@ describe('ruleBasedClassify', () => {
 
   it('does NOT misfile a bank statement as impot just because a transaction row mentions impots (Golden Rule #6 guard)', () => {
     const result = ruleBasedClassify(
-      'RELEVE DE COMPTE Credit Mutuel Marseille PRLV IMPOTS DGFIP SOLDE CREDITEUR 1234.56',
+      'RELEVE DE COMPTE Credit Mutuel Springfield PRLV IMPOTS DGFIP SOLDE CREDITEUR 1234.56',
       'releve.pdf',
       EMPTY_DICTIONARY,
       DEFAULT_PERSONAL_NAME_DENYLIST
@@ -1236,14 +1239,14 @@ ${categoriesDescriptionStr}
 - You MUST READ AND UNDERSTAND THE ENTIRE CONTEXT, PURPOSE, AND ISSUING ENTITY of the document content.
 - DO NOT rely on simple string keyword matching or isolated word occurrences!
 - PAY SLIPS (bulletin de salaire) MUST BE CLASSIFIED UNDER Category = 'bulletin_salaire' (NOT 'invoices'!).
-- For PAY SLIPS, identify the Employer/Enterprise Name (e.g. 'employeur_x', 'globex', 'capgemini', 'ecole_x'). Set Subcategory = Exact Employer Name!
+- For PAY SLIPS, identify the Employer/Enterprise Name (e.g. 'acme_corp', 'globex_sarl', 'globex_consulting', 'northwind'). Set Subcategory = Exact Employer Name!
 
 🧠 LOCAL AI THINKING & REASONING PROTOCOL (THINK STEP-BY-STEP BEFORE OUTPUT):
 1. HEADER VS BODY AUDIT: First, inspect the header/issuer of the document. Distinguish the issuing entity from transaction line items.
 2. FULL CONTENT PURPOSE ANALYSIS: Read the body text to understand the legal, financial, or administrative purpose of the document.
 3. CATEGORY SELECTION: Evaluate the 12-step decision flow in strict order. Pick the single most accurate category.
 4. SPECIFIC SUBCATEGORY SELECTION:
-   - Identify the exact company, bank, school, government branch, or document type (e.g. 'credit_mutuel', 'impot', 'globex', 'ameli', 'foncia', 'allianz', 'ecole_y', 'employeur_x').
+   - Identify the exact company, bank, school, government branch, or document type (e.g. 'credit_mutuel', 'impot', 'globex_sarl', 'ameli', 'northwind_realty', 'allianz', 'summit', 'acme_corp').
    - If the issuing company or organization is NOT in existing subcategories, DYNAMICALLY GENERATE A NEW CLEAN SLUG for that exact entity — ONLY if that entity's name actually appears in the Document Text Content above (e.g. 'france_travail', 'caf', 'urssaf', 'veolia', 'orange'). NEVER derive the slug from the filename and NEVER guess — the filename is not document content.
    - If the document text itself has no identifiable real entity (illegible/weak OCR, a generic confirmation page, a form with no issuer name), output subcategorie as 'general' — that is the correct, honest answer here. Do NOT invent a fake-specific slug just to avoid saying 'general'.
    - Otherwise, when a real entity IS identifiable in the text, NEVER output 'general', 'personal', 'other', 'divers', or year strings ('2023') as subcategories!
@@ -1251,31 +1254,31 @@ ${categoriesDescriptionStr}
 🛑 MASTER AI CLASSIFICATION DECISION FLOW (FOLLOW IN STRICT ORDER):
 
 STEP 1: BANK STATEMENTS (High Priority Override)
-- Search document header for "Crédit Mutuel", "Société Générale", "BNP Paribas", "BoursoBank", "LCL", "La Banque Postale", "C/C EUROCOMPTE", "RELEVE DE COMPTE", "SOLDE CREDITEUR", or IBAN numbers.
+- Search document header for "Crédit Mutuel", "Société Générale", "BNP Paribas", "BoursoBank", "LCL", "La Banque Postale", "C/C MYPRODUCT", "RELEVE DE COMPTE", "SOLDE CREDITEUR", or IBAN numbers.
 - IF MATCH: -> Category = 'administrative', Subcategory = Exact Bank Name (e.g. 'credit_mutuel', 'societe_generale', 'bnp_paribas').
 - ⚠️ CRITICAL RULE: Ignore vendor names (like SFR, PayPal, Amazon, Lidl) that appear inside internal transaction list rows!
 
 STEP 2: TAX DOCUMENTS (High Priority Override)
-- Search document for "Avis d'impôt", "Avis d'imposition", "Prélèvements sociaux", "Revenus 2022", "Finances Publiques", "DGFIP", "Taxe foncière", "Taxe d'habitation".
+- Search document for "Avis d'impôt", "Avis d'imposition", "Prélèvements sociaux", "Revenus <ANNEE>", "Finances Publiques", "DGFIP", "Taxe foncière", "Taxe d'habitation".
 - IF MATCH: -> Category = 'administrative', Subcategory = 'impot'.
 - ⚠️ CRITICAL RULE: NEVER classify tax forms as 'correspondence' or 'courriers'!
 
 STEP 3: PAY SLIPS (HIGH PRIORITY CATEGORY)
 - Search document for "Bulletin de salaire", "Bulletin de paie", "Fiche de paie", "Salaire brut", "Net à payer".
-- IF MATCH: -> Category = 'bulletin_salaire', Subcategory = Exact Employer/Enterprise Name (e.g. 'employeur_x', 'globex', 'capgemini', 'ecole_x').
+- IF MATCH: -> Category = 'bulletin_salaire', Subcategory = Exact Employer/Enterprise Name (e.g. 'acme_corp', 'globex_sarl', 'globex_consulting', 'northwind').
 - ⚠️ CRITICAL RULE: NEVER put pay slips under 'invoices' (Factures)!
 
 STEP 4: HEALTH & MEDICAL
-- Search for "Ameli", "Assurance Maladie", "CPAM", "Mutuelle", "Gan Santé", "Ordonnance", "Soins Dentaires", "Pharmacie", "Hospitalisation".
-- IF MATCH: -> Category = 'health', Subcategory = Health Institution (e.g. 'ameli', 'gan_sante', 'clinic_x').
+- Search for "Ameli", "Assurance Maladie", "CPAM", "Mutuelle", "Northstar Santé", "Ordonnance", "Soins Dentaires", "Pharmacie", "Hospitalisation".
+- IF MATCH: -> Category = 'health', Subcategory = Health Institution (e.g. 'ameli', 'northstar_sante', 'lakeside_dental').
 
 STEP 5: IDENTITY & CIVIL PAPERS
 - Search for "Passeport", "Passport", "Carte d'Identité", "CNI", "Titre de Séjour", "Carte Vitale", "Permis de conduire", "Acte de mariage", "Acte de naissance".
 - IF MATCH: -> Category = 'identity', Subcategory = Document Type (e.g. 'passeport', 'titre_sejour', 'carte_vitale', 'permis_conduire', 'carte_identite', 'acte_mariage').
 
 STEP 6: HOUSING & DOMICILE PROOF
-- Search for "Justificatif de domicile", "Attestation d'hébergement", "Quittance de loyer", "Foncia", "Logement", "Bail d'habitation", "Attestation titulaire de contrat 2DDoc".
-- IF MATCH: -> Category = 'housing', Subcategory = 'justificatif_domicile' or 'foncia'.
+- Search for "Justificatif de domicile", "Attestation d'hébergement", "Quittance de loyer", "Northwind Realty", "Logement", "Bail d'habitation", "Attestation titulaire de contrat 2DDoc".
+- IF MATCH: -> Category = 'housing', Subcategory = 'justificatif_domicile' or 'northwind_realty'.
 
 STEP 7: GENERAL INSURANCE
 - Search for "Assurance Auto", "Assurance Habitation", "Prévoyance", "Responsabilité Civile", "Allianz", "Macif", "Maaf".
@@ -1290,8 +1293,8 @@ STEP 9: CONTRACTS & GENERAL CONDITIONS
 - IF MATCH: -> Category = 'contracts', Subcategory = Work, Conditions, or Company Name (e.g. 'cdi_cdd', 'conditions_generales', 'attestation_employeur').
 
 STEP 10: EDUCATION & ACADEMIC
-- Search for "Attestation de stage GLOBEX", "Certificat de scolarité", "Diplôme", "Bachelor", "Attestation de formation", "ECOLE_X", "ECOLE_Y", "EcoleZ", "OpenClassrooms".
-- IF MATCH: -> Category = 'education', Subcategory = School or Company Name (e.g. 'globex', 'ecole_x', 'ecole_y', 'openclassrooms', 'diplomes').
+- Search for "Attestation de stage GLOBEX SARL", "Certificat de scolarité", "Diplôme", "Bachelor", "Attestation de formation", "NORTHWIND", "SUMMIT", "Lakeside", "OpenAcademy".
+- IF MATCH: -> Category = 'education', Subcategory = School or Company Name (e.g. 'globex_sarl', 'northwind', 'summit', 'openacademy', 'diplomes').
 
 STEP 11: RECRUITMENT
 - Search for "Lettre de motivation", "CV", "Curriculum Vitae", "Candidature", "Postuler".
@@ -1309,9 +1312,9 @@ Respond ONLY with raw JSON matching this structure:
   "registre": "REF-12345",
   "date": "2026-05-15",
   "categorie": "bulletin_salaire",
-  "subcategorie": "employeur_x",
+  "subcategorie": "acme_corp",
   "summary": "Executive summary...",
-  "tags": ["bulletin_salaire", "employeur_x", "salaire"],
+  "tags": ["bulletin_salaire", "acme_corp", "salaire"],
   "markdown_content": "# Document Title\\n\\nContent formatted in clean Markdown..."
 }`;
 

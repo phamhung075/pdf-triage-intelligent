@@ -43,7 +43,24 @@ A photographed document is not an archivable document, so photos are converted b
 3. **Enhance** — auto-levels and sharpening, used **only** to help OCR read the page.
 4. **Extract** — OCR + markdown conversion.
 
-The archived PDF holds the **cropped, natural-toned** page (not the enhanced one, whose hard contrast can crush faint stamps and signatures) on a single A4 page. The original photo is deleted **only after** the PDF is confirmed on disk, and every stage degrades safely — a failed crop still yields an upright PDF, a failed OCR still archives the page.
+The archived PDF holds the **cropped, natural-toned** page (not the enhanced one, whose hard contrast can crush faint stamps and signatures), fitted to A4. Every stage degrades safely — a failed crop still yields an upright PDF, a failed OCR still archives the page.
+
+**Your original photo is never deleted.** Once the PDF is confirmed on disk, the source moves to `__raws/.delete_files/img_converted/` rather than being unlinked: the PDF holds a cropped, re-encoded rendition, so if the crop detector ever clips part of a page the untouched original is the only way back. Nothing prunes that folder — it grows until you clear it.
+
+**Multi-page documents: drop a folder.** A folder in `__raws` holding only photos (2 or more) is bundled into **one** multi-page PDF named after the folder, instead of becoming several unrelated one-page documents:
+
+```
+__raws/
+  contrat-bail/          →  contrat-bail.pdf   (3 pages, one document)
+    IMG_1.jpg
+    IMG_2.jpg
+    IMG_3.jpg
+  facture-edf.jpg        →  facture-edf.pdf    (1 page, as before)
+```
+
+Pages are ordered numerically, so `IMG_2` comes before `IMG_10` — plain alphabetical sorting silently shuffles any document with ten or more photos. Each page's OCR text is concatenated so the classifier reads the whole document at once, and the source pages stay grouped under `.delete_files/img_converted/contrat-bail/`.
+
+A folder qualifies only if it holds **2+ images and nothing else**. A lone photo isn't a multi-page document, and a folder where you also keep a PDF is storage you're using — fusing its photos would be a destructive guess, so it's left alone and triaged file by file.
 
 ### 3. Duplicate & Blocked File Relocation
 - **Duplicates**: Files matching existing database checksums are safely relocated to `input_dir/.duplicates_files/` with automatic collision handling (`filename_dup1.pdf`).
@@ -159,6 +176,7 @@ This project exists because sending ID cards, bank statements, and tax records t
 - **Every AI call stays local.** Classification, entity extraction, embeddings, and the chat assistant all run through your own local Ollama instance. Nothing about a document's content is ever sent anywhere else.
 - **No auth, so it's locked to your machine instead.** The dashboard has no login system — rather than build one, it binds to `127.0.0.1` only and ships with no CORS headers, so it's not reachable from your network or from other tabs in your browser. This is deliberate: for a single-user local tool, "not reachable at all" is a stronger guarantee than "reachable but password-protected."
 - **Personal taxonomy stays out of git.** If you fork this repo for your own use, every category/subcategory your documents actually create goes to `.categories.private.json` (gitignored) — the committed `categories.json` never picks up your real bank branches, employers, or any other entity extracted from your documents.
+- **So do your classification prompts.** The files in `prompts/` are committed and deliberately generic. Anything that identifies you — your bank's statement filename codes, your employers, your scanner's filename prefix, your clinic — lives in `.prompts.private.json` (gitignored), injected into the prompt at build time and matched by the offline fallback classifier from that same file, so the two never drift apart. A test (`src/domain/prompt-hygiene.test.ts`) fails the build if a name from your denylist reappears anywhere in the committed tree.
 - **No telemetry, no update pings, no analytics.** The only network calls this app makes are to your own local Ollama instance.
 
 If you do want to expose the dashboard beyond your own machine (e.g. to reach it from your phone on the same network), that's an explicit opt-in via `PDF_TRIAGE_HOST` in `.env` — and worth knowing there's still no authentication layer if you do.
@@ -185,35 +203,76 @@ If you do want to expose the dashboard beyond your own machine (e.g. to reach it
 
 Smart PDF Triage runs 100% locally on your computer using Node.js, Electron, SQLite, `@napi-rs/canvas`, **PaddleOCR** and `Tesseract.js` (both offline OCR), and local AI LLMs via **Ollama**.
 
-#### 🔹 Minimum System Requirements (CPU Mode)
+#### 🔹 Minimum System Requirements (CPU-only Ollama)
 | Component | Requirement |
 | :--- | :--- |
 | **Operating System** | Windows 10/11 (64-bit), macOS 11+, or Linux (Ubuntu 20.04+) |
 | **CPU** | Quad-Core x86-64 / ARM processor (with AVX2 support) |
-| **System RAM** | **8 GB RAM** |
-| **Graphics (GPU)** | Integrated Graphics — *CPU fallback supported by Ollama* |
-| **Free Storage** | **10 GB available SSD space** (5.5 GB for Qwen 3.5 9B model + 4.5 GB for app & PDF database) |
-| **Python** *(optional)* | 3.10+ — powers the local PaddleOCR service. Without it the app falls back to `Tesseract.js` automatically. |
+| **System RAM** | **16 GB** — the 9.7B model needs ~6.6 GB of it when Ollama has no GPU, on top of ~1.5 GB for the app's own processes |
+| **Graphics (GPU)** | None — Ollama falls back to CPU. Expect classification to go from seconds to minutes per document. |
+| **Free Storage** | **12 GB** (see the breakdown below) |
+| **Python** *(optional)* | 3.10+ — powers the local PaddleOCR service. Without it the app falls back to `Tesseract.js` automatically, at a real cost in OCR quality. |
 
-#### 🚀 Recommended System Requirements (GPU / AI Accelerated Mode)
+#### 🚀 Recommended System Requirements (GPU accelerated)
 | Component | Requirement |
 | :--- | :--- |
 | **Operating System** | Windows 11 (64-bit) or macOS Apple Silicon (M1/M2/M3) |
-| **CPU** | 6-Core / 8-Core processor (Intel 10th Gen+ / AMD Ryzen 3000+ / Apple M-series) |
-| **System RAM** | **16 GB RAM** or higher |
-| **Graphics (GPU)** | NVIDIA GPU with **6 GB+ VRAM** (CUDA support) or Apple Silicon Unified Memory |
-| **Free Storage** | **20 GB+ available NVMe SSD space** |
+| **CPU** | 8-Core or better. OCR is the throughput bottleneck and runs **on CPU** — the GPU does not accelerate it. |
+| **System RAM** | **16 GB** or higher |
+| **Graphics (GPU)** | NVIDIA GPU with **8 GB VRAM** (CUDA) or Apple Silicon Unified Memory |
+| **Free Storage** | **20 GB+** NVMe SSD, plus room for your archived documents |
 
-> 💡 **Tip**: If running on an 8 GB RAM PC without a dedicated GPU, you can use lighter Ollama models like `qwen2.5:3b` or `qwen2.5:7b` by updating `ollama_model` in `settings.json`.
+> ⚠️ **8 GB VRAM is the real floor, not 6 GB.** `qwen3.5:9b` is 6.6 GB resident and the app runs it
+> at `num_ctx: 16384`. Measured on an RTX 3060 Ti (8 GB): the model loads at **100% GPU** and leaves
+> **582 MB free** — it fits, but only just. On a 6 GB card Ollama offloads layers to CPU and
+> classification slows by roughly an order of magnitude. Anything else competing for VRAM (a game, a
+> video call, a second model) causes the same demotion.
+
+#### 💾 Storage breakdown (measured)
+
+| Item | Size | |
+| :--- | ---: | :--- |
+| `qwen3.5:9b` (Ollama) | 6.6 GB | required |
+| `minicpm-v4.6` (Ollama vision) | 1.6 GB | photo pipeline only — the orientation/crop cascade falls back to EXIF, PaddleOCR orientation and flood-fill crop without it |
+| `node_modules/` | 0.9 GB | |
+| Python OCR deps (`paddlepaddle`, `opencv`, `numpy`) | 0.5 GB | only with the PaddleOCR service |
+| PaddleOCR model cache (`~/.paddlex`) | 0.2 GB | downloaded on first OCR request |
+| SQLite DB + JSON registry | **≈158 KB per document** | 139 documents measured at 21.5 MB |
+| `logs/triage_debug.log` | grows unbounded | no rotation — prune it yourself |
+
+**≈ 9.8 GB** for a full install before you archive a single document. The archive itself is your own
+PDFs, wherever `settings.json` points.
+
+#### ⏱️ Measured throughput
+
+On the reference machine (20 cores, RTX 3060 Ti, PaddleOCR on CPU): **58 documents in 119 minutes**,
+about **2 minutes per document**. The split matters more than the average:
+
+| Document type | Share | Time each | Bound by |
+| :--- | ---: | :--- | :--- |
+| Digital text layer | 63% | 30–60 s | Ollama (GPU) |
+| Needs OCR (scans, photos) | 37% | 120–230 s | **PaddleOCR (CPU)** |
+
+So adding VRAM speeds up the fast half; adding CPU cores speeds up the slow half.
+
+> 💡 **The model is not configurable.** Setting `ollama_model` in `settings.json` to anything other
+> than `qwen3.5:9b` is **ignored** — `sanitizeOllamaModel()` logs a warning and forces it back, per
+> Golden Rule #14. A lighter model is not a supported way to fit a smaller machine; use CPU mode and
+> more RAM instead.
 
 ---
 
 ### 1. Prerequisites
 - **Node.js v22.12+** installed (required by the Electron version this project bundles; the web dashboard itself has no hard Node version requirement if you're not using the desktop shell).
 - **Ollama** installed locally ([ollama.com](https://ollama.com)).
-- Pull model:
+- Pull the classifier (required — this exact tag, see Golden Rule #14):
   ```bash
   ollama pull qwen3.5:9b
+  ```
+- Pull the vision model (optional, 1.6 GB — only used by the photo pipeline's orientation and crop
+  cascade, which falls back to EXIF, PaddleOCR orientation and flood-fill crop without it):
+  ```bash
+  ollama pull minicpm-v4.6
   ```
 - **Optional, only if you plan to build the desktop `.exe`**: Visual Studio Build Tools with the "Desktop development with C++" workload (Windows). The desktop build compiles `sqlite3`'s native binding against Electron's own Node ABI, which needs a C++ toolchain available. Not needed for `npm run dev` or the web dashboard.
 
@@ -254,6 +313,12 @@ Customize `input_dir` (where incoming PDFs arrive) and `output_root_dir` (where 
 Alternatively (or in addition), copy `.env.example` to `.env` and set any of `PDF_TRIAGE_BASE_DIR`, `PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_TRIAGE_HOST`, `PORT`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `SYSTEM_LANGUAGE` — see the file for what each one does. `settings.json` (via the Settings modal in the UI) is the friendlier way to change input/output folders and language day-to-day; `.env` is for things you set once per install.
 
 `categories.json` (the generic starter taxonomy) is committed and needs no setup. Everything auto-created from your own documents goes to `.categories.private.json` instead, which is gitignored — see [`categories-store.ts`](src/infrastructure/categories-store.ts) if you're curious how the two get merged.
+
+**Optional — teach the classifier about your own documents.** If your bank writes statement filenames as codes, or your scanner prefixes files, or you want a specific employer always filed a certain way, copy the template and edit it:
+```bash
+cp prompts.private.json.example .prompts.private.json
+```
+It holds a list of known entities and a set of keyword → category/subcategory overrides that are evaluated *before* the generic decision flow. The file is gitignored, it is read fresh on every classification (so edits take effect without restarting), and an invalid file is logged and ignored rather than breaking triage. Skipping this is completely fine — the prompts work generically without it.
 
 #### Step 4: Run the Application
 - **Development Mode** (API & Web Dashboard on `http://localhost:3971`):

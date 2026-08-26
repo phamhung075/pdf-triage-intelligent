@@ -23,10 +23,10 @@ describe('Intelligent Filename Generator', () => {
       'QPtmp001.PDF',
       'Bulletin de Salaire - Juillet 2023',
       'bulletin_salaire',
-      'globex',
+      'globex_sarl',
       '2023-07-31'
     );
-    expect(fn1).toBe('2023-07-31_Globex_Bulletin_De_Salaire_Juillet.pdf');
+    expect(fn1).toBe('2023-07-31_GlobexSarl_Bulletin_De_Salaire_Juillet.pdf');
 
     const fn2 = generateIntelligentFilename(
       'invoice (8).pdf',
@@ -63,10 +63,52 @@ describe('Intelligent Filename Generator', () => {
       'C:/tmp/QPtmp001.PDF',
       'bulletin_salaire',
       'C:/archive',
-      'globex',
+      'globex_sarl',
       '2023-07-31',
       'Bulletin de Salaire - Juillet 2023'
     );
-    expect(canonical.replace(/\\/g, '/')).toBe('C:/archive/bulletin_salaire/globex/2023/2023-07-31_Globex_Bulletin_De_Salaire_Juillet.pdf');
+    expect(canonical.replace(/\\/g, '/')).toBe('C:/archive/bulletin_salaire/globex_sarl/2023/2023-07-31_GlobexSarl_Bulletin_De_Salaire_Juillet.pdf');
+  });
+});
+
+describe('computeCanonicalPath path containment', () => {
+  const ROOT = 'C:/archive';
+  const inside = (p: string) => p.split(String.fromCharCode(92)).join('/').toLowerCase()
+    .startsWith(ROOT.toLowerCase() + '/');
+
+  it('keeps a traversal payload in the category inside the archive root', () => {
+    // category and subcategory reach computeCanonicalPath straight from an HTTP body
+    // (POST /api/documents/:id/relocalize has no schema) and from MCP tool calls. Before the
+    // segments were sanitized this wrote the user's document to C:/evil/.
+    const p = computeCanonicalPath('C:/tmp/doc.pdf', '../../..', ROOT, 'evil', '2026-01-01', 'Doc');
+    expect(inside(p)).toBe(true);
+  });
+
+  it('keeps a traversal payload in the subcategory inside the archive root', () => {
+    // This one previously resolved into C:/windows/system32/.
+    const p = computeCanonicalPath('C:/tmp/doc.pdf', 'bank', ROOT, '../../../../Windows/System32', '2026-01-01', 'Doc');
+    expect(inside(p)).toBe(true);
+  });
+
+  it('neutralizes a bare dot-dot in both segments', () => {
+    const p = computeCanonicalPath('C:/tmp/doc.pdf', '..', ROOT, '..', '2026-01-01', 'Doc');
+    expect(inside(p)).toBe(true);
+  });
+
+  it('neutralizes a drive prefix used as a category', () => {
+    const p = computeCanonicalPath('C:/tmp/doc.pdf', 'C:', ROOT, 'x', '2026-01-01', 'Doc');
+    expect(inside(p)).toBe(true);
+  });
+
+  it('leaves ordinary taxonomy slugs byte-identical', () => {
+    const p = computeCanonicalPath('C:/tmp/doc.pdf', 'bulletin_salaire', ROOT, 'acme_corp', '2026-01-01', 'Doc');
+    expect(p.split(String.fromCharCode(92)).join('/'))
+      .toBe('C:/archive/bulletin_salaire/acme_corp/2026/2026-01-01_AcmeCorp_Doc.pdf');
+  });
+
+  it('still supports legitimate multi-level subcategory nesting', () => {
+    const p = computeCanonicalPath('C:/tmp/doc.pdf', 'education', ROOT, 'school/bachelor', '2026-01-01', 'Doc');
+    expect(p.split(String.fromCharCode(92)).join('/'))
+      .toBe('C:/archive/education/school/bachelor/2026/2026-01-01_SchoolBachelor_Doc.pdf');
   });
 });

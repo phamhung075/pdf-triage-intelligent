@@ -110,3 +110,82 @@ export function detectMidWordCapitalizationCorruption(text: string): CorruptionS
 export function isLikelyCorruptedText(text: string): boolean {
   return detectMidWordCapitalizationCorruption(text).corrupted;
 }
+
+// A scanned PDF often still carries a *thin* digital text layer — the scanner app's watermark, a
+// page number, a fax header. The extraction gate only asked whether the text was empty or shorter
+// than 10 characters, so any of those counted as "usable digital text" and OCR never ran. A real
+// example from the archive: an 8-page employment attestation whose entire raw_text was
+// "Scanned with AnyScanner" repeated eight times — 198 characters, and none of the document's
+// actual content in the registry, the classifier, or the Markdown.
+//
+// Two independent symptoms, both requiring at least 2 pages. Single-page documents are excluded on
+// purpose: a certificate or a cover page is legitimately sparse, and forcing OCR on those would buy
+// nothing but OCR time.
+export const THIN_TEXT_MIN_CHARS_PER_PAGE = 100;
+export const THIN_TEXT_MIN_PAGES = 2;
+/** At or below this many distinct non-blank lines, a multi-page text layer may be boilerplate. */
+export const THIN_TEXT_MAX_DISTINCT_LINES = 2;
+/**
+ * ...but only if that distinct content is also SHORT. A watermark is a handful of words; a document
+ * that genuinely repeats a long line on every page still carries real text, and forcing it through
+ * OCR would buy nothing but OCR time.
+ */
+export const THIN_TEXT_MAX_DISTINCT_CHARS = 200;
+/**
+ * The density rule needs its own version of that guard, or it fires on a document that is simply
+ * SHORT rather than un-extracted — and the penalty for a false positive is real: a full pdfjs pass
+ * plus up to OCR_MAX_PAGES canvas renders and OCR round-trips, all to re-derive text already in
+ * hand. Vocabulary is what separates the two: an un-extracted scan leaks only page furniture
+ * (a watermark, "Page 3", a fax header), so its few characters are also the same few words.
+ *
+ * Measured over the 274 archived documents: the two genuinely starved ones carry 0.4 and 4.8
+ * distinct words per page, while normal multi-page documents sit at a 5th-percentile of 18.9.
+ * 10 splits that gap with room on both sides.
+ */
+export const THIN_TEXT_MAX_DISTINCT_WORDS_PER_PAGE = 10;
+
+export interface ThinTextLayerSignal {
+  thin: boolean;
+  charsPerPage: number;
+  distinctLines: number;
+  distinctWordsPerPage: number;
+  /** Which symptom fired — for the log line, so a human can tell density from boilerplate. */
+  reason: 'low-density' | 'repeated-boilerplate' | null;
+}
+
+export function detectThinTextLayer(text: string, numpages: number): ThinTextLayerSignal {
+  const clean = (text || '').trim();
+  const pages = Math.max(1, numpages || 1);
+  const lines = clean.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const distinctLines = new Set(lines).size;
+  const charsPerPage = clean.length / pages;
+  // Accent-aware so French text ("société", "prénom") counts as words rather than fragments, and
+  // ≥3 letters so page furniture ("p", "de", digits) does not inflate the vocabulary.
+  const distinctWords = new Set(clean.toLowerCase().match(/[a-zà-ÿ]{3,}/g) || []).size;
+  const distinctWordsPerPage = distinctWords / pages;
+  const none: ThinTextLayerSignal = { thin: false, charsPerPage, distinctLines, distinctWordsPerPage, reason: null };
+
+  if (pages < THIN_TEXT_MIN_PAGES) return none;
+  if (!clean) return none; // empty text is already handled by the plain "< 10 chars" guard
+
+  // Every page repeating the same one or two SHORT lines is a watermark/header, not content.
+  const distinctChars = [...new Set(lines)].join('').length;
+  if (
+    lines.length >= pages &&
+    distinctLines <= THIN_TEXT_MAX_DISTINCT_LINES &&
+    distinctChars <= THIN_TEXT_MAX_DISTINCT_CHARS
+  ) {
+    return { thin: true, charsPerPage, distinctLines, distinctWordsPerPage, reason: 'repeated-boilerplate' };
+  }
+
+  // Sparse AND vocabulary-poor. Both halves are required: a short-but-real document has few
+  // characters yet varied words, and dragging it through OCR would cost minutes to learn nothing.
+  if (
+    charsPerPage < THIN_TEXT_MIN_CHARS_PER_PAGE &&
+    distinctWordsPerPage < THIN_TEXT_MAX_DISTINCT_WORDS_PER_PAGE
+  ) {
+    return { thin: true, charsPerPage, distinctLines, distinctWordsPerPage, reason: 'low-density' };
+  }
+
+  return none;
+}

@@ -1,7 +1,26 @@
 import fs from 'fs';
+import path from 'path';
 import { CONFIG } from './settings.js';
 import { getDb } from './db/database.js';
 import { logger } from './logger.js';
+
+// settings.ts always sets MANUAL_DECISIONS_FILE to an absolute path under DATA_DIR, so in normal
+// operation this simply returns it. The point is the failure mode it removes: the previous
+// `CONFIG.MANUAL_DECISIONS_FILE || 'manual_decisions.json'` fell back to a RELATIVE path, which
+// resolves against process.cwd(). Any caller holding an incomplete CONFIG — a test mocking
+// settings.js without this key — therefore wrote silently into the repo root, appending synthetic
+// entries to the user's real feedback log and making two unrelated test suites corrupt each other.
+// Both call sites already catch and log, so throwing here degrades to a logged error rather than a
+// write landing somewhere nobody is looking.
+function manualDecisionsFilePath(): string {
+  const configured = CONFIG.MANUAL_DECISIONS_FILE;
+  if (typeof configured !== 'string' || !configured || !path.isAbsolute(configured)) {
+    throw new Error(
+      `CONFIG.MANUAL_DECISIONS_FILE must be an absolute path, got ${JSON.stringify(configured)}`
+    );
+  }
+  return configured;
+}
 
 export interface ManualDecisionRecord {
   id?: number;
@@ -52,7 +71,7 @@ export async function recordManualDecision(record: ManualDecisionRecord): Promis
 
   // 2. Persist into manual_decisions.json
   try {
-    const targetFilePath = CONFIG.MANUAL_DECISIONS_FILE || 'manual_decisions.json';
+    const targetFilePath = manualDecisionsFilePath();
     let decisions: ManualDecisionRecord[] = [];
     if (fs.existsSync(targetFilePath)) {
       try {
@@ -77,7 +96,7 @@ export async function getManualDecisions(): Promise<ManualDecisionRecord[]> {
     const db = await getDb();
     return await db.all('SELECT * FROM manual_decisions ORDER BY id DESC');
   } catch (err) {
-    const targetFilePath = CONFIG.MANUAL_DECISIONS_FILE || 'manual_decisions.json';
+    const targetFilePath = manualDecisionsFilePath();
     if (fs.existsSync(targetFilePath)) {
       try {
         return JSON.parse(fs.readFileSync(targetFilePath, 'utf-8'));

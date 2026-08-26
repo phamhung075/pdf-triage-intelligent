@@ -1,6 +1,7 @@
 import { CategoryItem, SubcategoryItem, DocumentMetadata, EntityDictionary } from './document.schema.js';
 import { ruleBasedClassify, isGroundedSubcategorySlug, normalizeSlug, matchEntityDictionary, ALL_ENTITY_DOMAINS } from './classification.js';
 import { getEntityDictionary } from '../infrastructure/entity-dictionary-store.js';
+import { getPromptPersonalization } from '../infrastructure/prompt-personalization-store.js';
 
 // Categories the 13-step classification flow only ever reaches when nothing more specific
 // matched (see docs/workflows/classification-flow.md step 12 — "Plain postal letters or emails
@@ -75,7 +76,7 @@ export function refineClassification(
     return validated;
   }
 
-  const rb = ruleBasedClassify(rawText, filename, dictionary, personalNameDenylist);
+  const rb = ruleBasedClassify(rawText, filename, dictionary, personalNameDenylist, getPromptPersonalization());
   const result = { ...validated };
 
   if (validated.categorie === 'personal' || validated.categorie === 'other' || !validated.categorie || (validated.categorie === 'correspondence' && rb.categorie === 'administrative')) {
@@ -175,7 +176,7 @@ export function resolveSubcategory(
     // Before giving up and collapsing to 'general' (which triggers Golden Rule #4 block),
     // check if ruleBasedClassify can extract a valid, grounded subcategory fallback
     // (e.g. 'facture', 'bulletin_salaire', 'attestation_confirmation', 'cpf', 'bctc')
-    const rb = ruleBasedClassify(rawText, filename, getEntityDictionary(), personalNameDenylist);
+    const rb = ruleBasedClassify(rawText, filename, getEntityDictionary(), personalNameDenylist, getPromptPersonalization());
     if (rb.subcategorie && rb.subcategorie !== 'general' && !FORBIDDEN_SUBCATEGORIES.has(rb.subcategorie)) {
       const matchedFallbackSub = matchedCategory.subcategories.find(s =>
         s.id === rb.subcategorie || (s.aliases && s.aliases.some(a => {

@@ -24,14 +24,14 @@
 8. **Master AI Classification Decision Flow (Strict Priority Order)**:
    - **Step 1: Bank Statements**: Check header for Bank Name / IBAN ➔ Category `bank`, Subcategory = Bank Name (`credit_mutuel`, `societe_generale`, `bnp_paribas`, `boursobank`, `lcl`, `la_banque_postale`, `paypal`). **IGNORE** internal transaction rows (SFR, PayPal, Amazon).
    - **Step 2: Tax Documents**: Check `Avis d'impôt`, `DGFIP`, `Impôts` ➔ Category `administrative`, Subcategory `impot`. **NEVER** `correspondence`.
-   - **Step 3: Pay Slips**: Check `Bulletin de salaire`, `fiche de paie` ➔ Category `bulletin_salaire`, Subcategory = Employer/Enterprise Name (`employeur_x`, `globex`, `capgemini`).
+   - **Step 3: Pay Slips**: Check `Bulletin de salaire`, `fiche de paie` ➔ Category `bulletin_salaire`, Subcategory = the slugified Employer/Enterprise Name printed on the slip.
    - **Step 4: Health**: Check `Ameli`, `CPAM`, `Mutuelle` ➔ Category `health`.
    - **Step 5: Identity**: Check Passports, CNI, Titre de Séjour, Carte Vitale ➔ Category `identity`.
-   - **Step 6: Housing**: Check Domicile proofs, Foncia, Rent ➔ Category `housing`.
+   - **Step 6: Housing**: Check Domicile proofs, property-manager statements, Rent ➔ Category `housing`.
    - **Step 7: Insurance**: Check Allianz, Auto, Habitation policies ➔ Category `insurance`.
    - **Step 8: Invoices**: Check Factures, SFR, EDF ➔ Category `invoices`.
    - **Step 9: Contracts**: Check CDI, CDD, Work Contracts ➔ Category `contracts`.
-   - **Step 10: Education**: Check ECOLE_X, ECOLE_Y, Scolarité ➔ Category `education`.
+   - **Step 10: Education**: Check Scolarité, Diplôme, Relevé de notes, school/training-provider names ➔ Category `education`.
    - **Step 11: Recruitment**: Check Lettres de motivation, CV ➔ Category `recruitment`.
 9. **Structured Executive Summary (`💡 Executive Summary`)**: Generate a 3-5 sentence searchable Executive Summary for every document capturing: Issuing Organization, Key Identifiers/Ref #s, Financial Amounts/Dates, and Core Purpose. Displayed in a prominent highlight box on UI cards and indexed in SQLite FTS5 for instant search.
 10. **Clear Registry Rule (Move `__archive` files back to `__raws`)**: Clicking **🗑️ Clear Registry** (`DELETE /api/documents`) MUST move all PDF files currently in `__archive` back to `__raws` (`CONFIG.INPUT_DIR`), clean up empty folders, and purge SQLite database records!

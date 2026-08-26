@@ -12,7 +12,7 @@ There's no way today to turn a batch of these photos into a clean,
 upright, cropped, contrast-corrected PDF that's fit to drop into `__raws`
 for the existing triage pipeline to classify.
 
-A separate project, `pdf-awesome` (`D:\<user>\__projet\__master\pdf-awesome`),
+A separate project, `pdf-awesome` (`<workspace>\pdf-awesome`),
 already solves the crop/enhance problem client-side in the browser with
 manual controls (autocrop/edgecrop/floodcrop pixel-based detection, an
 auto-levels brightness/contrast algorithm, a fixed sharpening default,

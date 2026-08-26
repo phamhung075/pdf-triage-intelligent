@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../infrastructure/settings.js';
 import { preprocessRawText, formatLocalDate } from './classification.js';
+import { getPromptPersonalization } from '../infrastructure/prompt-personalization-store.js';
+import { renderPriorityRulesBlock, renderKnownEntitiesBlock } from './prompt-personalization.js';
 
 function loadPromptPart(filename: string, fallbackDefault: string): string {
   try {
@@ -24,7 +26,7 @@ Your ONLY task is to identify:
 1. "issuing_entity": The official issuing company, bank, employer, school, hospital, or government organization issuing this document.
    - Ignore employee names, personal customer names, or internal transaction rows!
 2. "document_type": The specific type of document (e.g. "Pay Slip", "Bank Statement", "Tax Assessment", "Invoice", "Work Contract", "Identity Document").
-
+{{USER_KNOWN_ENTITIES}}
 Filename: {{FILENAME}}
 
 Document Text Snippet:
@@ -33,7 +35,10 @@ Document Text Snippet:
 Respond ONLY with raw JSON:
 {"issuing_entity": "...", "document_type": "..."}`);
 
-  const user = template.replace('{{FILENAME}}', filename).replace('{{TEXT_SNIPPET}}', textSnippet);
+  const user = template
+    .replace(/\{\{USER_KNOWN_ENTITIES\}\}/g, renderKnownEntitiesBlock(getPromptPersonalization()))
+    .replace('{{FILENAME}}', filename)
+    .replace('{{TEXT_SNIPPET}}', textSnippet);
   const system = "You are a specialized document entity extraction agent. Respond ONLY in valid JSON.";
   return { system, user };
 }
@@ -103,7 +108,13 @@ export function buildClassificationPrompt(
     .replace('{{CATEGORIES_DESCRIPTION}}', categoriesDescriptionStr);
 
   const contactRules = loadPromptPart('contact_rules.md', '');
-  const classificationRules = loadPromptPart('classification_rules.md', '');
+  // classification_rules.md is committed and generic; the personal keyword overrides that used
+  // to be hardcoded into its STEP 1/2/5/6/7/10 keyword lists now come from the gitignored
+  // .prompts.private.json overlay and are injected as a STEP 0, ahead of the generic flow (a
+  // strict-order decision flow means an appended-at-the-end block would never fire for the
+  // document types these overrides exist to catch).
+  const classificationRules = loadPromptPart('classification_rules.md', '')
+    .replace(/\{\{USER_PRIORITY_RULES\}\}/g, renderPriorityRulesBlock(getPromptPersonalization()));
   const formattingRules = loadPromptPart('formatting_rules.md', '')
     .replace(/\{\{CURRENT_DATE\}\}/g, formatLocalDate(now));
   const jsonSchema = loadPromptPart('json_schema_response.json', '');

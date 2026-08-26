@@ -27,6 +27,22 @@ Serves on `http://127.0.0.1:8871` by default — matches `CONFIG.PADDLEOCR_HOST`
 exact command (`CONFIG.PADDLEOCR_SPAWN_CMD`) if the service isn't already reachable — see
 `ensurePaddleOcrServer()`.
 
+`startWebServer` also *kills* this process on boot (`takeOverPaddleOcrServer()`) so a `npm run dev`
+restart always reloads the code in this directory — a stale service answers `/health` perfectly
+well and would otherwise be reused indefinitely.
+
+## Endpoints
+
+| | |
+| --- | --- |
+| `GET /health` | Answers as soon as the process is up, **before** the models are warm. This is what the client's ~15s spawn poll waits on, so it must never block on model loading. |
+| `GET /ready` | `{ready, ocr, orientation, warming}` — whether the heavy models are actually loaded. Read lock-free, so it still answers during a multi-minute OCR pass. The client waits on this before starting its inference timeout, so a cold start no longer spends that budget on loading. `warming: false` with `ocr: false` means the warm-up finished or failed and nothing more is coming. |
+| `POST /ocr` | Text recognition. Serialized behind a per-model lock. |
+| `POST /orientation` | Document rotation. Serialized behind its own lock, so it never queues behind an OCR pass. |
+
+Both inference endpoints are sync `def`, not `async def`, so Starlette runs them in its threadpool
+and `/health` stays answerable while inference is running. See the comments in `main.py`.
+
 ## Testing
 
     pytest test_main.py -v

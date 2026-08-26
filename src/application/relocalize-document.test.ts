@@ -13,11 +13,17 @@ let dbPath: string;
 // operations (the actual thing being tested — atomic file moves, directory cleanup) never
 // touch the real project's __raws/__archive/pdf_triage.db.
 vi.mock('../infrastructure/settings.js', () => ({
+  // The locks live under DATA_DIR; nothing in this test cares where, only that it exists.
+  get DATA_DIR() { return os.tmpdir(); },
   get CONFIG() {
     return {
       INPUT_DIR: inputDir,
       OUTPUT_ROOT_DIR: outputDir,
       DB_PATH: dbPath,
+      // reclassifyAndRelocalizeDocument() calls recordManualDecision(), which is NOT mocked here.
+      // Without this key the store used to fall back to a relative path and append this suite's
+      // fixtures to the real manual_decisions.json in the repo root.
+      MANUAL_DECISIONS_FILE: path.join(tempRoot, 'manual_decisions.json'),
       PERSONAL_NAME_DENYLIST: [] as string[],
     };
   },
@@ -356,6 +362,95 @@ describe('reclassifyAndRelocalizeDocument', () => {
     expect(doc?.category).toBe('telecom');
     expect(doc?.subcategory).toBe('orange');
     expect(doc?.title).toBe('Facture Orange Corrigee');
+  });
+
+  it('keeps the stored text when the re-extraction fell back to the degraded OCR engine', async () => {
+    // The bug this pins down: the file's bytes never changed, but a PaddleOCR 500 sent the
+    // re-extraction through Tesseract, and the old '> 10 chars' test — a liveness check, not a
+    // quality one — happily let 346 chars of OCR noise replace 433 chars of clean text. The
+    // classification, title and date were then rebuilt from the noise, and the document was
+    // physically moved into the wrong year folder.
+    const { database, relocalize } = await fresh();
+    const archivedDir = path.join(outputDir, 'identity', 'permis_conduire', '2026');
+    fs.mkdirSync(archivedDir, { recursive: true });
+    const file = path.join(archivedDir, 'permis.pdf');
+    fs.writeFileSync(file, 'dummy');
+    extractPDFContentMock.mockResolvedValue({
+      checksum: 'x',
+      raw_text: '3 > U NI NV me : = a LBD pa Se To',
+      numpages: 2,
+      info: {},
+      ocr_degraded: true,
+    });
+    classifyPDFTextMock.mockResolvedValue({ categorie: 'identity', subcategorie: 'permis_conduire' });
+
+    const id = await database.insertDocumentRecord(sampleDoc({
+      new_path: file,
+      original_filename: 'permis.pdf',
+      category: 'identity',
+      subcategory: 'permis_conduire',
+      raw_text: 'PERMIS DE CONDUIRE 1. NOM 2. PRENOM 3. 01.01.1990',
+    }));
+
+    await relocalize.reclassifyAndRelocalizeDocument(id);
+
+    expect(classifyPDFTextMock).toHaveBeenCalledWith(
+      'PERMIS DE CONDUIRE 1. NOM 2. PRENOM 3. 01.01.1990',
+      'permis.pdf',
+      undefined
+    );
+    const doc = await database.getDocumentById(id);
+    expect(doc?.raw_text).toBe('PERMIS DE CONDUIRE 1. NOM 2. PRENOM 3. 01.01.1990');
+  });
+
+  it('accepts a degraded re-extraction when there is no stored text to protect', async () => {
+    // Degraded text still beats no text — the guard exists to prevent a downgrade, not to make
+    // re-analysis impossible for a document that never had usable text in the first place.
+    const { database, relocalize } = await fresh();
+    const archivedDir = path.join(outputDir, 'invoices', 'sfr', '2026');
+    fs.mkdirSync(archivedDir, { recursive: true });
+    const file = path.join(archivedDir, 'facture.pdf');
+    fs.writeFileSync(file, 'dummy');
+    extractPDFContentMock.mockResolvedValue({
+      checksum: 'x',
+      raw_text: 'degraded but genuinely present text',
+      numpages: 1,
+      info: {},
+      ocr_degraded: true,
+    });
+    classifyPDFTextMock.mockResolvedValue({ categorie: 'invoices', subcategorie: 'sfr' });
+
+    const id = await database.insertDocumentRecord(sampleDoc({ new_path: file, raw_text: '' }));
+
+    await relocalize.reclassifyAndRelocalizeDocument(id);
+
+    expect(classifyPDFTextMock).toHaveBeenCalledWith('degraded but genuinely present text', 'facture.pdf', undefined);
+  });
+
+  it('persists the freshly extracted raw_text when it is the text the classification used', async () => {
+    // Otherwise the record contradicts itself: updateDocumentRecord rewrote title/date/summary/
+    // markdown from the new text but left raw_text at the old value, so the stored evidence no
+    // longer matched the stored conclusion and the UI showed no sign anything had gone wrong.
+    const { database, relocalize } = await fresh();
+    const archivedDir = path.join(outputDir, 'invoices', 'sfr', '2026');
+    fs.mkdirSync(archivedDir, { recursive: true });
+    const file = path.join(archivedDir, 'facture.pdf');
+    fs.writeFileSync(file, 'dummy');
+    extractPDFContentMock.mockResolvedValue({
+      checksum: 'x',
+      raw_text: 'Some genuinely re-extracted content here',
+      numpages: 1,
+      info: {},
+      ocr_degraded: false,
+    });
+    classifyPDFTextMock.mockResolvedValue({ categorie: 'invoices', subcategorie: 'sfr' });
+
+    const id = await database.insertDocumentRecord(sampleDoc({ new_path: file, raw_text: 'contenu original' }));
+
+    await relocalize.reclassifyAndRelocalizeDocument(id);
+
+    const doc = await database.getDocumentById(id);
+    expect(doc?.raw_text).toBe('Some genuinely re-extracted content here');
   });
 
   it('falls back to the existing raw_text for classification when re-extraction yields too little text', async () => {

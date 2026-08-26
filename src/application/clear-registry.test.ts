@@ -16,6 +16,9 @@ let dbPath: string;
 // See scan-lock.test.ts for why BASE_DIR specifically needs this (it's a hardcoded
 // literal in the real settings.ts, not process.env-configurable).
 vi.mock('../infrastructure/settings.js', () => ({
+  // DATA_DIR falls back to BASE_DIR when PDF_TRIAGE_DATA_DIR is unset, which is what a git
+  // checkout does — so the lock files land in the same temp dir the rest of the test uses.
+  get DATA_DIR() { return tempBaseDir; },
   get BASE_DIR() { return tempBaseDir; },
   get CONFIG() {
     return {

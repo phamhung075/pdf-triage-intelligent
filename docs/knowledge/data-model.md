@@ -36,9 +36,26 @@ Primary record. Created in `src/infrastructure/db/database.ts` `initSchema()`.
 Created with a `try/catch` — some SQLite builds lack FTS5.
 
 Columns (all TEXT except `doc_id UNINDEXED`):
-`doc_id, title, registre, summary, category, subcategory, tags, raw_text`
+`doc_id, title, original_filename, original_path, new_path, registre, summary, category, subcategory, tags, raw_text`
 
 Rewritten on every insert / update / relocalize.
+
+### Schema drift is detected and repaired
+
+`CREATE VIRTUAL TABLE IF NOT EXISTS` is a **no-op against an existing table**, so it does not
+migrate one whose columns have drifted. That bit hard: the on-disk table kept its original 7
+columns while the INSERTs grew to 11, every insert failed at prepare, and the failure landed in an
+empty `catch` — the index sat at **0 rows against a full corpus** for the life of the database, and
+Golden Rule #12 (full-text search) was quietly false the whole time.
+
+`initSchema()` now compares `PRAGMA table_info(documents_fts)` against the expected column list. On
+a mismatch it logs the drift, drops and recreates the table; and whenever the index is empty while
+`documents` is not, it backfills from `documents` in one `INSERT … SELECT`. Both paths are
+idempotent, so a healthy database pays only two `COUNT(*)` queries per startup.
+
+The write sites no longer swallow failures either — a genuine breakage warns once per process
+(`warnFtsWriteFailure`) instead of vanishing, while a SQLite build that truly lacks FTS5 does not
+spam the log.
 
 ## `categories_db` table
 
@@ -113,9 +130,9 @@ Emitted by `classifyPDFText()`; validated by `DocumentMetadataSchema` (Zod). Use
   "registre": "N°BS-000123",
   "date": "2024-05-31",
   "categorie": "bulletin_salaire",
-  "subcategorie": "employeur_x",
-  "summary": "Bulletin de salaire mensuel émis par EmployeurX pour mai 2024, salaire brut 3200€, net 2450€…",
-  "tags": ["bulletin_salaire", "employeur_x", "salaire"],
+  "subcategorie": "acme_corp",
+  "summary": "Bulletin de salaire mensuel émis par ACME CORP pour mai 2024, salaire brut 3200€, net 2450€…",
+  "tags": ["bulletin_salaire", "acme_corp", "salaire"],
   "markdown_content": "# Bulletin de salaire — Mai 2024\n\n| Champ | Valeur |\n|---|---|\n…",
   "other": {}
 }

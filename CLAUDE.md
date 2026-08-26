@@ -1,12 +1,12 @@
 # CLAUDE.md — Project Bootstrap
 
-This file is loaded first by Claude Code. Everything else lives in `docs/`.
+This file is loaded first by Claude Code. Everything else lives in `docs/`. Together, `CLAUDE.md` + `docs/` are the single source of truth for how this project works *now*; [CHANGELOG.md](CHANGELOG.md) is the dated record of how it got there — every notable change updates both in the same turn.
 
 ## What this project is
 
 Local-first **PDF Triage & Agentic Registry** — TypeScript + Node.js + Express + SQLite (+FTS5) + Ollama Qwen 3.5. Watches `__raws`, extracts text, classifies each document, writes SQLite + JSON registry mirrors, moves the file to a canonical `__archive/<category>/<subcategory>/<YYYY>/` folder, and pushes SSE updates to a web dashboard. Also exposes MCP tools for external agents.
 
-Incoming **photos** (`.jpg/.png/.webp/.bmp/.tiff`) are not archived as images: they run through the vision pipeline (orient → crop → enhance → OCR) and are filed as single-page A4 PDFs — see `src/application/convert-image-document.ts`. OCR is **PaddleOCR first** (local FastAPI service in `paddleocr-server/`), with Tesseract.js as an availability fallback.
+Incoming **photos** (`.jpg/.png/.webp/.bmp/.tiff`) are not archived as images: they run through the vision pipeline (orient → crop → enhance → OCR) and are filed as A4 PDFs — see `src/application/convert-image-document.ts`. A **folder** in `__raws` holding only photos (2+) is bundled into ONE multi-page PDF named after the folder, pages ordered numerically (`IMG_2` before `IMG_10`); a lone photo, or a folder mixing photos with anything else, is triaged file-by-file as before. OCR is **PaddleOCR first** (local FastAPI service in `paddleocr-server/`), with Tesseract.js as an availability fallback.
 
 Full overview: [docs/overview.md](docs/overview.md).
 
@@ -59,23 +59,28 @@ The plugin also ships `.claude/plugins/superpowers/docs/` — Superpowers' own d
 - **Every mutation** broadcasts SSE.
 - **Every category/subcategory** is auto-created (in `.categories.private.json`, never in the committed `categories.json`) **before** moving the file — see `categories-store.ts`.
 - **Never** accept `general`/`other`/`divers`/year as a final subcategory — BLOCK and keep in `__raws`.
+- **Never hardcode personal data in `prompts/` or `classification.ts`.** Both are committed and publishable. Real employers, bank product/filename codes, clinics, schools and scanner prefixes go in the gitignored `.prompts.private.json`, which feeds BOTH paths — the prompt via `{{USER_PRIORITY_RULES}}` / `{{USER_KNOWN_ENTITIES}}`, and `ruleBasedClassify` via `matchPriorityRules()`. One source for both is what keeps them aligned. See [docs/knowledge/taxonomy.md](docs/knowledge/taxonomy.md#personal-prompt-overlay). `src/domain/prompt-hygiene.test.ts` fails the build on a leak.
+- **No speculative DDD scaffolding.** An earlier incomplete refactor left 865 lines of unwired aggregates, repositories, use-cases, adapters, controllers and a DI container that nothing imported; they were deleted. The wired 3-layer design (`index.ts` → `http/web-server.ts` → `application/*` → `domain/*` + `infrastructure/*`) plus parameter-injected, unit-tested domain functions is the architecture. Do not reintroduce a DI container, aggregate classes, a domain-event bus, a unit of work, or a command/query dispatcher — Zod validates at the boundary, `index.ts` is the composition root, and the SSE broadcast callback is the event mechanism.
 - **Only** Qwen 3.5 (`qwen3.5:9b`).
 - **Toast** for all UI feedback, never `alert()`.
 - **Never re-apply EXIF orientation.** `@napi-rs/canvas` and OpenCV (PaddleOCR) both apply the tag on decode, so buffers are EXIF-normalized once at the pipeline entry (`normalizeOrientation`) and `exifDegrees` is `null` by design. Treating the tag as a rotation still owed double-rotates the image.
 - **Never reintroduce a texture gate** in the crop detector. Measured on 16 real photos, the document interior is LESS textured than the background on 9 of them — the signal is inverted on half the corpus and cannot be fixed by re-thresholding. See the header of `src/domain/flood-crop.ts`.
-- **Never delete a source image before its PDF is on disk** (`convert-image-document.ts`). Conversion is an enhancement, never a gate: if it fails, triage the photo as-is rather than blocking a readable document.
+- **Never delete a source image.** Once its PDF is on disk, `convert-image-document.ts` MOVES the photo to `__raws/.delete_files/img_converted/` (collision-suffixed), it does not unlink it — the archived PDF holds an oriented, cropped, JPEG-re-encoded rendition, so a bad crop is only recoverable from the original. `pdf-scanner.ts` skips every dot-directory, so parked photos are never re-triaged; the folder grows without bound and is the user's to prune. Conversion is an enhancement, never a gate: if it fails, triage the photo as-is rather than blocking a readable document.
 
 ## Repo layout
 
 ```
 pdf_triage/
 ├── CLAUDE.md                  # this file
+├── CHANGELOG.md               # dated, grouped record of every notable change — updated alongside docs/code
 ├── AGENTS.md                  # user-authored directives (legacy summary)
 ├── AGENT_REQUIREMENTS.md      # user-authored full spec (referenced by golden-rules.md)
 ├── LICENSE                    # MIT
 ├── categories.json            # PUBLIC, generic starter taxonomy (committed) — top-level categories only
 ├── .categories.private.json   # PRIVATE taxonomy overlay (gitignored) — real auto-created subcategories; merged with categories.json at runtime by categories-store.ts
 ├── entity_dictionary.json     # curated generic entity reference (banks, telecoms, etc.) — safe to commit, not personal
+├── prompts.private.json.example # committed template for .prompts.private.json
+├── .prompts.private.json      # PRIVATE prompt overlay (gitignored) — your real employers, bank product/filename codes, clinics, scanner prefixes; injected into the generic prompts/ templates at build time by prompt-personalization-store.ts
 ├── settings.json               # runtime config (gitignored — contains real folder paths); see settings.json.example for the template
 ├── settings.json.example      # committed template for settings.json
 ├── .env.example                # committed template for .env (gitignored) — BASE_DIR override, ports, Ollama host, etc.
@@ -104,30 +109,28 @@ pdf_triage/
 │   │   ├── document.schema.ts         # Zod schemas
 │   │   ├── classification.ts          # ruleBasedClassify, cleanAndParseJSON, entity matching, normalizeSlug
 │   │   ├── prompt.ts                  # Qwen prompt building (Step A/C/D)
+│   │   ├── prompt-personalization.ts  # schema + rendering for the private prompt overlay (.prompts.private.json)
 │   │   ├── classification-resolution.ts  # refine/resolve category & subcategory, entity-priority override
 │   │   ├── taxonomy.ts                # isForbiddenSubcategory, computeCanonicalPath
 │   │   ├── pdf-text.ts                # cleanExtractedText
 │   │   ├── pdf-page-fit.ts            # fitImageToA4 — pure page geometry for photo-to-PDF pages
 │   │   ├── image-adjust.ts            # pure auto-levels/sharpen math for the Vision Lab pipeline (ported from pdf-awesome)
-│   │   ├── model/                     # ⚠️ NOT WIRED IN — orphaned DDD entities from an incomplete refactor,
-│   │   │                              #   never imported by index.ts/web-server.ts. Dead code, not the real architecture.
-│   │   └── repositories/              # ⚠️ NOT WIRED IN — same orphaned refactor (interface definitions only)
 │   ├── application/                   # orchestration / use-cases
 │   │   ├── classify-document.ts       # classifyPDFText orchestrator (Step A entity + Step C markdown + Step D classify)
 │   │   ├── triage-scan.ts             # runTriageScan — the real, live-wired scan pipeline
 │   │   ├── ai-chat-assistant.ts       # local chat assistant grounded in the document registry (via MCP prepare_dossier)
 │   │   ├── image-to-pdf.ts            # Vision Lab step functions: runOrientStep/runCropStep/runEnhanceStep/runExtractStep
-│   │   ├── convert-image-document.ts  # convertImageToPdf — photo in __raws -> archivable A4 PDF + its OCR text (used by triage-scan)
+│   │   ├── convert-image-document.ts  # convertImageToPdf — photo in __raws -> archivable A4 PDF + its OCR text (used by triage-scan); source photo kept in .delete_files/img_converted
 │   │   ├── repair-registry.ts
 │   │   ├── relocalize-document.ts
 │   │   ├── clear-registry.ts
 │   │   ├── scan-lock.ts
-│   │   └── use-cases/                 # ⚠️ NOT WIRED IN — orphaned DDD use-cases, same incomplete refactor as domain/model
 │   └── infrastructure/                # I/O adapters
 │       ├── settings.ts                # CONFIG, BASE_DIR (defaults to process.cwd(), overridable via PDF_TRIAGE_BASE_DIR)
 │       ├── logger.ts
 │       ├── categories-store.ts        # merges categories.json (public) + .categories.private.json (private) on read; diffs writes to the private file only
 │       ├── entity-dictionary-store.ts # entity_dictionary.json read
+│       ├── prompt-personalization-store.ts # .prompts.private.json read (personal prompt overlay)
 │       ├── manual-decisions-store.ts  # manual_decisions.json read/write (user feedback log, gitignored)
 │       ├── zip-builder.ts             # pure-TS ZIP archive builder (no native deps) — PDF package export + bulk Markdown export
 │       ├── ollama-client.ts
@@ -140,9 +143,6 @@ pdf_triage/
 │       ├── db/database.ts
 │       ├── json-registry.ts
 │       ├── http/web-server.ts         # all real REST/SSE routes live here
-│       ├── http/controllers/          # ⚠️ NOT WIRED IN — orphaned DDD controller, same incomplete refactor
-│       ├── adapters/                  # ⚠️ NOT WIRED IN — orphaned DDD adapters, same incomplete refactor
-│       ├── di/container.ts            # ⚠️ NOT WIRED IN — orphaned DI container, only imported by the orphaned DocumentController
 │       └── mcp/mcp-server.ts
 ├── public/                    # UI — public/ts/ (source) compiled to public/js/ (served), public/scss/ (source) compiled to public/style.css (served), public/js/vendor/ (marked.js, vendored not CDN)
 │   └── test-image-to-pdf.html # standalone Vision Lab diagnostic page (served by vision-lab-server.ts, not the main app)
@@ -157,7 +157,10 @@ pdf_triage/
 - `npm run scan` — one-shot triage scan.
 - `npm run mcp` — MCP stdio server.
 - `npm run vision:dev` — standalone Vision Lab diagnostic server (port `3179`), run independently of `npm run dev`.
-- `npm run build` — `build:css` + `tsc` (backend) + `tsc -p tsconfig.frontend.json` (frontend).
+- `npm run build` — `clean:dist` + `build:css` + `tsc` (backend) + `tsc -p tsconfig.frontend.json` (frontend).
+- `npm run clean:dist` — removes `dist/`. Runs first in `build` because `tsc` never prunes output for
+  deleted sources, and `package.json`'s `build.files` ships `dist/**/*` — so orphaned `.js` from a
+  removed module would otherwise be packaged into the `.exe` forever.
 - `npm run build:css` — compile `public/scss/style.scss` → `public/style.css`.
 - `npm run watch:css` — `sass --watch` for local SCSS development.
 - `npm run build:frontend` — `build:css` + compile `public/ts/*.ts` → `public/js/*.js`. Run this after editing any `public/ts/*.ts` file — nothing recompiles it automatically.

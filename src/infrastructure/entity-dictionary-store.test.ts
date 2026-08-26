@@ -60,3 +60,51 @@ describe('getEntityDictionary', () => {
     consoleErrorSpy.mockRestore();
   });
 });
+
+describe('getEntityDictionary caching', () => {
+  it('does not re-read the file on a second call when nothing changed', async () => {
+    fs.writeFileSync(entityFile, JSON.stringify({
+      banks: [{ slug: 'bnp', name: 'BNP', aliases: [] }],
+    }));
+    const { getEntityDictionary } = await fresh();
+
+    const readSpy = vi.spyOn(fs, 'readFileSync');
+    const first = getEntityDictionary();
+    const second = getEntityDictionary();
+
+    expect(readSpy).toHaveBeenCalledTimes(1); // second call served from cache
+    expect(second).toBe(first);               // same object identity, not a re-parse
+    readSpy.mockRestore();
+  });
+
+  it('picks up an edit to the dictionary made while the process is running', async () => {
+    fs.writeFileSync(entityFile, JSON.stringify({
+      banks: [{ slug: 'bnp', name: 'BNP', aliases: [] }],
+    }));
+    const { getEntityDictionary } = await fresh();
+    expect(getEntityDictionary().banks.map(b => b.slug)).toEqual(['bnp']);
+
+    // Rewrite with different content AND bump mtime, the way an editor save would.
+    fs.writeFileSync(entityFile, JSON.stringify({
+      banks: [{ slug: 'bnp', name: 'BNP', aliases: [] }, { slug: 'sg', name: 'Societe Generale', aliases: [] }],
+    }));
+    const future = new Date(Date.now() + 5000);
+    fs.utimesSync(entityFile, future, future);
+
+    expect(getEntityDictionary().banks.map(b => b.slug)).toEqual(['bnp', 'sg']);
+  });
+
+  it('retries instead of caching the empty fallback when the file is malformed', async () => {
+    fs.writeFileSync(entityFile, '{half-written');
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { getEntityDictionary } = await fresh();
+    expect(getEntityDictionary().banks).toEqual([]);
+
+    // The save completes; the very next call must see the good content.
+    fs.writeFileSync(entityFile, JSON.stringify({
+      banks: [{ slug: 'lcl', name: 'LCL', aliases: [] }],
+    }));
+    expect(getEntityDictionary().banks.map(b => b.slug)).toEqual(['lcl']);
+    consoleErrorSpy.mockRestore();
+  });
+});

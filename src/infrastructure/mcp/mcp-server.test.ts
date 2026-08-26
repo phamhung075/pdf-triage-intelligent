@@ -18,6 +18,7 @@ vi.mock('../categories-store.js', () => ({
 vi.mock('../../application/relocalize-document.js', () => ({
   relocalizeFileIfNeeded: vi.fn(() => ({ newPath: '', moved: false })),
   ensureCategoryAndSubcategoryExist: vi.fn(),
+  findActualFileOnDisk: vi.fn(() => null),
 }));
 
 vi.mock('../json-registry.js', () => ({
@@ -89,7 +90,7 @@ function sampleDoc(overrides: Record<string, any> = {}) {
 }
 
 describe('listMcpTools', () => {
-  it('lists all 8 tools with the expected names', async () => {
+  it('lists all 9 tools with the expected names', async () => {
     const { mcpServer } = await freshMcp();
     const result = await mcpServer.listMcpTools();
     const names = result.tools.map(t => t.name);
@@ -102,6 +103,7 @@ describe('listMcpTools', () => {
       'prepare_dossier',
       'get_document_markdown',
       'open_document_folder',
+      'package_documents',
     ]);
     // docId is required on the tools that need it
     expect(result.tools.find(t => t.name === 'get_full_document_text')?.inputSchema.required).toEqual(['docId']);
@@ -339,6 +341,57 @@ describe('handleMcpToolCall — list_categories', () => {
 
     const result = await mcpServer.handleMcpToolCall('list_categories', {});
     expect(JSON.parse(result.content[0].text)).toEqual(categories);
+  });
+});
+
+describe('handleMcpToolCall — package_documents', () => {
+  it('errors when neither docIds nor dossierType is provided', async () => {
+    const { mcpServer } = await freshMcp();
+    const result = await mcpServer.handleMcpToolCall('package_documents', {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe('Error: provide either docIds or dossierType.');
+  });
+
+  it('errors when every resolved document has no file on disk', async () => {
+    const { database, relocalize, mcpServer } = await freshMcp();
+    vi.mocked(relocalize.findActualFileOnDisk).mockReturnValue(null);
+    const id = await database.insertDocumentRecord(sampleDoc({ checksum: 'nofile' }));
+
+    const result = await mcpServer.handleMcpToolCall('package_documents', { docIds: [id] });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(`Missing IDs: ${id}`);
+  });
+
+  it('builds a real zip on disk for docIds resolving to a file, reporting included and missing IDs', async () => {
+    const { database, relocalize, mcpServer } = await freshMcp();
+    const settings = await import('../settings.js');
+
+    const tempFile = path.join(os.tmpdir(), `mcp-package-test-${Date.now()}.pdf`);
+    fs.writeFileSync(tempFile, 'dummy pdf bytes');
+    let zipPath: string | undefined;
+
+    try {
+      const foundId = await database.insertDocumentRecord(sampleDoc({ checksum: 'pkg-found', title: 'Found Doc' }));
+      const missingId = await database.insertDocumentRecord(sampleDoc({ checksum: 'pkg-missing', title: 'Missing Doc' }));
+
+      vi.mocked(relocalize.findActualFileOnDisk).mockImplementation((doc: any) => doc.id === foundId ? tempFile : null);
+
+      const result = await mcpServer.handleMcpToolCall('package_documents', { docIds: [foundId, missingId], zipName: 'unit_test_pack' });
+      expect(result.isError).toBeUndefined();
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.fileCount).toBe(1);
+      expect(parsed.includedDocIds).toEqual([foundId]);
+      expect(parsed.missingDocIds).toEqual([missingId]);
+      expect(parsed.zipPath).toBe(path.join(settings.BASE_DIR, '__packages', 'unit_test_pack.zip'));
+
+      zipPath = parsed.zipPath;
+      expect(fs.existsSync(zipPath!)).toBe(true);
+      expect(fs.readFileSync(zipPath!).slice(0, 4).toString('hex')).toBe('504b0304'); // PK.. zip magic bytes
+    } finally {
+      if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+      if (zipPath && fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    }
   });
 });
 
