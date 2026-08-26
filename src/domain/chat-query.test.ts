@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { StructuredQuerySchema, buildFtsMatchExpression, type StructuredQuery } from './chat-query.js';
+import { StructuredQuerySchema, buildFtsMatchExpression, planQueryHeuristic, relaxQuery, type StructuredQuery } from './chat-query.js';
 
 function q(overrides: Partial<StructuredQuery> = {}): StructuredQuery {
   return { docTypes: [], entities: [], keywords: [], notTerms: [], ...overrides };
@@ -85,5 +85,80 @@ describe('buildFtsMatchExpression', () => {
 
   it('trims surrounding whitespace and de-duplicates case-insensitively within a facet', () => {
     expect(buildFtsMatchExpression(q({ keywords: ['  RIB  ', 'rib', 'Rib'] }))).toBe('("RIB")');
+  });
+});
+
+describe('planQueryHeuristic', () => {
+  it('drops French stopwords and the filler that polluted the old scorer', () => {
+    const plan = planQueryHeuristic("RIB de credit mutuel j'ai besoin");
+    expect(plan.keywords).not.toContain('besoin');
+    expect(plan.keywords).not.toContain('de');
+    expect(plan.keywords.map(k => k.toLowerCase())).toEqual(
+      expect.arrayContaining(['rib', 'credit', 'mutuel'])
+    );
+  });
+
+  it('promotes a token matching a known tag into the entities facet', () => {
+    const plan = planQueryHeuristic('relevé credit_mutuel 2023', ['credit_mutuel', 'rib']);
+    expect(plan.entities).toContain('credit_mutuel');
+    expect(plan.keywords).not.toContain('credit_mutuel');
+  });
+
+  it('extracts a bare year into an ISO date range and out of the keywords', () => {
+    const plan = planQueryHeuristic('relevé de compte 2023');
+    expect(plan.dateFrom).toBe('2023-01-01');
+    expect(plan.dateTo).toBe('2023-12-31');
+    expect(plan.keywords).not.toContain('2023');
+  });
+
+  it('ignores a 4-digit number that is not a plausible document year', () => {
+    const plan = planQueryHeuristic('facture 9999');
+    expect(plan.dateFrom).toBeUndefined();
+  });
+
+  it('produces a compilable expression for a realistic query', () => {
+    expect(buildFtsMatchExpression(planQueryHeuristic('bulletin de salaire'))).not.toBeNull();
+  });
+
+  it('returns an all-empty plan for a message of pure stopwords, so the caller falls back', () => {
+    const plan = planQueryHeuristic("j'ai besoin de le la les");
+    expect(buildFtsMatchExpression(plan)).toBeNull();
+  });
+});
+
+describe('relaxQuery', () => {
+  const full: StructuredQuery = {
+    docTypes: ['rib'], entities: ['credit mutuel'], keywords: ['2023'], notTerms: ['relevé'],
+  };
+
+  it('drops keywords first — the weakest facet', () => {
+    const r = relaxQuery(full)!;
+    expect(r.keywords).toEqual([]);
+    expect(r.notTerms).toEqual(['relevé']);
+    expect(r.entities).toEqual(['credit mutuel']);
+  });
+
+  it('drops notTerms second', () => {
+    const r = relaxQuery(relaxQuery(full)!)!;
+    expect(r.notTerms).toEqual([]);
+    expect(r.entities).toEqual(['credit mutuel']);
+  });
+
+  it('drops entities third, keeping the document type longest', () => {
+    const r = relaxQuery(relaxQuery(relaxQuery(full)!)!)!;
+    expect(r.entities).toEqual([]);
+    expect(r.docTypes).toEqual(['rib']);
+  });
+
+  it('returns null once only docTypes remain, so the ladder terminates', () => {
+    let q: StructuredQuery | null = full;
+    for (let i = 0; i < 3; i++) q = relaxQuery(q!);
+    expect(relaxQuery(q!)).toBeNull();
+  });
+
+  it('preserves the taxonomy and date filters at every rung', () => {
+    const r = relaxQuery({ ...full, category: 'bank', dateFrom: '2023-01-01' })!;
+    expect(r.category).toBe('bank');
+    expect(r.dateFrom).toBe('2023-01-01');
   });
 });

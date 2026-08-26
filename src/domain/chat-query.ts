@@ -94,3 +94,73 @@ export function buildFtsMatchExpression(q: StructuredQuery): string | null {
   // apply the exclusion to one facet only. Parenthesise the whole positive side.
   return `(${positive}) NOT (${nots.map(toFtsPhrase).join(' OR ')})`;
 }
+
+/**
+ * French and English function words plus the conversational filler people put in a chat box
+ * ("j'ai besoin", "peux-tu"). The old scorer had no stopword list at all, so `besoin` was a
+ * search term with the same standing as `rib`.
+ */
+const STOPWORDS = new Set([
+  'ai', 'aux', 'avec', 'avoir', 'besoin', 'cette', 'ces', 'dans', 'des', 'donne', 'donner',
+  'elle', 'est', 'et', 'eux', 'faire', 'fait', 'iel', 'ils', 'les', 'leur', 'mais', 'merci',
+  'mes', 'moi', 'mon', 'nos', 'notre', 'nous', 'ont', 'ou', 'par', 'pas', 'peux', 'peut',
+  'plus', 'pour', 'pouvez', 'quel', 'quelle', 'quels', 'quelles', 'que', 'qui', 'sur', 'ses',
+  'son', 'sont', 'tous', 'tout', 'toute', 'toutes', 'trouve', 'trouver', 'une', 'veux',
+  'voir', 'vos', 'votre', 'vous',
+  'a', 'about', 'all', 'and', 'any', 'are', 'can', 'find', 'for', 'from', 'get', 'give',
+  'have', 'i', 'is', 'me', 'my', 'need', 'of', 'please', 'show', 'some', 'the', 'to', 'want',
+  'with', 'you', 'your',
+]);
+
+/** Bounds a bare 4-digit number to something that could plausibly be a document year. */
+function isPlausibleDocumentYear(n: number): boolean {
+  return n >= 1950 && n <= 2100;
+}
+
+/**
+ * Deterministic, zero-I/O planner. This is the fallback that keeps the chat usable when Ollama
+ * is stopped or returns unparseable JSON, and the fast path for the eval harness's --no-llm mode.
+ * It is deliberately dumber than the model: stopwords out, years into a date range, tokens that
+ * match a known tag promoted to entities, everything else a keyword.
+ */
+export function planQueryHeuristic(userMessage: string, knownTags: string[] = []): StructuredQuery {
+  const tagSet = new Set(knownTags.map(t => t.toLowerCase()));
+  const entities: string[] = [];
+  const keywords: string[] = [];
+  let dateFrom: string | undefined;
+  let dateTo: string | undefined;
+
+  const tokens = userMessage
+    .toLowerCase()
+    .split(/[\s,.;:!?/\\'"()[\]]+/)
+    .map(t => t.trim())
+    .filter(Boolean);
+
+  for (const token of tokens) {
+    if (/^\d{4}$/.test(token)) {
+      const year = parseInt(token, 10);
+      if (isPlausibleDocumentYear(year)) {
+        dateFrom = `${year}-01-01`;
+        dateTo = `${year}-12-31`;
+        continue;
+      }
+    }
+    if (token.length <= 2 || STOPWORDS.has(token)) continue;
+    if (tagSet.has(token)) entities.push(token);
+    else keywords.push(token);
+  }
+
+  return StructuredQuerySchema.parse({ entities, keywords, dateFrom, dateTo });
+}
+
+/**
+ * One rung down the relaxation ladder: keywords, then notTerms, then entities. Returns null when
+ * only docTypes (and the filters) remain — the document type is what the user is least willing to
+ * compromise on, so it is never dropped, and the ladder must terminate.
+ */
+export function relaxQuery(q: StructuredQuery): StructuredQuery | null {
+  if (q.keywords.length > 0) return { ...q, keywords: [] };
+  if (q.notTerms.length > 0) return { ...q, notTerms: [] };
+  if (q.entities.length > 0) return { ...q, entities: [] };
+  return null;
+}
