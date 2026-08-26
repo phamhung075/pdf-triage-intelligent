@@ -448,6 +448,86 @@ export async function getDocumentByChecksum(checksum: string): Promise<DocumentR
   return db.get<DocumentRecord>('SELECT * FROM documents WHERE checksum = ?', [checksum]);
 }
 
+export interface FtsSearchFilters {
+  category?: string;
+  subcategory?: string;
+  /** Inclusive ISO YYYY-MM-DD bound compared against documents.date, which is stored ISO. */
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+/**
+ * Column weights for bm25(), in documents_fts schema order. Title and tags carry the signal:
+ * tags hold the document type (a RIB is tagged 'rib', a statement 'releve_compte') which is the
+ * dimension the old substring scorer had no way to express.
+ *
+ * raw_text is deliberately 0.5. It earns its place on recall — it is what surfaces a document
+ * whose title was corrupted by OCR — but a word buried in four pages must never outweigh a word
+ * in the title, which is exactly how account statements crowded out the RIB.
+ */
+const BM25_WEIGHTS = [
+  0.0,  // doc_id (UNINDEXED)
+  10.0, // title
+  1.0,  // original_filename
+  1.0,  // original_path
+  1.0,  // new_path
+  1.0,  // registre
+  3.0,  // summary
+  2.0,  // category
+  2.0,  // subcategory
+  6.0,  // tags
+  0.5,  // raw_text
+].join(',');
+
+/**
+ * Ranked full-text search over documents_fts.
+ *
+ * Filters are applied in SQL, not in JavaScript afterwards: a filter applied after LIMIT would
+ * silently return fewer rows than asked for.
+ *
+ * Throws if the expression is malformed or SQLite was built without FTS5. Callers must catch and
+ * degrade — the chat must never surface a search error to the user.
+ */
+export async function searchDocumentsFts(
+  matchExpr: string,
+  filters: FtsSearchFilters = {},
+  limit: number = 10
+): Promise<DocumentRecord[]> {
+  const db = await getDb();
+  const conditions: string[] = ['documents_fts MATCH ?'];
+  const params: Array<string | number> = [matchExpr];
+
+  if (filters.category) {
+    conditions.push('d.category = ?');
+    params.push(filters.category);
+  }
+  if (filters.subcategory) {
+    conditions.push('d.subcategory = ?');
+    params.push(filters.subcategory);
+  }
+  // Documents with an empty date are excluded from a bounded search rather than sorting as '' —
+  // 72 of 861 have no date and would otherwise all pass a >= filter.
+  if (filters.dateFrom) {
+    conditions.push("d.date <> '' AND d.date >= ?");
+    params.push(filters.dateFrom);
+  }
+  if (filters.dateTo) {
+    conditions.push("d.date <> '' AND d.date <= ?");
+    params.push(filters.dateTo);
+  }
+  params.push(limit);
+
+  return db.all<DocumentRecord[]>(
+    `SELECT d.*
+       FROM documents_fts f
+       JOIN documents d ON d.id = f.doc_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY bm25(documents_fts, ${BM25_WEIGHTS})
+      LIMIT ?`,
+    params
+  );
+}
+
 export interface BlockedFileRecord {
   original_path: string;
   filename: string;
