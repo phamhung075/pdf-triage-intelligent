@@ -52,6 +52,19 @@ const DATA_ENV = path.join(DATA_DIR, '.env');
 dotenv.config({ path: fs.existsSync(DATA_ENV) ? DATA_ENV : path.join(BASE_DIR, '.env') });
 export const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
 
+// WSL/Windows path conversion lives in the pure domain module src/domain/path-conversion.ts
+// (windowsToWslPath / wslToWindowsPath / isWslMountPath). It is re-exported here under the
+// historical names so existing importers and tests keep working unchanged. Rule: paths the app's
+// fs reads/writes on WSL are /mnt/... form; paths handed to Windows programs (explorer/chrome) are
+// X:\... form — every OS launch goes through src/infrastructure/os-open.ts.
+import {
+  windowsToWslPath as normalizePathInput,
+  wslToWindowsPath as toWindowsPath,
+  isWslMountPath,
+} from '../domain/path-conversion.js';
+export { normalizePathInput, toWindowsPath, isWslMountPath };
+
+
 /**
  * True when this install has never been configured — no settings.json, or one without the two
  * folder paths the pipeline cannot run without. Drives the first-run setup screen.
@@ -119,8 +132,8 @@ function sanitizeLanguage(lang: unknown): 'FR' | 'EN' {
 
 export const CONFIG = {
   LANGUAGE: sanitizeLanguage(customSettings.language || process.env.SYSTEM_LANGUAGE),
-  INPUT_DIR: customSettings.input_dir || process.env.PDF_INPUT_DIR || path.join(DATA_DIR, 'input'),
-  OUTPUT_ROOT_DIR: customSettings.output_root_dir || process.env.PDF_OUTPUT_DIR || path.join(DATA_DIR, 'organized'),
+  INPUT_DIR: normalizePathInput(customSettings.input_dir) || normalizePathInput(process.env.PDF_INPUT_DIR) || path.join(DATA_DIR, 'input'),
+  OUTPUT_ROOT_DIR: normalizePathInput(customSettings.output_root_dir) || normalizePathInput(process.env.PDF_OUTPUT_DIR) || path.join(DATA_DIR, 'organized'),
   JSON_REGISTRY_PATH: process.env.PDF_REGISTRY_PATH || path.join(DATA_DIR, 'registry.json'),
   DB_PATH: process.env.PDF_DB_PATH || path.join(DATA_DIR, 'pdf_triage.db'),
   // Public, generic, committed starter taxonomy (top-level categories only, no personal
@@ -180,8 +193,8 @@ export const CONFIG = {
 export function reloadConfigFromDisk(): void {
   const current = loadCustomSettings();
   CONFIG.LANGUAGE = sanitizeLanguage(current.language);
-  if (current.input_dir) CONFIG.INPUT_DIR = current.input_dir;
-  if (current.output_root_dir) CONFIG.OUTPUT_ROOT_DIR = current.output_root_dir;
+  if (current.input_dir) CONFIG.INPUT_DIR = normalizePathInput(current.input_dir);
+  if (current.output_root_dir) CONFIG.OUTPUT_ROOT_DIR = normalizePathInput(current.output_root_dir);
   CONFIG.OLLAMA_MODEL = sanitizeOllamaModel(current.ollama_model);
   if (current.ollama_host) CONFIG.OLLAMA_HOST = current.ollama_host;
   CONFIG.PERSONAL_NAME_DENYLIST = sanitizePersonalNameDenylist(current.personal_name_denylist);
@@ -196,8 +209,8 @@ export function updateConfig(newSettings: {
   personal_name_denylist?: string[];
 }): void {
   if (newSettings.language) CONFIG.LANGUAGE = sanitizeLanguage(newSettings.language);
-  if (newSettings.input_dir) CONFIG.INPUT_DIR = newSettings.input_dir;
-  if (newSettings.output_root_dir) CONFIG.OUTPUT_ROOT_DIR = newSettings.output_root_dir;
+  if (newSettings.input_dir) CONFIG.INPUT_DIR = normalizePathInput(newSettings.input_dir);
+  if (newSettings.output_root_dir) CONFIG.OUTPUT_ROOT_DIR = normalizePathInput(newSettings.output_root_dir);
   if (newSettings.ollama_model) CONFIG.OLLAMA_MODEL = sanitizeOllamaModel(newSettings.ollama_model);
   if (newSettings.ollama_host) CONFIG.OLLAMA_HOST = newSettings.ollama_host;
   if (newSettings.personal_name_denylist) CONFIG.PERSONAL_NAME_DENYLIST = sanitizePersonalNameDenylist(newSettings.personal_name_denylist);

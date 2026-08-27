@@ -381,13 +381,15 @@ export async function handleMcpToolCall(name: string, args: Record<string, unkno
         };
       }
 
-      const { exec } = await import('child_process');
-      if (process.platform === 'win32') {
-        exec(`explorer.exe /select,"${fileOnDisk}"`);
-      } else if (process.platform === 'darwin') {
-        exec(`open -R "${fileOnDisk}"`);
-      } else {
-        exec(`xdg-open "${path.dirname(fileOnDisk)}"`);
+      // Shared OS-launch helper (platform branching + WSL->Windows conversion) — see
+      // src/infrastructure/os-open.ts. spawn() with an argument array, never exec() with an
+      // interpolated string: the path comes from AI-classified document metadata and may legally
+      // contain shell metacharacters.
+      const { revealInFileManager } = await import('../os-open.js');
+      const launch = revealInFileManager(fileOnDisk);
+      if (launch) {
+        const { spawn } = await import('child_process');
+        spawn(launch.cmd, launch.args, { detached: true, stdio: 'ignore' }).unref();
       }
 
       return {

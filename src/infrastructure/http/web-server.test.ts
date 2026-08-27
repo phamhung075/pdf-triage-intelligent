@@ -122,20 +122,26 @@ vi.mock('child_process', () => ({ exec: execMock, spawn: spawnMock }));
 // domain/taxonomy.js and domain/document.schema.js are left un-mocked: both are pure,
 // I/O-free modules (Zod schemas / string helpers), so exercising the real implementations
 // through the route handlers is both safe and more representative than re-stubbing them.
-vi.mock('../settings.js', () => ({
-  // The locks live under DATA_DIR; nothing in this test cares where, only that it exists.
-  get DATA_DIR() { return os.tmpdir(); },
-  CONFIG: {
-    INPUT_DIR: 'C:/pdf-triage-test/__raws',
-    OUTPUT_ROOT_DIR: 'C:/pdf-triage-test/__archive',
-    OLLAMA_HOST: 'http://127.0.0.1:11434',
-    OLLAMA_MODEL: 'qwen3.5:9b',
-    PORT: 0,
-    PERSONAL_NAME_DENYLIST: [] as string[],
-  },
-  BASE_DIR: 'C:/pdf-triage-test',
-  updateConfig: vi.fn(),
-}));
+vi.mock('../settings.js', async () => {
+  // Spread the real module so pure helpers (toWindowsPath, normalizePathInput) stay real and
+  // routes calling them keep working; override the state/fs-touching parts the tests control.
+  const actual = await vi.importActual<typeof import('../settings.js')>('../settings.js');
+  return {
+    ...actual,
+    // The locks live under DATA_DIR; nothing in this test cares where, only that it exists.
+    get DATA_DIR() { return os.tmpdir(); },
+    CONFIG: {
+      INPUT_DIR: 'C:/pdf-triage-test/__raws',
+      OUTPUT_ROOT_DIR: 'C:/pdf-triage-test/__archive',
+      OLLAMA_HOST: 'http://127.0.0.1:11434',
+      OLLAMA_MODEL: 'qwen3.5:9b',
+      PORT: 0,
+      PERSONAL_NAME_DENYLIST: [] as string[],
+    },
+    BASE_DIR: 'C:/pdf-triage-test',
+    updateConfig: vi.fn(),
+  };
+});
 
 // Imported AFTER every vi.mock(...) above is registered (vi.mock calls are hoisted by
 // vitest to the top of the module regardless of source position, but importing here keeps

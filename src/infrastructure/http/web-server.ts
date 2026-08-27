@@ -7,6 +7,7 @@ import { exec, spawn } from 'child_process';
 import { Ollama } from 'ollama';
 import { z } from 'zod';
 import { CONFIG, BASE_DIR, DATA_DIR, updateConfig, isFirstRun, ensureDirectoriesExist } from '../settings.js';
+import { openDirectory, revealInFileManager, openInChrome } from '../os-open.js';
 import { getAllDocuments, getDocumentById, updateDocumentRecord, getDb, getCategorySubcategoryStats, getBlockedFile, getAllBlockedFiles } from '../db/database.js';
 import { checkModelCanGenerate } from '../ollama-client.js';
 import { takeOverPaddleOcrServer } from '../paddleocr-client.js';
@@ -113,26 +114,27 @@ export function createWebServer(): express.Express {
     });
   }
 
-  // Open location in Windows Explorer endpoint
+  // Open location in Windows Explorer endpoint. All launcher logic (platform branching and the
+  // WSL->Windows path conversion) lives in src/infrastructure/os-open.ts — see its header for why.
   app.post('/api/open-location', (req, res) => {
     try {
       const OpenLocationSchema = z.object({ targetPath: z.string().min(1) });
       const { targetPath } = OpenLocationSchema.parse(req.body);
 
+      // Existence/stat checks run against the POSIX path; os-open.ts hands Windows programs the
+      // Windows form (a POSIX /mnt path makes Windows Explorer fall back to the user's Documents).
       const normalized = path.normalize(targetPath);
-      
+
       if (fs.existsSync(normalized)) {
         const stat = fs.statSync(normalized);
-        if (stat.isDirectory()) {
-          spawn('explorer.exe', [normalized], { detached: true, stdio: 'ignore' }).unref();
-        } else {
-          spawn('explorer.exe', ['/select,', normalized], { detached: true, stdio: 'ignore' }).unref();
-        }
+        const launch = stat.isDirectory() ? openDirectory(normalized) : revealInFileManager(normalized);
+        if (launch) spawn(launch.cmd, launch.args, { detached: true, stdio: 'ignore' }).unref();
         res.json({ message: 'Windows Explorer opened', path: normalized });
       } else {
         const parentDir = path.dirname(normalized);
         if (fs.existsSync(parentDir)) {
-          spawn('explorer.exe', [parentDir], { detached: true, stdio: 'ignore' }).unref();
+          const launch = openDirectory(parentDir);
+          if (launch) spawn(launch.cmd, launch.args, { detached: true, stdio: 'ignore' }).unref();
           res.json({ message: 'Opened parent directory', path: parentDir });
         } else {
           res.status(404).json({ error: `Path does not exist: ${normalized}` });
@@ -152,24 +154,12 @@ export function createWebServer(): express.Express {
       const normalized = path.normalize(targetPath);
 
       if (fs.existsSync(normalized)) {
-        // Locate Chrome executable on Windows
-        const localAppData = process.env.LOCALAPPDATA || '';
-        const programFiles = process.env['ProgramFiles'] || 'C:\\Program Files';
-        const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-
-        const candidates = [
-          path.join(programFiles, 'Google\\Chrome\\Application\\chrome.exe'),
-          path.join(programFilesX86, 'Google\\Chrome\\Application\\chrome.exe'),
-          localAppData ? path.join(localAppData, 'Google\\Chrome\\Application\\chrome.exe') : '',
-          'chrome'
-        ].filter(Boolean);
-
-        let chromeExe = 'chrome';
-        for (const candidate of candidates) {
-          if (candidate === 'chrome' || fs.existsSync(candidate)) {
-            chromeExe = candidate;
-            break;
-          }
+        // Executable lookup (incl. WSL /mnt/c probes) and the WSL->Windows path conversion live
+        // in os-open.ts — Chrome is a Windows program and cannot open a POSIX /mnt path.
+        const launch = openInChrome(normalized);
+        if (!launch) {
+          res.status(500).json({ error: 'Chrome executable not found' });
+          return;
         }
 
         // Launch Chrome directly with the file path as an argv entry — Chrome's own
@@ -181,7 +171,7 @@ export function createWebServer(): express.Express {
         // spawn() with an argument array never invokes a shell, so none of that can matter here.
         // Fire-and-forget, matching every other GUI-helper spawn() in this file (open-location
         // below) — none of them wait for a spawn/error event before responding.
-        spawn(chromeExe, [normalized], { detached: true, stdio: 'ignore' }).unref();
+        spawn(launch.cmd, launch.args, { detached: true, stdio: 'ignore' }).unref();
         res.json({ success: true, message: 'Opened document in Chrome tab', path: normalized });
       } else {
         res.status(404).json({ error: `File path does not exist: ${normalized}` });
@@ -941,17 +931,14 @@ export function createWebServer(): express.Express {
         return res.status(404).json({ error: 'Document file not found on disk' });
       }
 
-      // spawn() with an argument array, not exec() with an interpolated string — fileOnDisk
+      // Launcher logic (platform branching + WSL->Windows conversion) lives in os-open.ts; under
+      // WSL it reveals the file in Windows Explorer via interop, the Linux file opener otherwise.
+      // spawn() with an argument array, never exec() with an interpolated string — fileOnDisk
       // traces back to AI-classified document metadata (title/entity extracted from a PDF's
       // own text), which is not guaranteed free of shell metacharacters even after this app's
       // own filename sanitization (e.g. & and % both survive it).
-      if (process.platform === 'win32') {
-        spawn('explorer.exe', ['/select,', fileOnDisk], { detached: true, stdio: 'ignore' }).unref();
-      } else if (process.platform === 'darwin') {
-        spawn('open', ['-R', fileOnDisk], { detached: true, stdio: 'ignore' }).unref();
-      } else {
-        spawn('xdg-open', [path.dirname(fileOnDisk)], { detached: true, stdio: 'ignore' }).unref();
-      }
+      const launch = revealInFileManager(fileOnDisk);
+      if (launch) spawn(launch.cmd, launch.args, { detached: true, stdio: 'ignore' }).unref();
 
       res.json({ message: 'Opened folder in OS file manager', filePath: fileOnDisk });
     } catch (err: any) {

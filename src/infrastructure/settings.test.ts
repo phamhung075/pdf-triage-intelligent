@@ -166,5 +166,33 @@ describe('config.ts', () => {
       reloadConfigFromDisk();
       expect(CONFIG.INPUT_DIR).toBe('/second');
     });
+
+    it.skipIf(process.platform === 'win32')('normalizes a mangled Windows path from settings.json into a real WSL /mnt path', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        JSON.stringify({
+          input_dir: '\\mnt\\C:\\Users\\you\\Documents\\__raws',
+          output_root_dir: 'C:\\Users\\you\\Documents\\__archive',
+        }) as any
+      );
+      const { CONFIG, reloadConfigFromDisk } = await import('./settings.js');
+      expect(CONFIG.INPUT_DIR).toBe('/mnt/c/Users/you/Documents/__raws');
+      expect(CONFIG.OUTPUT_ROOT_DIR).toBe('/mnt/c/Users/you/Documents/__archive');
+    });
+  });
+
+  describe('path-conversion re-exports', () => {
+    // The conversion logic itself lives and is fully tested in src/domain/path-conversion.ts;
+    // settings.js only re-exports it under the historical names so existing importers keep
+    // working. These two assertions pin that the re-export stays wired.
+    it('re-exports windowsToWslPath as normalizePathInput', async () => {
+      const { normalizePathInput } = await import('./settings.js');
+      expect(normalizePathInput('C:\\Users\\you\\__raws', 'linux')).toBe('/mnt/c/Users/you/__raws');
+    });
+
+    it('re-exports wslToWindowsPath as toWindowsPath', async () => {
+      const { toWindowsPath } = await import('./settings.js');
+      expect(toWindowsPath('/mnt/c/Users/you/__raws')).toBe('C:\\Users\\you\\__raws');
+    });
   });
 });
