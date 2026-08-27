@@ -12,6 +12,109 @@ as the code/doc change, not reconstructed later from `git log`.
 
 ## Unreleased
 
+### Docs bootstrap unified — `AGENTS.md` is the single root file; `CLAUDE.md` symlinks to it
+
+The project previously had two overlapping root instruction files (`CLAUDE.md` bootstrap + `AGENTS.md`
+directives) that duplicated each other and the `docs/` tree. Merged into one:
+
+- **`AGENTS.md`** is now the single root bootstrap for every agent: it combines the old `CLAUDE.md`
+  bootstrap (project description, repo layout, scripts) and the `AGENTS.md` directives, **retired the
+  duplicated rule text** (the 20 directives and the 11-step classification flow now live only in
+  `docs/knowledge/golden-rules.md` and `docs/workflows/classification-flow.md`) and replaced it with a
+  **lazy-loading context map**: one-line rule anchors + links to the authoritative `docs/` files, loaded
+  on demand. Also fixed stale wording (auto-creation target is `.categories.private.json`, not
+  `categories.json`; classification flow is the 13-step doc).
+- **`CLAUDE.md` is now a symlink → `AGENTS.md`** — every agent tool (Claude Code, Codex, Cursor) reads
+  the same instructions; edit the target, never the link.
+- Cross-references updated: `docs/README.md`, `docs/agents/README.md`, `docs/agents/docs-curator.md`,
+  and the `pid-lock.ts` comment now point at `AGENTS.md` and document the symlink. Historical plan/spec
+  docs under `docs/superpowers/` were left untouched.
+
+### WSL path handling centralised (Golden Rule #21) — reusable, guarded, documented
+
+The Windows/WSL path fixes were scattered across `settings.ts` and three ad-hoc spawn sites, so the
+next "open this folder" feature could easily reintroduce the same bug. Refactored into two owned
+modules with a build-failing hygiene guard:
+
+- **`src/domain/path-conversion.ts`** (pure, zero I/O) — `windowsToWslPath` (was `normalizePathInput`),
+  `wslToWindowsPath` (was `toWindowsPath`) and `isWslMountPath`. `settings.ts` now just re-exports
+  them under the historical names, so all existing importers and tests keep working.
+- **`src/infrastructure/os-open.ts`** — the ONLY module allowed to launch a file manager or Chrome:
+  `revealInFileManager` / `openDirectory` / `openInChrome` return spawn-ready `{ cmd, args }` with
+  platform branching (Windows Explorer / macOS Finder / WSL explorer.exe interop / xdg-open) and the
+  WSL→Windows conversion built in. `resolveChromeExecutable` probes `/mnt/c` under WSL.
+- **All call sites migrated** — `/api/open-location`, the document "open folder" route,
+  `/api/open-chrome` in `web-server.ts`, and the MCP `open_document_folder` tool (which also stops
+  using shell-interpolated `exec()` — same spawn-array security rule as the web routes).
+- **`src/infrastructure/os-open.hygiene.test.ts`** — fails the build if an `explorer.exe` /
+  `chrome.exe` / `xdg-open` literal appears in any source file outside `os-open.ts`. A future "open
+  button" that spawns a launcher directly cannot merge.
+- **Docs** — Golden Rule #21 (WSL path discipline), a "WSL path policy" section in
+  `docs/knowledge/architecture.md`, and both modules in the `CLAUDE.md` layout.
+- Tests: 22 new unit tests across `path-conversion.test.ts` / `os-open.test.ts` /
+  `os-open.hygiene.test.ts`; full suite unchanged at the 15 pre-existing failures (none new).
+
+### "Open Incoming / Open Archive" buttons now open the right folder under WSL
+
+The buttons POST the configured folder to `/api/open-location`, which spawned `explorer.exe` with
+the path as-is. On WSL that path is POSIX (`/mnt/c/Users/<user>/OneDrive/<docs>/__raws`);
+Explorer is a Windows program that cannot resolve it and silently fell back to its default
+location — `C:\Users\<user>\Documents`. Same class of bug in the PDF viewer and the
+select-in-Explorer action.
+
+- **`toWindowsPath()`** in `src/infrastructure/settings.ts` — the inverse of `normalizePathInput()`:
+  rewrites `/mnt/<drive>/...` into `X:\...` (pure string transform; native-Windows and plain POSIX
+  paths pass through unchanged). Unit-tested.
+- **`/api/open-location`** — existence/stat checks stay on the POSIX path; `explorer.exe` now gets
+  the converted Windows path (both the folder and the `-select` file branches, plus the parent-dir
+  fallback).
+- **document-card "open folder" route** — under WSL it now reveals the file in Windows Explorer via
+  the converted path (interop) instead of `xdg-open`; `xdg-open` remains for non-/mnt paths.
+- **`/api/open-chrome`** — Chrome gets the converted path, and the executable lookup also probes
+  `/mnt/c/Program Files[...]` so it works when the env vars are Linux-side/empty.
+- Full suite: same 15 pre-existing failures as before this change (none introduced).
+
+### Imported the original registry from `D:\<user>\__projet\__master\pdf_triage`
+
+The WSL working copy's database was empty (0 documents) while the original install on the D: drive
+held the full registry — 861 documents with summaries, raw text, embeddings and the FTS5 index.
+The original DB was imported (not moved — the D: source is untouched) and all stored paths were
+migrated from Windows form to WSL form so file operations keep working on this host:
+
+- **`pdf_triage.db`** — clean checkpointed copy of `D:\...\pdf_triage.db` (`VACUUM INTO`), with
+  `original_path` / `new_path` / `source_image_path` rewritten `C:\Users\<user>\OneDrive\<docs>\...`
+  → `/mnt/c/Users/<user>/OneDrive/<docs>/...` in `documents`, `documents_fts` and
+  `blocked_files`. Verified: 861 documents, FTS search works, and sampled archive files exist at
+  the migrated paths. FTS column layout matches the current code, so no index rebuild is triggered.
+- **`registry.json`** — same migration applied to the JSON mirror (861 entries).
+- **`manual_decisions.json`** — copied (no path fields).
+- The previous empty DB is preserved as `pdf_triage.db.empty.bak` (plus `-wal`/`-shm` backups) in
+  case anything needs to be recovered.
+- The app must be restarted to load the imported DB.
+
+### WSL path fix: Windows paths in settings no longer create literal backslash folders
+
+`settings.json` held `\mnt\C:\Users\...` — a Windows-style path with backslashes. On Linux/WSL a
+backslash is a legal filename character, so Node never resolved it to the OneDrive folder; instead
+`ensureDirectoriesExist()` created real directories literally named `\mnt\C:\Users\...\__raws`
+(and `C:\Users\...\__raws`) inside the project root, and the watcher scanned those empty stubs —
+"the system config cannot see files on Windows".
+
+- **settings.json** now uses the real WSL paths: `/mnt/c/Users/<user>/OneDrive/<docs>/__raws`
+  (input) and `.../__archive` (output).
+- **`normalizePathInput()`** in `src/infrastructure/settings.ts` converts any Windows spelling
+  (`C:\...`, `\mnt\C:\...`, `/mnt/C/...`) into the lowercase `/mnt/<drive>/...` form on non-Windows
+  hosts, at CONFIG load, on `reloadConfigFromDisk()` and on every `updateConfig()` save — so a path
+  pasted into the Settings modal self-heals and can never recreate the literal-backslash folders.
+  No-op on native Windows. Unit-tested in `settings.test.ts` (incl. a `platform` param so the
+  conversion is exercisable on any host).
+- Settings modal help text in `public/index.html` now shows `/mnt/c/...` placeholders and explains
+  that Windows `C:\...` paths are auto-converted.
+- Removed the 6 stray directories the bug had created in the project root (they contained only the
+  auto-created empty `.blocked_files` / `.delete_files` / `.duplicates_files` stubs — no documents
+  were trapped; verified before deletion).
+
+
 ### Taxonomy reconciled: 13 duplicate subcategories merged, 138 empty entries removed
 
 The archive had accumulated the near-duplicate slugs predicted by the missing reconciliation check —

@@ -68,7 +68,8 @@ src/
 │   ├── pdf-page-fit.ts                   # fitImageToA4 — pure page geometry for photo→PDF pages
 │   ├── flood-crop.ts                     # barrier-map document-boundary detector + crop admissibility (pure)
 │   ├── image-adjust.ts                   # auto-levels / sharpen math
-│   └── exif-orientation.ts               # EXIF Orientation tag parsing
+│   ├── exif-orientation.ts               # EXIF Orientation tag parsing
+│   └── path-conversion.ts                # windowsToWslPath / wslToWindowsPath / isWslMountPath (pure)
 ├── application/
 │   ├── classify-document.ts              # classifyPDFText (orchestrator)
 │   ├── triage-scan.ts                    # runTriageScan
@@ -80,6 +81,7 @@ src/
 │   └── scan-lock.ts                      # acquireScanLock (cross-process lock)
 ├── infrastructure/
 │   ├── settings.ts                       # CONFIG + settings.json load/save
+│   ├── os-open.ts                        # the ONLY module allowed to launch Explorer/Chrome (WSL-safe)
 │   ├── logger.ts                         # Color terminal + file logs
 │   ├── categories-store.ts               # getCategoriesConfig / saveCategoriesConfig
 │   ├── entity-dictionary-store.ts        # getEntityDictionary
@@ -242,6 +244,29 @@ Why both layers exist: a worktree-launched instance kept running and squatted on
 1. `settings.json` (project-local, editable via Settings modal or `PUT /api/config`).
 2. Environment variables (`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `PORT`).
 3. Defaults in `src/infrastructure/settings.ts`.
+
+## WSL path policy (Golden Rule #21)
+
+This app runs on native Windows AND under WSL, and the two hosts need different path forms:
+
+| Direction | Form | Where |
+| --- | --- | --- |
+| Config paths the app's fs reads/writes on WSL | `/mnt/<drive>/...` | normalized at load by `windowsToWslPath` (re-exported from `settings.ts`) |
+| Paths handed to Windows programs (Explorer, Chrome) | `X:\...` | converted by `wslToWindowsPath` |
+
+The two rules that caused real bugs before they were centralised:
+
+1. A Windows-form path in `settings.json` (`\mnt\C:\Users\...`) made Node create literal backslash-named
+   folders in the project root and scan empty stubs — "config cannot see files on Windows".
+2. A POSIX `/mnt/...` path handed to `explorer.exe` made it silently open `C:\Users\<user>\Documents`.
+
+**All OS launching** (file manager reveal/open, Chrome) goes through `src/infrastructure/os-open.ts`
+— platform branching and the WSL→Windows conversion live there and only there. The hygiene test
+`os-open.hygiene.test.ts` fails the build if an `explorer.exe` / `chrome.exe` / `xdg-open` literal
+appears in any other source file. If you need a new "open X" button or tool, call
+`revealInFileManager` / `openDirectory` / `openInChrome` from `os-open.ts` and spawn the returned
+`{ cmd, args }` yourself.
+
 
 ## Threading model
 

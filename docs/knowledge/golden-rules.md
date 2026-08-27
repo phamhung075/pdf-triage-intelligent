@@ -93,3 +93,13 @@ Zod schemas in `src/domain/document.schema.ts` are the contract. All AI JSON out
 - `temperature: 0.1` for Ollama classification.
 - SHA-256 checksum is the dedupe key (`documents.checksum UNIQUE`).
 - Year comes from doc date if present, else current year.
+
+## 21. WSL path discipline
+
+A POSIX `/mnt/...` path must **never** be handed to a Windows program (Windows Explorer, Google Chrome) — it cannot resolve it and silently falls back to `C:\Users\<user>\Documents` (this happened: "Open Incoming / Open Archive" opened Documents). The reverse also happened: a Windows-form path in `settings.json` made Node create literal `\mnt\C:\...` folders on Linux.
+
+- Paths the app's own fs reads/writes on WSL are `/mnt/<drive>/...` form; config paths are normalized at load via `windowsToWslPath` (`src/domain/path-conversion.ts`).
+- Paths handed to Windows programs are `X:\...` form, converted via `wslToWindowsPath`.
+- ALL OS launching (file manager, Chrome) lives in `src/infrastructure/os-open.ts` — never spawn `explorer.exe` / `chrome.exe` / the Linux file opener anywhere else.
+- `os-open.hygiene.test.ts` fails the build if a launcher-executable literal appears outside `os-open.ts`.
+
