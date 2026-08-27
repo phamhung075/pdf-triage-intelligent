@@ -37,7 +37,7 @@ export function acquireProcessLock(lockFilePath: string): () => void {
 }
 
 // Finds the PID of whatever process is LISTENING on `port` by parsing `netstat -ano` output —
-// Windows only (this app targets Windows exclusively, see CLAUDE.md's dist:exe target).
+// Windows only (this app targets Windows exclusively, see AGENTS.md's dist:exe target).
 function findPidOnPort(port: number): Promise<number | null> {
   return new Promise((resolve) => {
     exec('netstat -ano -p tcp', { windowsHide: true }, (err, stdout) => {

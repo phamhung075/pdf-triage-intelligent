@@ -18,7 +18,7 @@ This split keeps `.claude/agents/` small (fast to load, easy to browse) and make
 | [mcp-integrator](./mcp-integrator.md)       | `infrastructure/mcp/mcp-server.ts`, tool schemas                                                                 | Adding/modifying MCP tools exposed to external agents          |
 | [ollama-ops](./ollama-ops.md)               | Ollama connectivity, `infrastructure/ollama-client.ts`, `/api/ollama/*`, model lifecycle                                         | Model install, health, auto-spawn, connectivity errors         |
 | [qa-reviewer](./qa-reviewer.md)             | Reviews changes vs `AGENT_REQUIREMENTS.md` + Golden Rules                                     | After any non-trivial change; always before merge              |
-| [docs-curator](./docs-curator.md)           | Everything in `docs/` and CLAUDE.md                                                           | After code changes that alter behavior described in docs       |
+| [docs-curator](./docs-curator.md)           | Everything in `docs/` and `AGENTS.md` (root bootstrap; `CLAUDE.md` is a symlink to it)        | After code changes that alter behavior described in docs       |
 
 ## Skills ↔ team
 
