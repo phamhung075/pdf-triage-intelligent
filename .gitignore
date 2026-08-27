@@ -11,6 +11,11 @@ dist-installer/
 *.db-shm
 *.db-wal
 
+# Pre-import empty-DB recovery backups (see CHANGELOG) — never commit
+pdf_triage.db.empty.bak
+pdf_triage.db-wal.empty.bak
+pdf_triage.db-shm.empty.bak
+
 # Input & Organized PDFs (Keep directory structure)
 input/*
 !input/.gitkeep
@@ -91,6 +96,7 @@ social/
 # Python (paddleocr-server)
 paddleocr-server/__pycache__/
 paddleocr-server/.pytest_cache/
+.venv-paddle/
 
 # Vision Lab crop benchmark artifacts — generated contact sheets and previews (hundreds of MB).
 # Regenerate with scripts/crop-bench.ts / crop-score.ts; never commit.

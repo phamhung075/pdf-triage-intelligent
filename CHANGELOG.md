@@ -12,6 +12,69 @@ as the code/doc change, not reconstructed later from `git log`.
 
 ## Unreleased
 
+### Relocalize modal — generic, taxonomy-wide reason dropdowns
+
+The "Why is the Category / Location wrong?" and "Why is the Subcategory wrong?" dropdowns in the
+📍 Relocalize modal previously offered only a handful of very specific misclassification pairs
+(e.g. "Bank Account Statement misclassified as Vendor Invoice (Internal transaction line issue)"),
+which covered few real cases and pushed everything else into the free-text note. Replaced with
+generic reason families:
+
+- **Category** — one option per top-level category (`bank`, tax/gov, `bulletin_salaire`, `health`,
+  `insurance`, `identity`, `housing`, invoices, `contracts`, `education`, `recruitment`,
+  `correspondence`, technical/reports) plus the cross-cutting root causes: issuer-vs-transaction
+  confusion, OCR misreads on scans, merged multi-document PDFs, non-FR/EN language, and
+  "Category is correct — only the subcategory / location is wrong".
+- **Subcategory** — generic fallback used, wrong/misspelled organization name, entity missing from
+  dictionary (needs creation), too-generic slug, wrong document-type subcategory, filename-echoed
+  slug, date/random numbers in slug, and "Subcategory is correct — keep it as-is".
+
+Also strengthened the feedback-teaches-AI loop (Golden Rule #18): `combineRelocalizeReasons()`
+now appends `Target: <cat>/<sub>` when the user moved the target away from the document's current
+values (so `previousError` tells Qwen the intended result instead of echoing the wrong one), re-
+combines when the category/subcategory/custom-subcategory controls change, and focuses the free-text
+note when a `__CUSTOM__` reason is chosen so a typed reason is never silently dropped.
+
+- `public/index.html` — new dropdown option lists + grammar-polished labels.
+- `public/ts/ModalsManager.ts` — enhanced `combineRelocalizeReasons()` + listeners; compiled to
+  `public/js/ModalsManager.js` via `npm run build:frontend`.
+- `docs/workflows/relocalize.md` — documents the reason families, the `Target:` suffix, and the
+  correct UI file refs (`public/ts/ModalsManager.ts`, not the stale `public/app.js`).
+
+### Human decisions now TEACH future runs — 🧠 "Human Decisions" tab in System Config
+
+Closed the loop flagged in the previous entry: a relocalize reason was forwarded to Qwen only for
+the document being moved, then parked in `manual_decisions` where nothing ever re-read it. Now every
+human decision is registered AND injected into the AI's **STEP 0 private priority block** on future
+classifications, so a correction generalizes to the rest of the archive:
+
+- **`src/domain/decision-rule.ts`** (new, pure) — `deriveRuleKeywords()` extracts conservative match
+  keywords from the moved document's filename + title (filename codes / scanner prefixes first, with
+  a French/English stopword list and digit/year filtering — a keyword must identify the issuer, never
+  the document type); `decisionsToPriorityRules()` maps enabled decisions (newest 25) to STEP 0 rules,
+  skipping forbidden target subcategories (Golden Rule #4) and decisions with no usable keyword.
+- **`src/infrastructure/manual-decisions-store.ts`** — `recordManualDecision()` now derives and stores
+  `rule_keywords` + an `enabled` flag (DB columns `rule_keywords` / `enabled`, migrated in
+  `src/infrastructure/db/database.ts`; legacy rows stay active and derive keywords lazily). New
+  `updateManualDecision()`, `deleteManualDecision()`, `clearManualDecisions()` and the synchronous
+  `readManualDecisionsSync()` (mtime-cached) that keeps the prompt path DB-free. The DB id is now
+  stamped onto the JSON mirror record so both stores stay in sync.
+- **`src/infrastructure/prompt-personalization-store.ts`** — `getPromptPersonalization()` appends the
+  enabled decisions to `priority_rules` (after the hand-curated `.prompts.private.json` rules), so the
+  Qwen prompt **and** the `ruleBasedClassify()` fallback (`matchPriorityRules`) both see them and stay
+  aligned (Golden Rule #6). No scan/restart needed — the prompt reads the store on every build.
+- **HTTP** (`src/infrastructure/http/web-server.ts`) — `PUT /api/manual-decisions/:id`,
+  `DELETE /api/manual-decisions/:id`, `DELETE /api/manual-decisions`, all broadcasting
+  `DECISIONS_UPDATED` SSE.
+- **UI** — third tab "🧠 Human Decisions & AI Feedback" in ⚙️ System Config (`public/index.html`,
+  `public/ts/ModalsManager.ts`): review every decision (target old→new, reason, collapsible text
+  snippet), toggle Teaching-AI on/off, edit target/reason/keywords inline, delete one or all. Compiled
+  to `public/js/*.js` via `npm run build:frontend`.
+- **Tests** — `src/domain/decision-rule.test.ts` (new), `src/infrastructure/manual-decisions-store.test.ts`
+  (update/delete/clear/keyword tests), `src/infrastructure/prompt-personalization-store.test.ts` (new).
+- **Docs** — `docs/workflows/relocalize.md` ("How a decision teaches future runs"),
+  `docs/knowledge/taxonomy.md` (private-overlay table + loop), `AGENTS.md` layout comments.
+
 ### Docs bootstrap unified — `AGENTS.md` is the single root file; `CLAUDE.md` symlinks to it
 
 The project previously had two overlapping root instruction files (`CLAUDE.md` bootstrap + `AGENTS.md`
