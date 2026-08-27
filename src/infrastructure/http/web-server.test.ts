@@ -119,6 +119,27 @@ const { execMock, spawnMock } = vi.hoisted(() => ({
 }));
 vi.mock('child_process', () => ({ exec: execMock, spawn: spawnMock }));
 
+const {
+  getManualDecisionsMock,
+  updateManualDecisionMock,
+  deleteManualDecisionMock,
+  clearManualDecisionsMock,
+  recordManualDecisionMock,
+} = vi.hoisted(() => ({
+  getManualDecisionsMock: vi.fn(),
+  updateManualDecisionMock: vi.fn(),
+  deleteManualDecisionMock: vi.fn(),
+  clearManualDecisionsMock: vi.fn(),
+  recordManualDecisionMock: vi.fn(),
+}));
+vi.mock('../manual-decisions-store.js', () => ({
+  getManualDecisions: getManualDecisionsMock,
+  updateManualDecision: updateManualDecisionMock,
+  deleteManualDecision: deleteManualDecisionMock,
+  clearManualDecisions: clearManualDecisionsMock,
+  recordManualDecision: recordManualDecisionMock,
+}));
+
 // domain/taxonomy.js and domain/document.schema.js are left un-mocked: both are pure,
 // I/O-free modules (Zod schemas / string helpers), so exercising the real implementations
 // through the route handlers is both safe and more representative than re-stubbing them.
@@ -237,6 +258,11 @@ beforeEach(() => {
   getPDFsRecursivelyMock.mockReset().mockReturnValue([]);
   execMock.mockClear();
   spawnMock.mockClear().mockReturnValue({ unref: vi.fn(), on: vi.fn() });
+  getManualDecisionsMock.mockReset().mockResolvedValue([]);
+  updateManualDecisionMock.mockReset();
+  deleteManualDecisionMock.mockReset();
+  clearManualDecisionsMock.mockReset();
+  recordManualDecisionMock.mockReset();
 
   // Golden Rule #17: the 10s auto-watcher must never fire on its own inside these tests —
   // faking only setInterval/clearInterval (not setTimeout/setImmediate/Date) keeps every other
@@ -646,6 +672,113 @@ describe('GET /api/blocked-files', () => {
     getAllBlockedFilesMock.mockRejectedValue(new Error('DB unavailable'));
     const res = await request(app).get('/api/blocked-files').expect(500);
     expect(res.body.error).toBe('DB unavailable');
+  });
+});
+
+describe('GET /api/manual-decisions (human decisions audit log)', () => {
+  it('returns the recorded decisions with a total', async () => {
+    getManualDecisionsMock.mockResolvedValue([
+      { id: 3, original_filename: 'STMT_CHK_101.pdf', new_category: 'bank', new_subcategory: 'bnp_paribas', enabled: 1 },
+    ]);
+    const res = await request(app).get('/api/manual-decisions').expect(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.decisions[0].new_subcategory).toBe('bnp_paribas');
+  });
+});
+
+describe('PUT /api/manual-decisions/:id (edit a recorded decision)', () => {
+  it('updates the decision, normalizes keywords/enabled, and broadcasts DECISIONS_UPDATED', async () => {
+    updateManualDecisionMock.mockResolvedValue({ id: 3, new_subcategory: 'societe_generale', enabled: 0 });
+
+    const res = await request(app)
+      .put('/api/manual-decisions/3')
+      .send({ new_subcategory: 'societe_generale', rule_keywords: ['SG_CODE', 'sg_code', '  ', 'BNP'], enabled: false })
+      .expect(200);
+
+    expect(updateManualDecisionMock).toHaveBeenCalledWith(3, expect.objectContaining({
+      new_subcategory: 'societe_generale',
+      rule_keywords: ['SG_CODE', 'sg_code', 'BNP'], // trimmed, empties dropped, deduped
+      enabled: 0,
+    }));
+    expect(res.body.success).toBe(true);
+  });
+
+  it('rejects a forbidden target subcategory without calling the store — Golden Rule #4', async () => {
+    const res = await request(app)
+      .put('/api/manual-decisions/3')
+      .send({ new_subcategory: 'divers' })
+      .expect(400);
+    expect(res.body.error).toMatch(/not a valid subcategory/i);
+    expect(updateManualDecisionMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty/generic target category without calling the store', async () => {
+    const res = await request(app)
+      .put('/api/manual-decisions/3')
+      .send({ new_category: 'general' })
+      .expect(400);
+    expect(updateManualDecisionMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the decision does not exist', async () => {
+    updateManualDecisionMock.mockResolvedValue(null);
+    const res = await request(app)
+      .put('/api/manual-decisions/999')
+      .send({ enabled: true })
+      .expect(404);
+    expect(res.body.error).toBe('Decision not found');
+  });
+});
+
+describe('DELETE /api/manual-decisions (remove decisions so they stop teaching the AI)', () => {
+  it('deletes a single decision', async () => {
+    deleteManualDecisionMock.mockResolvedValue(true);
+    const res = await request(app).delete('/api/manual-decisions/3').expect(200);
+    expect(deleteManualDecisionMock).toHaveBeenCalledWith(3);
+    expect(res.body.success).toBe(true);
+  });
+
+  it('returns 404 when the decision does not exist', async () => {
+    deleteManualDecisionMock.mockResolvedValue(false);
+    const res = await request(app).delete('/api/manual-decisions/999').expect(404);
+    expect(res.body.error).toBe('Decision not found');
+  });
+
+  it('clears every decision', async () => {
+    clearManualDecisionsMock.mockResolvedValue(undefined);
+    const res = await request(app).delete('/api/manual-decisions').expect(200);
+    expect(clearManualDecisionsMock).toHaveBeenCalledTimes(1);
+    expect(res.body.success).toBe(true);
+  });
+});
+
+describe('PUT /api/documents/:id registers a human decision when the edit re-classifies (feedback-teaches-AI)', () => {
+  it('records a decision when category changes via the Edit modal', async () => {
+    getDocumentByIdMock.mockResolvedValue(sampleDoc()); // category: invoices, subcategory: sfr
+    updateDocumentRecordMock.mockResolvedValue(true);
+
+    const res = await request(app)
+      .put('/api/documents/1')
+      .send({ category: 'administrative', subcategory: 'bnp_paribas' })
+      .expect(200);
+
+    expect(res.status).toBe(200);
+    expect(recordManualDecisionMock).toHaveBeenCalledTimes(1);
+    const record = recordManualDecisionMock.mock.calls[0][0];
+    expect(record.old_category).toBe('invoices');
+    expect(record.new_category).toBe('administrative');
+    expect(record.new_subcategory).toBe('bnp_paribas');
+    expect(record.original_filename).toBe('facture.pdf');
+  });
+
+  it('does NOT record a decision when only the summary/title change', async () => {
+    getDocumentByIdMock.mockResolvedValue(sampleDoc());
+    updateDocumentRecordMock.mockResolvedValue(true);
+    recordManualDecisionMock.mockClear();
+
+    await request(app).put('/api/documents/1').send({ summary: 'Updated summary' }).expect(200);
+
+    expect(recordManualDecisionMock).not.toHaveBeenCalled();
   });
 });
 

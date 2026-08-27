@@ -50,12 +50,58 @@ can genuinely come back half PaddleOCR and half Tesseract.
 
 ## Structured reasons from the modal
 
-The modal exposes two dropdowns:
+The modal exposes two dropdowns with **generic, taxonomy-wide reason families** (plus a free-text
+"AI Correction Feedback Note"):
 
-- **Why is Category Wrong?** — e.g. `Bank Statement misclassified as Vendor Invoice`, `Tax form misclassified as Courriers`, `Pay Slip misclassified as Invoice`.
-- **Why is Subcategory Wrong?** — e.g. `Generic fallback used`, `Wrong Employer / Enterprise name`, `Wrong Bank Society`, `Date numbers inside folder name`.
+- **Why is the Category / Location wrong?** — covers every top-level category (`bank`, tax/gov,
+  `bulletin_salaire`, `health`, `insurance`, `identity`, `housing`, `invoices` /
+  `factures_clients`, `contracts`, `education`, `recruitment`, `correspondence`,
+  `technical` / `reports`) plus the root causes that cut across all of them: issuer-vs-transaction
+  confusion (Golden Rule #6), OCR misreads on scanned documents, merged multi-document PDFs, and
+  non-FR/EN language. Also includes "Category is correct — only the subcategory / location is
+  wrong" for the common case where only the subcategory needs fixing.
+- **Why is the Subcategory wrong?** — covers generic fallbacks (`general` / `other` / `divers`),
+  wrong or misspelled organization names, entities missing from the dictionary (need creation),
+  too-generic slugs, wrong document-type subcategory, filename-echoed slugs, and date / random
+  numbers inside the slug.
 
-They are concatenated (plus the free-text AI Feedback Note) into a single `reason` string sent to `POST /api/documents/:id/relocalize`. UI code lives in `public/app.js`.
+When a reason is selected **and** the user has moved the target category / subcategory away from the
+document's current values, the combined `reason` string also carries a `Target: <cat>/<sub>` suffix
+so the AI feedback (`previousError`, Golden Rule #18) states the intended result — never echoing the
+wrong current values back at Qwen. A `__CUSTOM__` selection focuses the free-text note so a typed
+reason is never silently dropped.
+
+The reasons are concatenated (plus the free-text AI Feedback Note) into a single `reason` string
+sent to `POST /api/documents/:id/relocalize`. UI code lives in `public/index.html` (the dropdowns)
+and `public/ts/ModalsManager.ts` (`combineRelocalizeReasons()`).
+
+## How a decision teaches future runs (feedback-teaches-AI loop)
+
+Every move that records a `manual_decisions` entry (see below) is ALSO injected into the AI's
+**STEP 0 private priority block** on future classifications, so a correction is not wasted on the
+one document being moved:
+
+1. `recordManualDecision()` (`src/infrastructure/manual-decisions-store.ts`) auto-derives conservative
+   match keywords from the moved document's original filename + title via `deriveRuleKeywords()`
+   (`src/domain/decision-rule.ts`): filename codes / scanner prefixes first, then title tokens, with a
+   stopword list that filters generic document-type words (`releve`, `facture`, months, years…). A
+   decision with no distinctive token is still registered and visible in the tab, but stays inactive
+   until the user edits in keywords.
+2. `getPromptPersonalization()` (`src/infrastructure/prompt-personalization-store.ts`) merges every
+   **enabled** decision (newest 25) into the `priority_rules` it returns — after the hand-curated
+   `.prompts.private.json` rules, so deliberate curation outranks an auto-derived rule. Both the
+   Qwen prompt (`{{USER_PRIORITY_RULES}}`) and the deterministic `ruleBasedClassify()` fallback
+   (`matchPriorityRules`) see the same rules, keeping the two paths aligned (Golden Rule #6).
+3. The **Settings → Human Decisions** tab (`🧠 Human Decisions & AI Feedback`, third tab of ⚙️
+   System Config) lists the whole audit log: recheck each decision (target, reason, text snippet),
+   toggle it on/off, edit its target category/subcategory/reason/keywords, delete one, or delete all.
+   Mutations go to `PUT/DELETE /api/manual-decisions[/:id]` and take effect on the NEXT
+   classification — no scan or restart required. Disabled/deleted decisions stop teaching
+   immediately.
+
+Legacy `manual_decisions` rows (saved before keyword derivation existed) stay active and derive
+their keywords lazily from the stored filename/title. The log itself lives in the SQLite
+`manual_decisions` table + `manual_decisions.json` mirror (both gitignored, under `DATA_DIR`).
 
 ## Rules
 

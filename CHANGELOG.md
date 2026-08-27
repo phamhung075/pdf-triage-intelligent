@@ -12,6 +12,70 @@ as the code/doc change, not reconstructed later from `git log`.
 
 ## Unreleased
 
+### Taxonomy duplicate guard — block + return hint to the local agent
+
+Prevents the "same subcategory under several categories" problem from coming back after the
+2026-08-27 one-instance merge. The classifier previously only searched for a slug inside the
+matched category, so a slug living under another category — or a variant spelling of an existing
+slug — fell through to dynamic auto-creation and wrote a SECOND instance of the same entity.
+
+- **`src/domain/taxonomy-conflicts.ts`** (new): pure detection, checked before any auto-creation.
+  - exact / alias match under another category → remap to the canonical owner (e.g. `foncia`
+    proposed under `invoices` → `housing/foncia`);
+  - near-duplicate spelling (normalized edit distance ≥ 0.82, min length 4; short slugs never
+    fuzzy-matched) — same-category variants merge onto the existing slug (`bouyguestelecom` →
+    `bouygues_telecom`), cross-category ones re-file to the canonical owner;
+  - entity name proposed as a top-level category (`france_travail`) → filed under its real
+    subcategory home (`administrative/france_travail`); near-duplicate category names
+    (`administratif` → `administrative`) remapped the same way.
+- **Block wired in** `resolveCategory`/`resolveSubcategory` (`classification-resolution.ts`): a
+  conflict returns the existing entry with `isNew: false` and a `conflict` descriptor — nothing is
+  created, no `saveCategoriesConfig` write, no duplicate on disk. The agent path
+  (`classify-document.ts`) re-files the document to the canonical category and logs
+  `[TAXONOMY_GUARD]`.
+- **Hint returned to the agent**: every block is recorded in the gitignored `taxonomy_hints.json`
+  (`src/infrastructure/taxonomy-hints-store.ts`, newest 50, deduplicated) and re-injected into the
+  model's `{{USER_PRIORITY_RULES}}` STEP 0 block on every future run
+  (`renderTaxonomyConflictHintsBlock` via `prompt-personalization-store.ts`) — a concrete
+  "do not create X, always use Y" list. `prompts/classification_rules.md` carries the same rule as
+  a static "TAXONOMY INTEGRITY" guard.
+- **Tests**: `src/domain/taxonomy-conflicts.test.ts` (unit) + duplicate-guard cases in
+  `classification-resolution.test.ts`. `npm test`: 852 passing; the 15 remaining failures are
+  pre-existing environment-dependent ones (Windows-path assertions on POSIX hosts, Tesseract/OCR
+  availability, `.env` PaddleOCR override, and two in the WIP-modified `web-server.test.ts`) —
+  none touch the new guard.
+- **Runtime-data fix**: disabled two stale auto-learned feedback rules in `manual_decisions.json`
+  that mapped `sfr`/`orange` to a non-existent `telecom` category (they were misrouting real SFR
+  invoices and made `refineClassification` tests environment-dependent).
+
+### Subcategory merge — one instance per subcategory (cross-category de-duplication)
+
+Every subcategory slug now lives under **exactly one** category. Sixteen slugs had been
+auto-created under several categories at once (e.g. `foncia` under invoices+contracts+housing,
+`pro_electro` under contracts+education+bulletin_salaire, `france_travail`/`pole_emploi` under
+4 categories each), so the taxonomy manager and dashboard tree showed the same subcategory
+repeated in different categories.
+
+- **Canonical mapping applied** (driven by document contents): `alternance`→education,
+  `amende`→administrative, `by_conseil`→bulletin_salaire, `caisse_des_depots`→bank, `cesi`→education,
+  `dgfip`→administrative, `foncia`→housing, `france_travail`→administrative, `hopital_st_joseph`→invoices,
+  `lai_dentail`→bulletin_salaire, `openclassrooms`→education, `pole_emploi`→administrative,
+  `pro_electro`→bulletin_salaire, `service_public`→administrative,
+  `tribunal_administratif_marseille`→correspondence, `urssaf`→administrative.
+- **Same-entity spellings folded**: `laposte`→`la_poste` (correspondence), `prefecture_bouches-du-rhone`→`prefecture`
+  (administrative), `sarl_le_pacifique`→`pacifique4` (bulletin_salaire); old slugs kept as aliases so
+  lookups still resolve.
+- **`france_travail` top-level category removed** (it was an AI auto-created category for an entity):
+  its docs/subcategories (`france_travail`, `pole_emploi`, `allocation`, `mes_candidatures`) fold into
+  `administrative`, matching the gov-agency convention (urssaf, dgfip, inpi…).
+- **Migration** (`scripts/merge-subcategories.ts`, one-shot, idempotent, dry-run by default): 63
+  documents updated in SQLite, their physical files relocalized in `__archive` via the app's own
+  `relocalizeFileIfNeeded` logic, empty source dirs pruned, `registry.json` regenerated. One pay slip
+  misfiled under `bulletin_salaire/service_public` was re-filed to `bulletin_salaire/pacifique4`.
+  Backups of the DB, registry and private taxonomy taken under `.tmp-gt/merge-backup-*`.
+- With every slug having a single owner, `findCanonicalCategoryForSubcategory` (Repair Registry) now
+  resolves all of these deterministically instead of declining on ambiguity.
+
 ### Relocalize modal — generic, taxonomy-wide reason dropdowns
 
 The "Why is the Category / Location wrong?" and "Why is the Subcategory wrong?" dropdowns in the

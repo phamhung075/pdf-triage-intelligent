@@ -128,7 +128,9 @@ async function initSchema(db: Database): Promise<void> {
     console.warn("Table info pragma migration check notice:", err);
   }
 
-  // Create manual_decisions table for registering user move / relocalize choices
+  // Create manual_decisions table for registering user move / relocalize choices. rule_keywords
+  // holds the keywords that make the decision teach FUTURE runs (JSON array text); enabled toggles
+  // whether it is still injected into the AI prompt — see domain/decision-rule.ts.
   await db.exec(`
     CREATE TABLE IF NOT EXISTS manual_decisions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,9 +144,26 @@ async function initSchema(db: Database): Promise<void> {
       new_subcategory TEXT,
       user_feedback_reason TEXT,
       raw_text_snippet TEXT,
+      rule_keywords TEXT DEFAULT '[]',
+      enabled INTEGER DEFAULT 1,
       created_at TEXT
     );
   `);
+
+  // Migration: databases created before the feedback-teaches-AI loop learned from the audit log
+  // lack rule_keywords/enabled. Legacy rows stay ACTIVE (enabled defaults to 1) and derive their
+  // keywords lazily from the stored filename/title (see decisionsToPriorityRules).
+  try {
+    const mdInfo = await db.all('PRAGMA table_info(manual_decisions);');
+    if (!mdInfo.some((col: any) => col.name === 'rule_keywords')) {
+      await db.exec("ALTER TABLE manual_decisions ADD COLUMN rule_keywords TEXT DEFAULT '[]';");
+    }
+    if (!mdInfo.some((col: any) => col.name === 'enabled')) {
+      await db.exec('ALTER TABLE manual_decisions ADD COLUMN enabled INTEGER DEFAULT 1;');
+    }
+  } catch (err) {
+    console.warn("Manual decisions migration notice:", err);
+  }
 
   // FTS5 index. `CREATE VIRTUAL TABLE IF NOT EXISTS` is a no-op against an EXISTING table, so
   // it silently does NOT migrate one whose columns have drifted — which is what happened here:

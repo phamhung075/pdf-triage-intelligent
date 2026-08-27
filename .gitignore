@@ -28,6 +28,9 @@ registry.json
 # Runtime manual-decision feedback log (personal document metadata)
 manual_decisions.json
 
+# Runtime taxonomy duplicate-guard hints (blocked duplicate creations, personal document metadata)
+taxonomy_hints.json
+
 # Personal taxonomy overlay — auto-created categories/subcategories derived from your own
 # documents (real bank branches, employers, etc.). categories.json (committed) stays a clean,
 # generic starter taxonomy; this file is where your real data actually lives. See

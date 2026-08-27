@@ -1,5 +1,6 @@
 import { CategoryItem, SubcategoryItem, DocumentMetadata, EntityDictionary } from './document.schema.js';
 import { ruleBasedClassify, isGroundedSubcategorySlug, normalizeSlug, matchEntityDictionary, ALL_ENTITY_DOMAINS } from './classification.js';
+import { findCategoryConflict, findSubcategoryConflict, TaxonomyConflict } from './taxonomy-conflicts.js';
 import { getEntityDictionary } from '../infrastructure/entity-dictionary-store.js';
 import { getPromptPersonalization } from '../infrastructure/prompt-personalization-store.js';
 
@@ -98,7 +99,17 @@ export function refineClassification(
 
 // Normalize category ID & resolve to an existing entry, or describe a new one to be
 // auto-created BEFORE the file is moved (Golden Rule #5).
-export function resolveCategory(categoriesConfig: { categories: CategoryItem[] }, rawCategorie: string): { category: CategoryItem; isNew: boolean } {
+//
+// Duplicate guard: before auto-creating a brand-new top-level category, check the taxonomy for a
+// near-duplicate category id (e.g. 'administratif' -> 'administrative') or for the proposed name
+// actually being an entity that already exists as a subcategory ('france_travail' as a category —
+// it is a subcategory of 'administrative'). A hit blocks the creation and remaps to the existing
+// entry; the caller records the conflict as a hint that teaches future runs.
+export function resolveCategory(
+  categoriesConfig: { categories: CategoryItem[] },
+  rawCategorie: string,
+  rawSubcategorie?: string
+): { category: CategoryItem; isNew: boolean; conflict?: TaxonomyConflict } {
   const rawCatSlug = normalizeSlug(rawCategorie || 'administrative');
   const matchedCategory = categoriesConfig.categories.find(c =>
     c.id === rawCatSlug || (c.aliases && c.aliases.some(a => rawCatSlug.includes(normalizeSlug(a))))
@@ -106,6 +117,16 @@ export function resolveCategory(categoriesConfig: { categories: CategoryItem[] }
 
   if (matchedCategory) {
     return { category: matchedCategory, isNew: false };
+  }
+
+  const conflict = findCategoryConflict(categoriesConfig, rawCatSlug, rawSubcategorie);
+  if (conflict) {
+    const existing = categoriesConfig.categories.find(c => c.id === conflict.mappedCategoryId);
+    if (existing) {
+      return { category: existing, isNew: false, conflict };
+    }
+    // mapped category missing is unexpected (conflict detection only maps onto real entries);
+    // fall through to creation rather than hang the pipeline.
   }
 
   const newCatSlug = rawCatSlug;
@@ -136,13 +157,19 @@ const FORBIDDEN_SUBCATEGORIES = new Set([
 // describe a new one to be auto-created BEFORE the file is moved (Golden Rule #5) — unless
 // the slug is forbidden (Golden Rule #4) or ungrounded (see isGroundedSubcategorySlug),
 // in which case it resolves to 'general' so the caller's strict fail guard can BLOCK it.
+//
+// Duplicate guard: when `categoriesConfig` is supplied, a slug that already exists (exactly, by
+// alias, or as a near-duplicate spelling) anywhere else in the taxonomy is NOT auto-created a
+// second time — it resolves to the existing entry (and, when that entry lives under another
+// category, `conflict.mappedCategoryId` tells the caller the document must be re-filed there).
 export function resolveSubcategory(
   matchedCategory: CategoryItem,
   rawSubcategorie: string,
   rawText: string,
   filename: string,
-  personalNameDenylist: string[]
-): { subcategoryId: string; isNew: boolean; newSubcategory?: SubcategoryItem; rawSubSlug: string } {
+  personalNameDenylist: string[],
+  categoriesConfig?: { categories: CategoryItem[] }
+): { subcategoryId: string; isNew: boolean; newSubcategory?: SubcategoryItem; rawSubSlug: string; conflict?: TaxonomyConflict } {
   let rawSubSlug = normalizeSlug(rawSubcategorie || '');
   // Clean dates from subcategory slugs
   rawSubSlug = rawSubSlug.replace(/_\d{4,8}$/g, '').replace(/\d{4,8}$/g, '');
@@ -172,6 +199,20 @@ export function resolveSubcategory(
     return { subcategoryId: rawSubSlug, isNew: false, rawSubSlug };
   }
 
+  // Duplicate guard: never auto-create a second instance of a slug that already exists
+  // elsewhere in the taxonomy (see domain/taxonomy-conflicts.ts).
+  if (categoriesConfig) {
+    const conflict = findSubcategoryConflict(categoriesConfig, matchedCategory.id, rawSubSlug);
+    if (conflict) {
+      return {
+        subcategoryId: conflict.mappedSubcategoryId || rawSubSlug,
+        isNew: false,
+        rawSubSlug,
+        conflict,
+      };
+    }
+  }
+
   if (!isGroundedSubcategorySlug(rawSubSlug, rawText, filename, personalNameDenylist)) {
     // Before giving up and collapsing to 'general' (which triggers Golden Rule #4 block),
     // check if ruleBasedClassify can extract a valid, grounded subcategory fallback
@@ -188,6 +229,13 @@ export function resolveSubcategory(
         return { subcategoryId: matchedFallbackSub.id, isNew: false, rawSubSlug };
       }
       if (isGroundedSubcategorySlug(rb.subcategorie, rawText, filename, personalNameDenylist)) {
+        // Same duplicate guard for the rule-based fallback's candidate slug.
+        if (categoriesConfig) {
+          const rbConflict = findSubcategoryConflict(categoriesConfig, matchedCategory.id, rb.subcategorie);
+          if (rbConflict) {
+            return { subcategoryId: rbConflict.mappedSubcategoryId || rb.subcategorie, isNew: false, rawSubSlug, conflict: rbConflict };
+          }
+        }
         const newSubName = rb.subcategorie
           .split('_')
           .map(w => w.charAt(0).toUpperCase() + w.slice(1))

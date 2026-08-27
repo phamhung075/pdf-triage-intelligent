@@ -8,6 +8,7 @@ import { auditMarkdownTables, measureContentRecall } from '../domain/markdown-ta
 import { getCategoriesConfig, saveCategoriesConfig } from '../infrastructure/categories-store.js';
 import { getEntityDictionary } from '../infrastructure/entity-dictionary-store.js';
 import { getPromptPersonalization } from '../infrastructure/prompt-personalization-store.js';
+import { recordTaxonomyHint } from '../infrastructure/taxonomy-hints-store.js';
 import { ensureOllamaModel, requestClassificationCompletion, requestTextChatCompletion } from '../infrastructure/ollama-client.js';
 
 // Condenses a model's chain-of-thought / reasoning text for structured logging — long enough to
@@ -372,14 +373,50 @@ export async function classifyPDFText(rawText: string, filename: string, previou
 
   validated = refineClassification(validated, rawText, filename, dictionary, CONFIG.PERSONAL_NAME_DENYLIST);
 
-  const { category: matchedCategory, isNew: isNewCategory } = resolveCategory(categoriesConfig, validated.categorie);
+  // The raw values the model proposed — kept BEFORE resolution so the duplicate guard can record
+  // exactly what was blocked and what it was mapped onto (the hint that teaches future runs).
+  const proposedCategory = validated.categorie;
+  const proposedSubcategory = validated.subcategorie;
+
+  const { category: matchedCategory, isNew: isNewCategory, conflict: categoryConflict } = resolveCategory(categoriesConfig, proposedCategory, proposedSubcategory);
+  if (categoryConflict) {
+    // BLOCK: never auto-create a near-duplicate top-level category or an entity-as-category
+    // (e.g. 'administratif' -> 'administrative', 'france_travail' as a category). Remap to the
+    // existing entry and record a hint so future runs stop proposing it.
+    logger.warn('TAXONOMY_GUARD', `[BLOCKED] ${categoryConflict.hint}`, { filename, proposedCategory, proposedSubcategory });
+    recordTaxonomyHint({
+      proposed_category: proposedCategory,
+      proposed_subcategory: proposedSubcategory,
+      mapped_category: categoryConflict.mappedCategoryId,
+      mapped_subcategory: categoryConflict.mappedSubcategoryId,
+      hint: categoryConflict.hint,
+    });
+    decisionReason += ` | Taxonomy duplicate guard: ${categoryConflict.hint}`;
+  }
   if (isNewCategory) {
     logger.info('OLLAMA_AI', `Auto-created new category '${matchedCategory.id}' for ${filename} BEFORE move`);
     saveCategoriesConfig(categoriesConfig.categories);
   }
   validated.categorie = matchedCategory.id;
 
-  const { subcategoryId, isNew: isNewSubcategory, rawSubSlug } = resolveSubcategory(matchedCategory, validated.subcategorie, rawText, filename, CONFIG.PERSONAL_NAME_DENYLIST);
+  const { subcategoryId, isNew: isNewSubcategory, rawSubSlug, conflict: subcategoryConflict } = resolveSubcategory(matchedCategory, proposedSubcategory, rawText, filename, CONFIG.PERSONAL_NAME_DENYLIST, categoriesConfig);
+  if (subcategoryConflict) {
+    // BLOCK: the slug already exists elsewhere in the taxonomy (exact, alias or near-duplicate
+    // spelling). Never create a second instance — reuse the existing slug, and when it lives
+    // under another category, re-file the document there (one-instance-per-subcategory).
+    logger.warn('TAXONOMY_GUARD', `[BLOCKED] ${subcategoryConflict.hint}`, { filename, proposedCategory, proposedSubcategory });
+    recordTaxonomyHint({
+      proposed_category: proposedCategory,
+      proposed_subcategory: proposedSubcategory,
+      mapped_category: subcategoryConflict.mappedCategoryId,
+      mapped_subcategory: subcategoryConflict.mappedSubcategoryId,
+      hint: subcategoryConflict.hint,
+    });
+    decisionReason += ` | Taxonomy duplicate guard: ${subcategoryConflict.hint}`;
+    if (subcategoryConflict.mappedCategoryId !== matchedCategory.id) {
+      validated.categorie = subcategoryConflict.mappedCategoryId;
+    }
+  }
   if (isNewSubcategory) {
     logger.info('OLLAMA_AI', `Auto-created new subcategory '${subcategoryId}' under '${matchedCategory.id}' BEFORE move`, { filename });
     saveCategoriesConfig(categoriesConfig.categories);

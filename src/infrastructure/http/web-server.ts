@@ -22,7 +22,7 @@ import { isForbiddenSubcategory, isPathInsideDir, mergeSubcategoryInTaxonomy } f
 import { logger, getRecentLogs, getGroupedSessionLogs, logEmitter } from '../logger.js';
 import { UpdateDocumentSchema, SystemSettingsSchema, CategoriesConfigSchema } from '../../domain/document.schema.js';
 import { readActiveLockHolder, acquireProcessLock, killProcessOnPort } from '../pid-lock.js';
-import { getManualDecisions } from '../manual-decisions-store.js';
+import { getManualDecisions, updateManualDecision, deleteManualDecision, clearManualDecisions, recordManualDecision } from '../manual-decisions-store.js';
 import { PDFDocument } from 'pdf-lib';
 import { getTaskState, startTask, updateTaskProgress, finishTask, failTask, setTaskBroadcaster, resetTaskState } from './task-state.js';
 import { processChatQuery } from '../../application/ai-chat-assistant.js';
@@ -547,6 +547,86 @@ export function createWebServer(): express.Express {
     try {
       const decisions = await getManualDecisions();
       res.json({ total: decisions.length, decisions });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Edit a recorded human decision: target category/subcategory, reason, the keywords it teaches
+  // the AI on future runs, and its enabled flag. Any of the four may be omitted to leave it unchanged.
+  // The edited record takes effect on the NEXT classification immediately (the prompt reads the
+  // decisions store on every build) — no scan or restart required.
+  app.put('/api/manual-decisions/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: 'Invalid decision id' });
+      }
+      const body = req.body || {};
+      const patch: {
+        new_category?: string;
+        new_subcategory?: string;
+        user_feedback_reason?: string;
+        rule_keywords?: string[];
+        enabled?: number;
+      } = {};
+      if (typeof body.new_category === 'string') patch.new_category = body.new_category.toLowerCase().trim();
+      if (typeof body.new_subcategory === 'string') patch.new_subcategory = body.new_subcategory.toLowerCase().trim();
+      if (typeof body.user_feedback_reason === 'string') patch.user_feedback_reason = body.user_feedback_reason;
+      if (body.rule_keywords !== undefined) {
+        const rawList: unknown[] = Array.isArray(body.rule_keywords)
+          ? body.rule_keywords
+          : String(body.rule_keywords || '').split(',');
+        const keywords: string[] = rawList
+          .map((k: any) => String(k).trim())
+          .filter((k: string) => k.length > 0);
+        patch.rule_keywords = Array.from(new Set(keywords)).slice(0, 10);
+      }
+      if (body.enabled !== undefined) patch.enabled = body.enabled ? 1 : 0;
+
+      if (patch.new_subcategory && isForbiddenSubcategory(patch.new_subcategory)) {
+        return res.status(400).json({ error: `'${patch.new_subcategory}' is not a valid subcategory (general/other/divers/year strings are not allowed — Golden Rule #4).` });
+      }
+      if (patch.new_category === '' || patch.new_category === 'general' || patch.new_category === 'other' || patch.new_category === 'divers') {
+        return res.status(400).json({ error: 'A decision needs a concrete target category — general/other/divers are not allowed.' });
+      }
+
+      const updated = await updateManualDecision(id, patch);
+      if (!updated) {
+        return res.status(404).json({ error: 'Decision not found' });
+      }
+      broadcastTriageEvent({ type: 'DECISIONS_UPDATED', action: 'UPDATE', decisionId: id });
+      res.json({ success: true, message: 'Decision updated — it now teaches the AI its new values.', decision: updated });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Remove a single decision: it stops teaching the AI (deleted from the log entirely). It never
+  // touches the document or the physical file — this is a learning record, not a file operation.
+  app.delete('/api/manual-decisions/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: 'Invalid decision id' });
+      }
+      const deleted = await deleteManualDecision(id);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Decision not found' });
+      }
+      broadcastTriageEvent({ type: 'DECISIONS_UPDATED', action: 'DELETE', decisionId: id });
+      res.json({ success: true, message: 'Decision removed — it no longer teaches the AI.' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Remove every recorded decision at once (Settings → Human Decisions → Delete All).
+  app.delete('/api/manual-decisions', async (req, res) => {
+    try {
+      await clearManualDecisions();
+      broadcastTriageEvent({ type: 'DECISIONS_UPDATED', action: 'CLEAR' });
+      res.json({ success: true, message: 'All human decisions cleared — nothing teaches the AI anymore.' });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1205,6 +1285,30 @@ export function createWebServer(): express.Express {
         if (newPath !== docBefore.new_path) {
           await updateDocumentRecord(id, { new_path: newPath });
         }
+      }
+
+      // Register a human decision whenever the edit actually re-classified the document
+      // (category or subcategory moved). Every human re-classification must teach future runs
+      // (feedback-teaches-AI, Golden Rule #18), not just the Relocalize modal's explicit path —
+      // the Edit modal is another way a human corrects the AI. recordManualDecision derives the
+      // teaching keywords and never throws, so a log failure cannot fail the edit itself.
+      const finalCategory = validatedUpdates.category || validatedUpdates.categorie || docBefore.category;
+      const finalSubcategory = validatedUpdates.subcategory || validatedUpdates.subcategorie || docBefore.subcategory;
+      const catChanged = (finalCategory || '').toLowerCase() !== (docBefore.category || '').toLowerCase();
+      const subChanged = (finalSubcategory || '').toLowerCase() !== (docBefore.subcategory || '').toLowerCase();
+      if (catChanged || subChanged) {
+        await recordManualDecision({
+          document_id: id,
+          checksum: docBefore.checksum || '',
+          original_filename: docBefore.original_filename || '',
+          title: validatedUpdates.title || docBefore.title,
+          old_category: docBefore.category,
+          old_subcategory: docBefore.subcategory,
+          new_category: finalCategory,
+          new_subcategory: finalSubcategory,
+          user_feedback_reason: 'Manual user selection (Edit modal)',
+          raw_text_snippet: docBefore.raw_text || ''
+        });
       }
 
       await syncJSONRegistry();

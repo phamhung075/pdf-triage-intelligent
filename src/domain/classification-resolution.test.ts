@@ -126,6 +126,73 @@ describe('resolveSubcategory', () => {
   });
 });
 
+describe('resolveCategory duplicate guard', () => {
+  const config = {
+    categories: [
+      { id: 'administrative', name: 'Administrative', description: '', aliases: [], subcategories: [{ id: 'france_travail', name: 'France Travail', aliases: [] }] } as CategoryItem,
+      { id: 'housing', name: 'Housing', description: '', aliases: [], subcategories: [] } as CategoryItem,
+    ],
+  };
+
+  it('blocks a near-duplicate category name and remaps to the existing one', () => {
+    const { category, isNew, conflict } = resolveCategory(config, 'administratif');
+    expect(isNew).toBe(false);
+    expect(category.id).toBe('administrative');
+    expect(conflict?.kind).toBe('category-near');
+    expect(config.categories).toHaveLength(2); // nothing auto-created
+  });
+
+  it('blocks an entity name proposed as a top-level category', () => {
+    const { category, isNew, conflict } = resolveCategory(config, 'france_travail', 'france_travail');
+    expect(isNew).toBe(false);
+    expect(category.id).toBe('administrative');
+    expect(conflict?.kind).toBe('entity-as-category');
+    expect(conflict?.mappedSubcategoryId).toBe('france_travail');
+    expect(config.categories).toHaveLength(2);
+  });
+
+  it('still auto-creates a genuinely new category', () => {
+    const { isNew, category } = resolveCategory(config, 'justice');
+    expect(isNew).toBe(true);
+    expect(category.id).toBe('justice');
+  });
+});
+
+describe('resolveSubcategory duplicate guard', () => {
+  const config = {
+    categories: [
+      { id: 'invoices', name: 'Invoices', description: '', aliases: [], subcategories: [{ id: 'bouygues_telecom', name: 'Bouygues Telecom', aliases: ['bouyguestelecom'] }] } as CategoryItem,
+      { id: 'housing', name: 'Housing', description: '', aliases: [], subcategories: [{ id: 'foncia', name: 'Foncia', aliases: ['loyer'] }] } as CategoryItem,
+    ],
+  };
+  const invoices = config.categories[0];
+
+  it('blocks a slug that exists under another category and maps to the canonical owner', () => {
+    const { subcategoryId, isNew, conflict } = resolveSubcategory(invoices, 'foncia', 'Quittance de loyer Foncia', 'quittance.pdf', DEFAULT_PERSONAL_NAME_DENYLIST, config);
+    expect(isNew).toBe(false);
+    expect(subcategoryId).toBe('foncia');
+    expect(conflict?.kind).toBe('cross-category');
+    expect(conflict?.mappedCategoryId).toBe('housing');
+    expect(invoices.subcategories).toHaveLength(1); // nothing auto-created under invoices
+  });
+
+  it('merges a same-category near-duplicate spelling onto the existing entry', () => {
+    // 'bouygue_telecom' (dropped 's') is not caught by the caller's exact/alias lookup — only the
+    // guard's fuzzy pass recognizes it as the same entity as 'bouygues_telecom'.
+    const { subcategoryId, isNew, conflict } = resolveSubcategory(invoices, 'bouygue_telecom', 'Bouygues Telecom facture', 'bouygues.pdf', DEFAULT_PERSONAL_NAME_DENYLIST, config);
+    expect(isNew).toBe(false);
+    expect(subcategoryId).toBe('bouygues_telecom');
+    expect(conflict?.kind).toBe('spelling-merge');
+    expect(invoices.subcategories).toHaveLength(1);
+  });
+
+  it('does not block without a full taxonomy (backward compatible)', () => {
+    const { isNew, subcategoryId } = resolveSubcategory(invoices, 'foncia', 'Quittance de loyer Foncia', 'quittance.pdf', DEFAULT_PERSONAL_NAME_DENYLIST);
+    expect(isNew).toBe(true); // legacy behavior: no cross-category knowledge
+    expect(subcategoryId).toBe('foncia');
+  });
+});
+
 describe('applyEntityPriorityOverride', () => {
   const BANK_DICTIONARY: EntityDictionary = {
     banks: [{ slug: 'credit_mutuel', name: 'Crédit Mutuel', aliases: ['credit mutuel', 'ccm'] }],

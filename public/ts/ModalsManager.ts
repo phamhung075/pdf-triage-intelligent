@@ -19,7 +19,10 @@ class ModalsManager {
   setupEventListeners(): void {
     document.getElementById('relocalizeCatErrorReason')?.addEventListener('change', () => this.combineRelocalizeReasons());
     document.getElementById('relocalizeSubErrorReason')?.addEventListener('change', () => this.combineRelocalizeReasons());
-    document.getElementById('relocalizeCategorySelect')?.addEventListener('change', (e: any) => this.updateSubcategoriesDropdown(e.target.value));
+    document.getElementById('relocalizeCategorySelect')?.addEventListener('change', (e: any) => {
+      this.updateSubcategoriesDropdown(e.target.value);
+      this.combineRelocalizeReasons();
+    });
     document.getElementById('relocalizeSubcategorySelect')?.addEventListener('change', (e: any) => {
       const customInput = document.getElementById('relocalizeCustomSubcategory') as HTMLInputElement | null;
       if (customInput) {
@@ -37,7 +40,9 @@ class ModalsManager {
           customInput.style.display = 'none';
         }
       }
+      this.combineRelocalizeReasons();
     });
+    document.getElementById('relocalizeCustomSubcategory')?.addEventListener('input', () => this.combineRelocalizeReasons());
 
     document.getElementById('btnCloseRelocalizeModal')?.addEventListener('click', () => {
       const relModal = document.getElementById('relocalizeModal');
@@ -685,7 +690,11 @@ class ModalsManager {
       (document.getElementById('relocalizeDocId') as HTMLInputElement).value = doc.id.toString();
       (document.getElementById('relocalizeDocTitle') as HTMLElement).textContent = doc.title;
       (document.getElementById('relocalizeCurrentPath') as HTMLElement).textContent = `Current Path: ${doc.new_path || doc.original_path}`;
-      (document.getElementById('relocalizeReason') as HTMLTextAreaElement).value = '';
+      const reasonTextarea = document.getElementById('relocalizeReason') as HTMLTextAreaElement | null;
+      if (reasonTextarea) {
+        reasonTextarea.value = '';
+        reasonTextarea.placeholder = 'Explain what local AI got wrong so it learns for future runs...';
+      }
       (document.getElementById('relocalizeCustomSubcategory') as HTMLInputElement).value = '';
       (document.getElementById('relocalizeCustomSubcategory') as HTMLInputElement).style.display = 'none';
 
@@ -739,14 +748,43 @@ class ModalsManager {
   }
 
   combineRelocalizeReasons(): void {
-    const catReason = (document.getElementById('relocalizeCatErrorReason') as HTMLSelectElement)?.value || '';
-    const subReason = (document.getElementById('relocalizeSubErrorReason') as HTMLSelectElement)?.value || '';
+    const catSelect = document.getElementById('relocalizeCatErrorReason') as HTMLSelectElement | null;
+    const subSelect = document.getElementById('relocalizeSubErrorReason') as HTMLSelectElement | null;
+    const catReason = catSelect?.value || '';
+    const subReason = subSelect?.value || '';
     const parts: string[] = [];
     if (catReason && catReason !== '__CUSTOM__') parts.push(`Category Error: ${catReason}`);
     if (subReason && subReason !== '__CUSTOM__') parts.push(`Subcategory Error: ${subReason}`);
-    
+
+    // Golden Rule #18: the reason string is forwarded to Qwen as `previousError`, so it should
+    // state the intended result, not just what was wrong. When the user has moved the target
+    // category or subcategory AWAY from the document's current values, record it as
+    // "Target: cat/sub" — but never echo the (wrong) current values back at the AI.
+    if (parts.length > 0) {
+      const doc = this.app.state.activeRelocalizeDoc;
+      const catTarget = (document.getElementById('relocalizeCategorySelect') as HTMLSelectElement | null)?.value || '';
+      const subRaw = (document.getElementById('relocalizeSubcategorySelect') as HTMLSelectElement | null)?.value || '';
+      const subTarget = (subRaw === '__NEW__' || subRaw === '__EDIT__')
+        ? ((document.getElementById('relocalizeCustomSubcategory') as HTMLInputElement | null)?.value || '').trim()
+        : subRaw;
+      const changedCat = !!doc && !!catTarget && catTarget !== doc.category;
+      const changedSub = !!doc && !!subTarget && subTarget !== doc.subcategory && subTarget !== '__NEW__' && subTarget !== '__EDIT__';
+      if (changedCat && changedSub) parts.push(`Target: ${catTarget}/${subTarget}`);
+      else if (changedCat) parts.push(`Target: ${catTarget}/${doc.subcategory || ''}`);
+      else if (changedSub) parts.push(`Target: ${catTarget || doc.category || ''}/${subTarget}`);
+    }
+
     const textarea = document.getElementById('relocalizeReason') as HTMLTextAreaElement | null;
-    if (textarea) textarea.value = parts.join(' | ');
+    if (textarea) {
+      textarea.value = parts.join(' | ');
+      // A __CUSTOM__ reason must be typed by hand: focus the free-text note so it isn't silently dropped.
+      if (catReason === '__CUSTOM__' || subReason === '__CUSTOM__') {
+        textarea.placeholder = 'Type your own reason here (auto-filled from the dropdowns above)...';
+        textarea.focus();
+      } else {
+        textarea.placeholder = 'Explain what local AI got wrong so it learns for future runs...';
+      }
+    }
   }
 
   async handleConfirmRelocalize(): Promise<void> {
@@ -1040,19 +1078,241 @@ class ModalsManager {
   switchSettingsTab(tabName: string): void {
     const systemForm = document.getElementById('settingsForm');
     const catEditor = document.getElementById('categoriesEditor');
+    const decEditor = document.getElementById('decisionsEditor');
     const btnSys = document.getElementById('tabBtnSystem');
     const btnCat = document.getElementById('tabBtnCategories');
+    const btnDec = document.getElementById('tabBtnDecisions');
 
-    if (tabName === 'system') {
-      if (systemForm) systemForm.style.display = 'block';
-      if (catEditor) catEditor.style.display = 'none';
-      if (btnSys) btnSys.style.borderBottom = '2px solid var(--accent-blue)';
-      if (btnCat) btnCat.style.borderBottom = 'none';
-    } else {
-      if (systemForm) systemForm.style.display = 'none';
-      if (catEditor) catEditor.style.display = 'flex';
-      if (btnSys) btnSys.style.borderBottom = 'none';
-      if (btnCat) btnCat.style.borderBottom = '2px solid var(--accent-blue)';
+    if (systemForm) systemForm.style.display = tabName === 'system' ? 'block' : 'none';
+    if (catEditor) catEditor.style.display = tabName === 'categories' ? 'flex' : 'none';
+    if (decEditor) decEditor.style.display = tabName === 'decisions' ? 'flex' : 'none';
+    if (btnSys) btnSys.style.borderBottom = tabName === 'system' ? '2px solid var(--accent-blue)' : 'none';
+    if (btnCat) btnCat.style.borderBottom = tabName === 'categories' ? '2px solid var(--accent-blue)' : 'none';
+    if (btnDec) btnDec.style.borderBottom = tabName === 'decisions' ? '2px solid var(--accent-blue)' : 'none';
+
+    if (tabName === 'decisions') {
+      this.loadDecisionsManager();
+    }
+  }
+
+  /* --- HUMAN DECISIONS TAB (feedback-teaches-AI audit log) --- */
+  _decisions: any[] = [];
+
+  async loadDecisionsManager(): Promise<void> {
+    const container = document.getElementById('decisionsList');
+    if (!container) return;
+    container.innerHTML = '<div style="color: #64748b; font-style: italic; padding: 1rem;">Loading decisions…</div>';
+    try {
+      const res = await fetch('/api/manual-decisions');
+      if (!res.ok) {
+        this.app.toast.error('Could not load human decisions');
+        container.innerHTML = '<div style="color: #f87171; padding: 1rem;">Failed to load decisions.</div>';
+        return;
+      }
+      const data = await res.json();
+      const decisions = Array.isArray(data.decisions) ? data.decisions : [];
+      this._decisions = decisions;
+
+      const summary = document.getElementById('decisionsSummary');
+      const enabledCount = decisions.filter((d: any) => d.enabled !== 0).length;
+      if (summary) {
+        summary.textContent = `${decisions.length} decision(s) recorded — ${enabledCount} active (teaching the AI)`;
+      }
+
+      if (decisions.length === 0) {
+        container.innerHTML = '<div style="color: #64748b; padding: 2rem; text-align: center;">✅ No human decisions yet. Move a document via 📍 Relocalize with a reason and it will appear here — and teach future runs.</div>';
+        return;
+      }
+      container.innerHTML = decisions.map((d: any, idx: number) => this.renderDecisionCard(d, idx)).join('');
+    } catch (err: any) {
+      this.app.toast.error('Failed to load decisions: ' + err.message);
+      container.innerHTML = '<div style="color: #f87171; padding: 1rem;">Failed to load decisions.</div>';
+    }
+  }
+
+  renderDecisionCard(d: any, idx: number): string {
+    const state = this.app.state;
+    const esc = (v: any) => state.escapeHtml(v == null ? '' : String(v));
+    const id = d.id != null ? d.id : idx;
+    const keywords = Array.isArray(d.rule_keywords) ? d.rule_keywords.filter((k: string) => k.trim()) : [];
+    const enabled = d.enabled !== 0;
+    const created = d.created_at ? new Date(d.created_at).toLocaleString() : '?';
+    const docLabel = (d.original_filename || d.title || '').trim();
+    const target = `${esc(d.new_category || '?')}${d.new_subcategory ? ' / ' + esc(d.new_subcategory) : ''}`;
+    const from = `${esc(d.old_category || '?')}${d.old_subcategory ? ' / ' + esc(d.old_subcategory) : ''}`;
+    const reason = (d.user_feedback_reason || '').trim();
+    const snippet = (d.raw_text_snippet || '').trim();
+
+    const badge = (text: string, color: string) =>
+      `<span style="font-size:0.72rem; padding:0.1rem 0.5rem; border-radius:6px; border:1px solid; background:rgba(15,23,42,0.6); color:${color}; border-color:${color}55; white-space:nowrap;">${text}</span>`;
+
+    return `
+      <div id="decisionCard_${id}" style="background: #111827; border: 1px solid ${enabled ? '#1f2937' : '#1f2937'}; border-left: 3px solid ${enabled ? '#38bdf8' : '#64748b'}; border-radius: 8px; padding: 0.8rem 1rem;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; min-width: 0;">
+            <span style="font-weight: 700; color: #f8fafc; font-size: 0.88rem;">📄 ${esc(docLabel || '(no filename)')}</span>
+            <span style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.75rem; color: #94a3b8;">
+              ${badge(from, '#f87171')} ➜ ${badge(target, '#34d399')}
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0;">
+            <label style="font-size: 0.75rem; color: #94a3b8; display: inline-flex; align-items: center; gap: 0.3rem; cursor: pointer;" title="When on, this decision is injected into the AI's STEP 0 priority block on future runs">
+              <input type="checkbox" onchange="app.modals.setDecisionEnabled(${id}, this.checked)" ${enabled ? 'checked' : ''} style="accent-color: #38bdf8;"> Teaching AI
+            </label>
+            <span style="font-size: 0.72rem; color: #64748b;">#${id} · ${esc(created)}</span>
+          </div>
+        </div>
+        ${reason ? `<div style="color: #cbd5e1; font-size: 0.83rem; margin-top: 0.4rem; font-style: italic;">💬 ${esc(reason)}</div>` : ''}
+        <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.45rem; flex-wrap: wrap;">
+          <span style="font-size: 0.72rem; color: #64748b; text-transform: uppercase;">Keywords:</span>
+          ${keywords.length === 0
+            ? '<span style="font-size: 0.78rem; color: #fbbf24; font-style: italic;">none — not teaching yet (edit to add keywords)</span>'
+            : keywords.map((k: string) => `<span style="font-size: 0.75rem; padding: 0.12rem 0.5rem; border-radius: 12px; background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.35); color: #7dd3fc;">${esc(k)}</span>`).join('')}
+        </div>
+        ${snippet ? `
+          <details style="margin-top: 0.4rem;">
+            <summary style="font-size: 0.75rem; color: #64748b; cursor: pointer;">🔎 Recheck — view text snippet</summary>
+            <pre style="white-space: pre-wrap; font-family: monospace; font-size: 0.75rem; color: #94a3b8; background: rgba(15,23,42,0.6); border: 1px solid #1f2937; border-radius: 6px; padding: 0.5rem; margin: 0.4rem 0 0; max-height: 120px; overflow-y: auto;">${esc(snippet)}</pre>
+          </details>` : ''}
+        <div style="display: flex; gap: 0.6rem; margin-top: 0.55rem;">
+          <button type="button" class="btn-secondary" style="font-size: 0.78rem; padding: 0.25rem 0.7rem;" onclick="app.modals.toggleDecisionEdit(${id})">✏️ Edit</button>
+          <button type="button" class="btn-secondary" style="font-size: 0.78rem; padding: 0.25rem 0.7rem; color: #ef4444; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.1);" onclick="app.modals.deleteDecision(${id})">🗑️ Delete</button>
+        </div>
+      </div>
+    `;
+  }
+
+  toggleDecisionEdit(id: number): void {
+    const d = this._decisions.find((x: any) => x.id === id);
+    const card = document.getElementById(`decisionCard_${id}`);
+    if (!d || !card) return;
+    const state = this.app.state;
+    const esc = (v: any) => state.escapeHtml(v == null ? '' : String(v));
+    const keywords = (Array.isArray(d.rule_keywords) ? d.rule_keywords : []).join(', ');
+
+    card.innerHTML = `
+      <div style="font-size: 0.85rem; font-weight: 700; color: #f8fafc; margin-bottom: 0.6rem;">✏️ Edit decision #${esc(d.id)} — <span style="color:#94a3b8; font-weight:400;">${esc(d.original_filename || d.title || '')}</span></div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.6rem;">
+        <div>
+          <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 0.25rem;">Target Category</label>
+          <input type="text" id="decCategory_${id}" value="${esc(d.new_category || '')}" style="width:100%; padding:0.45rem 0.6rem; border-radius:6px; background:#0f172a; color:#38bdf8; border:1px solid var(--border-color); font-size:0.85rem; font-family:monospace;">
+        </div>
+        <div>
+          <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 0.25rem;">Target Subcategory</label>
+          <input type="text" id="decSubcategory_${id}" value="${esc(d.new_subcategory || '')}" style="width:100%; padding:0.45rem 0.6rem; border-radius:6px; background:#0f172a; color:#34d399; border:1px solid var(--border-color); font-size:0.85rem; font-family:monospace;">
+        </div>
+      </div>
+      <div style="margin-bottom: 0.6rem;">
+        <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 0.25rem;">Keywords the AI matches on future documents (comma separated — e.g. <code>STMT_CHK_</code>, <code>recXX</code>, issuer names)</label>
+        <input type="text" id="decKeywords_${id}" value="${esc(keywords)}" style="width:100%; padding:0.45rem 0.6rem; border-radius:6px; background:#0f172a; color:#7dd3fc; border:1px solid var(--border-color); font-size:0.85rem;">
+      </div>
+      <div style="margin-bottom: 0.6rem;">
+        <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 0.25rem;">Reason / feedback note</label>
+        <textarea id="decReason_${id}" rows="2" style="width:100%; padding:0.45rem 0.6rem; border-radius:6px; background:#0f172a; color:#cbd5e1; border:1px solid var(--border-color); font-size:0.83rem; resize:vertical;">${esc(d.user_feedback_reason || '')}</textarea>
+      </div>
+      <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.6rem;">
+        <label style="font-size: 0.8rem; color: #94a3b8; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;">
+          <input type="checkbox" id="decEnabled_${id}" ${d.enabled !== 0 ? 'checked' : ''} style="accent-color: #38bdf8;"> Enabled (teaches the AI)
+        </label>
+      </div>
+      <div style="display: flex; gap: 0.6rem;">
+        <button type="button" class="btn-primary" style="font-size: 0.8rem; padding: 0.35rem 1rem;" onclick="app.modals.saveDecision(${id})">💾 Save</button>
+        <button type="button" class="btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 1rem;" onclick="app.modals.toggleDecisionEdit(${id})">Cancel</button>
+      </div>
+    `;
+  }
+
+  async saveDecision(id: number): Promise<void> {
+    const category = (document.getElementById(`decCategory_${id}`) as HTMLInputElement | null)?.value.trim() || '';
+    const subcategory = (document.getElementById(`decSubcategory_${id}`) as HTMLInputElement | null)?.value.trim() || '';
+    const keywordsRaw = (document.getElementById(`decKeywords_${id}`) as HTMLInputElement | null)?.value || '';
+    const reason = (document.getElementById(`decReason_${id}`) as HTMLTextAreaElement | null)?.value || '';
+    const enabled = (document.getElementById(`decEnabled_${id}`) as HTMLInputElement | null)?.checked || false;
+
+    if (this.app.state.isForbiddenSubcategory(subcategory)) {
+      this.app.toast.error(`'${subcategory}' is not a valid subcategory (general/other/divers/year strings aren't allowed).`);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/manual-decisions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          new_category: category,
+          new_subcategory: subcategory,
+          user_feedback_reason: reason,
+          rule_keywords: keywordsRaw.split(',').map((k: string) => k.trim()).filter(Boolean),
+          enabled
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        this.app.toast.success('Decision updated — the AI now learns the new values.');
+        this.loadDecisionsManager();
+      } else {
+        this.app.toast.error('Update failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      this.app.toast.error('Failed to update decision: ' + err.message);
+    }
+  }
+
+  async setDecisionEnabled(id: number, enabled: boolean): Promise<void> {
+    try {
+      const res = await fetch(`/api/manual-decisions/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        this.app.toast[enabled ? 'success' : 'warning'](enabled
+          ? 'Decision enabled — it teaches the AI again.'
+          : 'Decision disabled — it stays in the log but no longer teaches the AI.');
+      } else {
+        this.app.toast.error('Update failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      this.app.toast.error('Failed to update decision: ' + err.message);
+    } finally {
+      this.loadDecisionsManager();
+    }
+  }
+
+  async deleteDecision(id: number): Promise<void> {
+    const d = this._decisions.find((x: any) => x.id === id);
+    const label = (d && (d.original_filename || d.title)) || `#${id}`;
+    if (!confirm(`Delete this decision for '${label}'?\n\nIt will stop teaching the AI entirely. The document and its file are NOT affected.`)) return;
+    try {
+      const res = await fetch(`/api/manual-decisions/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        this.app.toast.success('Decision removed — it no longer teaches the AI.');
+      } else {
+        this.app.toast.error('Delete failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      this.app.toast.error('Failed to delete decision: ' + err.message);
+    } finally {
+      this.loadDecisionsManager();
+    }
+  }
+
+  async clearAllDecisions(): Promise<void> {
+    if (!confirm('Delete ALL recorded human decisions?\n\nThe AI will stop learning from every past move. This cannot be undone (documents and files are NOT affected).')) return;
+    try {
+      const res = await fetch('/api/manual-decisions', { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        this.app.toast.success('All human decisions cleared.');
+      } else {
+        this.app.toast.error('Clear failed: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      this.app.toast.error('Failed to clear decisions: ' + err.message);
+    } finally {
+      this.loadDecisionsManager();
     }
   }
 

@@ -93,10 +93,15 @@ live in a gitignored overlay and are injected at prompt-build time:
 | `prompts/*.md`, `prompts/json_schema_response.json` | yes | the generic decision flow, generic examples, and two placeholders |
 | `prompts.private.json.example` | yes | the template + inline documentation |
 | `.prompts.private.json` | **no** (gitignored) | your real entities and keyword overrides |
+| `manual_decisions.json` (+ SQLite `manual_decisions`) | **no** (gitignored) | every human move decision, which ALSO feeds the STEP 0 block |
 
 The overlay feeds **both** classification paths, which is what keeps them logically aligned
 (Golden Rule #6). `src/domain/prompt-personalization.ts` owns the shape, the rendering, and the
-matcher; `src/infrastructure/prompt-personalization-store.ts` reads the file.
+matcher; `src/infrastructure/prompt-personalization-store.ts` reads the file — and on top of the
+hand-curated rules it appends every **enabled** human move decision from the `manual_decisions`
+store (newest 25, converted by `src/domain/decision-rule.ts`), so a relocalize correction teaches
+future runs through the same STEP 0 block. This is the feedback-teaches-AI loop (Golden Rule #18);
+manage the decisions in ⚙️ System Config → 🧠 Human Decisions.
 
 **Path 1 — the Qwen prompt.** Two placeholders:
 
@@ -142,6 +147,45 @@ statement filename codes, scanner prefixes, bilingual document titles.
 `CONFIG.PERSONAL_NAME_DENYLIST` reappears in a committed `prompts/` file **or** in
 `src/domain/classification.ts`, and asserts the classifier still reads its overrides through
 `matchPriorityRules` rather than hardcoding them.
+
+## One instance per subcategory
+
+A subcategory slug must live under **exactly one** category. Auto-creation (Rule #5) and
+per-category namespacing used to let the same entity accrue under several categories at once
+(`foncia` under invoices+contracts+housing, `pro_electro` under contracts+education+bulletin_salaire,
+`france_travail`/`pole_emploi` under four). That ambiguity is why
+`findCanonicalCategoryForSubcategory` declines instead of guessing when a slug has several owners.
+
+To de-duplicate, pick the canonical category (by document content — not array order), remove the slug
+from every other category (keeping its aliases on the winner), then migrate the rows and files:
+`npx tsx scripts/merge-subcategories.ts --dry-run` previews the plan, `--apply` executes it
+(SQLite update + physical relocalize + registry regen, idempotent). The 2026-08-27 pass merged 16
+duplicated slugs to one instance each and removed the AI-created `france_travail` top-level category
+(gov agencies belong under `administrative` like urssaf/dgfip/inpi).
+
+### Automatic duplicate guard (block + hint)
+
+The classifier can no longer re-create a duplicate on a fresh run. Before a new category or
+subcategory is auto-created, `src/domain/taxonomy-conflicts.ts` checks the whole taxonomy:
+
+- **Exact / alias match elsewhere** — `foncia` proposed under `invoices` while it lives under
+  `housing` → BLOCKED, remapped to `housing/foncia` (one instance).
+- **Near-duplicate spelling** — `bouyguestelecom`/`bouygues_telecom`, `laposte`/`la_poste`,
+  `lai_dental`/`lai_dentail` (normalized edit distance ≥ 0.82, min length 4; short slugs like
+  `sfr`/`edf` are never fuzzy-matched). Same-category variants merge onto the existing entry
+  (`spelling-merge`); cross-category ones re-file to the canonical owner.
+- **Entity as category** — `france_travail` returned as a top-level category while it exists as a
+  subcategory of `administrative` → blocked, filed under `administrative/france_travail`.
+  Near-duplicate category names (`administratif` → `administrative`) are remapped the same way.
+
+Every block records a hint into the gitignored `taxonomy_hints.json`
+(`src/infrastructure/taxonomy-hints-store.ts`, capped at 50 newest, deduplicated) and that list is
+re-injected into the model's `{{USER_PRIORITY_RULES}}` STEP 0 block on every future run
+(`renderTaxonomyConflictHintsBlock` in `prompt-personalization-store.ts`) — the "return the hint to
+the local agent" half of the loop, so Qwen stops proposing the blocked slugs. The committed
+`prompts/classification_rules.md` carries the same rules as a static "TAXONOMY INTEGRITY" guard.
+Unit-tested in `src/domain/taxonomy-conflicts.test.ts`; the block itself lives in
+`resolveCategory`/`resolveSubcategory` (`classification-resolution.ts`).
 
 ## Rename flow
 

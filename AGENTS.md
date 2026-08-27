@@ -173,8 +173,8 @@ pdf_triage/
 │       ├── logger.ts
 │       ├── categories-store.ts        # merges categories.json (public) + .categories.private.json (private) on read; diffs writes to the private file only
 │       ├── entity-dictionary-store.ts # entity_dictionary.json read
-│       ├── prompt-personalization-store.ts # .prompts.private.json read (personal prompt overlay)
-│       ├── manual-decisions-store.ts  # manual_decisions.json read/write (user feedback log, gitignored)
+│       ├── prompt-personalization-store.ts # .prompts.private.json read + merges human decisions (personal prompt overlay)
+│       ├── manual-decisions-store.ts  # manual_decisions.json + SQLite read/write (user feedback log — feeds the AI's STEP 0 block, see docs/knowledge/taxonomy.md)
 │       ├── zip-builder.ts             # pure-TS ZIP archive builder (no native deps) — PDF package export + bulk Markdown export
 │       ├── ollama-client.ts
 │       ├── vision-client.ts           # detectOrientation/detectCropBox — Ollama calls against CONFIG.OLLAMA_VISION_MODEL

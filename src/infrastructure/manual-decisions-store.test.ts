@@ -100,4 +100,159 @@ describe('manual-decisions-store', () => {
 
     expect(fs.readdirSync(process.cwd())).toEqual(before);
   });
+
+  it('auto-derives teaching keywords + enabled flag and stamps the DB id onto the JSON mirror record', async () => {
+    const { recordManualDecision, getManualDecisions } = await import('./manual-decisions-store.js');
+
+    await recordManualDecision({
+      document_id: 42,
+      checksum: 'abc123checksum',
+      original_filename: 'RLV_CHQ_001.pdf',
+      title: 'Relevé de chèques BNP',
+      old_category: 'housing',
+      old_subcategory: 'northwind_realty',
+      new_category: 'bank',
+      new_subcategory: 'bnp_paribas',
+      user_feedback_reason: 'This is a BNP check statement, not Northwind Realty rent',
+      raw_text_snippet: 'BNP PARIBAS RELEVE DE CHEQUES'
+    });
+
+    const decisions = await getManualDecisions();
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0].rule_keywords).toEqual(expect.arrayContaining(['rlv', 'chq', 'bnp']));
+    expect(decisions[0].enabled).toBe(1);
+    expect(decisions[0].id).toBeDefined();
+
+    const jsonContent = JSON.parse(fs.readFileSync(decisionsFile, 'utf-8'));
+    expect(jsonContent[0].id).toBe(decisions[0].id);
+    expect(jsonContent[0].rule_keywords).toEqual(expect.arrayContaining(['rlv', 'chq', 'bnp']));
+    expect(jsonContent[0].enabled).toBe(1);
+  });
+
+  it('keeps caller-supplied keywords and a disabled flag', async () => {
+    const { recordManualDecision, getManualDecisions } = await import('./manual-decisions-store.js');
+
+    await recordManualDecision({
+      document_id: 9,
+      checksum: 'x',
+      original_filename: 'MY_FILE.pdf',
+      title: 'My file',
+      old_category: 'a',
+      old_subcategory: 'b',
+      new_category: 'c',
+      new_subcategory: 'd',
+      rule_keywords: ['MY_CODE'],
+      enabled: 0
+    });
+
+    const decisions = await getManualDecisions();
+    expect(decisions[0].rule_keywords).toEqual(['MY_CODE']);
+    expect(decisions[0].enabled).toBe(0);
+  });
+
+  it('updates a decision in BOTH the SQLite row and the JSON mirror', async () => {
+    const { recordManualDecision, getManualDecisions, updateManualDecision } = await import('./manual-decisions-store.js');
+
+    await recordManualDecision({
+      document_id: 5,
+      checksum: 'cc',
+      original_filename: 'SG_RELEVE.pdf',
+      title: 'Relevé Société Générale',
+      old_category: 'housing',
+      old_subcategory: 'northwind_realty',
+      new_category: 'bank',
+      new_subcategory: 'bnp_paribas',
+      user_feedback_reason: 'Wrong bank'
+    });
+
+    const before = await getManualDecisions();
+    const id = before[0].id!;
+
+    const updated = await updateManualDecision(id, {
+      new_subcategory: 'societe_generale',
+      user_feedback_reason: 'Actually Société Générale',
+      rule_keywords: ['SG_CODE'],
+      enabled: 0
+    });
+    expect(updated).not.toBeNull();
+    expect(updated!.new_subcategory).toBe('societe_generale');
+    expect(updated!.user_feedback_reason).toBe('Actually Société Générale');
+    expect(updated!.rule_keywords).toEqual(['SG_CODE']);
+    expect(updated!.enabled).toBe(0);
+
+    const decisions = await getManualDecisions();
+    expect(decisions[0].new_subcategory).toBe('societe_generale');
+    expect(decisions[0].enabled).toBe(0);
+
+    const jsonContent = JSON.parse(fs.readFileSync(decisionsFile, 'utf-8'));
+    expect(jsonContent[0].new_subcategory).toBe('societe_generale');
+    expect(jsonContent[0].rule_keywords).toEqual(['SG_CODE']);
+    expect(jsonContent[0].enabled).toBe(0);
+  });
+
+  it('returns null when updating a non-existent decision', async () => {
+    const { updateManualDecision } = await import('./manual-decisions-store.js');
+    expect(await updateManualDecision(9999, { enabled: 0 })).toBeNull();
+  });
+
+  it('deletes a single decision from BOTH stores', async () => {
+    const { recordManualDecision, getManualDecisions, deleteManualDecision } = await import('./manual-decisions-store.js');
+
+    await recordManualDecision({
+      document_id: 1, checksum: 'a', original_filename: 'A.pdf', title: 'A',
+      old_category: 'x', old_subcategory: 'y', new_category: 'c', new_subcategory: 'd'
+    });
+    await recordManualDecision({
+      document_id: 2, checksum: 'b', original_filename: 'B.pdf', title: 'B',
+      old_category: 'x', old_subcategory: 'y', new_category: 'c', new_subcategory: 'e'
+    });
+
+    const decisions = await getManualDecisions();
+    const idA = decisions.find(d => d.original_filename === 'A.pdf')!.id!;
+
+    expect(await deleteManualDecision(idA)).toBe(true);
+    expect(await deleteManualDecision(9999)).toBe(false);
+
+    const remaining = await getManualDecisions();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].original_filename).toBe('B.pdf');
+
+    const jsonContent = JSON.parse(fs.readFileSync(decisionsFile, 'utf-8'));
+    expect(jsonContent).toHaveLength(1);
+    expect(jsonContent[0].original_filename).toBe('B.pdf');
+  });
+
+  it('clears every decision from BOTH stores', async () => {
+    const { recordManualDecision, getManualDecisions, clearManualDecisions } = await import('./manual-decisions-store.js');
+
+    await recordManualDecision({
+      document_id: 1, checksum: 'a', original_filename: 'A.pdf', title: 'A',
+      old_category: 'x', old_subcategory: 'y', new_category: 'c', new_subcategory: 'd'
+    });
+
+    await clearManualDecisions();
+
+    expect(await getManualDecisions()).toEqual([]);
+    expect(fs.existsSync(decisionsFile)).toBe(true);
+    expect(JSON.parse(fs.readFileSync(decisionsFile, 'utf-8'))).toEqual([]);
+  });
+
+  it('readManualDecisionsSync returns newest-first, normalized records', async () => {
+    const { recordManualDecision, readManualDecisionsSync } = await import('./manual-decisions-store.js');
+
+    await recordManualDecision({
+      document_id: 1, checksum: 'a', original_filename: 'A.pdf', title: 'A',
+      old_category: 'x', old_subcategory: 'y', new_category: 'c', new_subcategory: 'd'
+    });
+    await recordManualDecision({
+      document_id: 2, checksum: 'b', original_filename: 'B.pdf', title: 'B',
+      old_category: 'x', old_subcategory: 'y', new_category: 'c', new_subcategory: 'e'
+    });
+
+    const sync = readManualDecisionsSync();
+    expect(sync).toHaveLength(2);
+    expect(sync[0].original_filename).toBe('B.pdf'); // newest first, same order as the DB API
+    expect(sync[0].enabled).toBe(1);
+    expect(Array.isArray(sync[0].rule_keywords)).toBe(true);
+  });
 });

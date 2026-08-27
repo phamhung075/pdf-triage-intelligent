@@ -144,6 +144,10 @@ export const CONFIG = {
   CATEGORIES_PRIVATE_FILE: path.join(DATA_DIR, '.categories.private.json'),
   ENTITY_DICTIONARY_FILE: path.join(BASE_DIR, 'entity_dictionary.json'),
   MANUAL_DECISIONS_FILE: path.join(DATA_DIR, 'manual_decisions.json'),
+  // Record of blocked duplicate category/subcategory creations (the HINT half of the taxonomy
+  // duplicate guard, see domain/taxonomy-conflicts.ts) — gitignored, re-injected into the model's
+  // STEP 0 block so future runs stop proposing the blocked slugs.
+  TAXONOMY_HINTS_FILE: path.join(DATA_DIR, 'taxonomy_hints.json'),
   PROMPTS_DIR: path.join(BASE_DIR, 'prompts'),
   // Personal prompt overlay — the private counterpart to the generic, committed prompts/
   // templates. Holds the real employers, bank product codes, scan filename prefixes and

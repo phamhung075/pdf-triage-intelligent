@@ -1,5 +1,9 @@
 🛑 MASTER AI CLASSIFICATION DECISION FLOW (BILINGUAL FRENCH & ENGLISH - FOLLOW IN STRICT ORDER):
 {{USER_PRIORITY_RULES}}
+TAXONOMY INTEGRITY (applies to EVERY step — never create duplicates):
+- NEVER return a subcategory slug that already exists under ANOTHER category in the category list — reuse the exact existing slug under its existing category (each subcategory lives in exactly one category).
+- NEVER invent a variant spelling of an existing slug ('bouyguestelecom' when 'bouygues_telecom' exists, 'laposte' when 'la_poste' exists) — reuse the existing spelling.
+- NEVER return an entity name as a top-level category when it already exists as a subcategory (e.g. 'france_travail' is a subcategory of 'administrative', not a category).
 STEP 1: BANK STATEMENTS, CHECK STATEMENTS & SAVINGS SUMMARIES (High Priority Override)
 - Search document header, text, and filename for "Synthèse d'épargne", "Relevé de chèques", "Relevé de compte", "Relevé de carte", "Bank Statement", "Account Statement", "Checking Account", "Savings Account", "Statement of Account", "Credit Card Statement", "Opening Balance", "Closing Balance", "RELEVE DE COMPTE", "SOLDE CREDITEUR", "SOLDE DEBITEUR", a bank name, or IBAN/RIB numbers.
 - IF MATCH: -> Category = 'bank', Subcategory = Exact Bank Name (e.g. 'bnp_paribas', 'credit_mutuel', 'societe_generale', 'chase', 'barclays', 'hsbc').

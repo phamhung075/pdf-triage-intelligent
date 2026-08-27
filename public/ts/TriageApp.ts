@@ -95,6 +95,8 @@ class TriageApp {
     this.addEv('settingsForm', 'submit', (e: any) => this.modals.handleSaveSettings(e));
     this.addEv('tabBtnSystem', 'click', () => this.modals.switchSettingsTab('system'));
     this.addEv('tabBtnCategories', 'click', () => this.modals.switchSettingsTab('categories'));
+    this.addEv('tabBtnDecisions', 'click', () => this.modals.switchSettingsTab('decisions'));
+    this.addEv('btnClearAllDecisions', 'click', () => this.modals.clearAllDecisions());
     this.addEv('btnAddCategory', 'click', () => this.modals.handleAddCategory());
 
     // Tools & Utilities

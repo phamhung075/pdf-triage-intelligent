@@ -322,6 +322,7 @@
       <div style="margin-bottom: 1.2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; display: flex; gap: 1rem; flex-shrink: 0;">
         <button id="tabBtnSystem" class="btn-secondary" style="border-bottom: 2px solid var(--accent-blue);">System & Paths</button>
         <button id="tabBtnCategories" class="btn-secondary">Manage Categories & Subcategories</button>
+        <button id="tabBtnDecisions" class="btn-secondary">🧠 Human Decisions & AI Feedback</button>
       </div>
 
       <!-- Tab 1: System Settings -->
@@ -490,6 +491,24 @@
         </div>
       </div>
 
+      <!-- Tab 3: Human Decisions — the audit log that teaches the AI (feedback-teaches-AI loop) -->
+      <div id="decisionsEditor" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.6rem; flex-shrink: 0;">
+          Every human move (📍 Relocalize / ✏️ Edit) with a reason is recorded here and injected into the AI's
+          <b>STEP 0 private priority block</b> on future runs, so the classifier learns from your corrections.
+          Recheck any decision, edit it (target, reason, keywords, on/off) or delete it — a deleted decision
+          stops teaching the AI immediately. Stored locally in <code>manual_decisions.json</code> + the SQLite
+          <code>manual_decisions</code> table (both gitignored).
+        </p>
+        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.8rem; flex-shrink: 0;">
+          <span id="decisionsSummary" style="font-size: 0.85rem; color: #94a3b8;"></span>
+          <button type="button" id="btnClearAllDecisions" class="btn-secondary" style="color: #ef4444; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1); font-size: 0.8rem; padding: 0.3rem 0.8rem;" title="Remove every recorded decision — the AI stops learning from all past moves">🗑️ Delete All Decisions</button>
+        </div>
+        <div id="decisionsList" style="display: flex; flex-direction: column; gap: 0.7rem; flex: 1; min-height: 0; overflow-y: auto; padding-right: 0.5rem;">
+          <!-- Rendered via JS (ModalsManager.loadDecisionsManager) -->
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -549,28 +568,45 @@
 
       <!-- Structured Reason Dropdowns -->
       <div class="form-group">
-        <label>Why is Category / Location Wrong?</label>
+        <label>Why is the Category / Location wrong?</label>
         <select id="relocalizeCatErrorReason" style="width: 100%; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
           <option value="">-- Select Category Error Reason --</option>
-          <option value="Bank Account Statement misclassified as Vendor Invoice (Internal transaction line issue)">Bank Account Statement misclassified as Vendor Invoice (Internal transaction line issue)</option>
-          <option value="Tax document (Avis d'impôt) misclassified as Courriers / Correspondence">Tax document (Avis d'impôt) misclassified as Courriers / Correspondence</option>
-          <option value="Pay Slip (Bulletin de salaire) misclassified as Invoice">Pay Slip (Bulletin de salaire) misclassified as Invoice</option>
-          <option value="Health / Medical document misclassified as Administrative">Health / Medical document misclassified as Administrative</option>
-          <option value="Identity / Passport / Civil Record misclassified as Education">Identity / Passport / Civil Record misclassified as Education</option>
-          <option value="Proof of Domicile misclassified as Contract">Proof of Domicile misclassified as Contract</option>
+          <option value="Category is correct — only the subcategory / location is wrong">Category is correct — only the subcategory / location is wrong</option>
+          <option value="Wrong document type — this document belongs in a completely different category">Wrong document type — this document belongs in a completely different category</option>
+          <option value="Issuer confusion — a vendor / entity name inside the document was matched instead of the real issuing organization">Issuer confusion — a vendor / entity name inside the document was matched instead of the real issuing organization</option>
+          <option value="Bank statement or account document misclassified">Bank statement or account document misclassified</option>
+          <option value="Tax or government document misclassified (Avis d'impôt, DGFIP, amende, CAF, …)">Tax or government document misclassified (Avis d'impôt, DGFIP, amende, CAF, …)</option>
+          <option value="Pay slip (bulletin de salaire) misclassified">Pay slip (bulletin de salaire) misclassified</option>
+          <option value="Health or medical document misclassified">Health or medical document misclassified</option>
+          <option value="Insurance document misclassified">Insurance document misclassified</option>
+          <option value="Identity or civil-status document misclassified">Identity or civil-status document misclassified</option>
+          <option value="Housing or domicile-proof document misclassified">Housing or domicile-proof document misclassified</option>
+          <option value="Invoice or purchase document misclassified (wrong vendor, or client vs supplier mix-up)">Invoice or purchase document misclassified (wrong vendor, or client vs supplier mix-up)</option>
+          <option value="Contract, legal or company document misclassified">Contract, legal or company document misclassified</option>
+          <option value="Education, school or training document misclassified">Education, school or training document misclassified</option>
+          <option value="Recruitment document (CV, motivation letter) misclassified">Recruitment document (CV, motivation letter) misclassified</option>
+          <option value="Plain letter or email (correspondence) misclassified">Plain letter or email (correspondence) misclassified</option>
+          <option value="Technical manual or project report misclassified">Technical manual or project report misclassified</option>
+          <option value="Scanned document — OCR misread the text and caused the wrong category">Scanned document — OCR misread the text and caused the wrong category</option>
+          <option value="Multiple documents merged into one PDF — one classification applied to several documents">Multiple documents merged into one PDF — one classification applied to several documents</option>
+          <option value="Document not in French / English — language confused the classifier">Document not in French / English — language confused the classifier</option>
           <option value="__CUSTOM__">Other Category Error Reason...</option>
         </select>
       </div>
 
       <div class="form-group">
-        <label>Why is Subcategory Wrong?</label>
+        <label>Why is the Subcategory wrong?</label>
         <select id="relocalizeSubErrorReason" style="width: 100%; padding: 0.65rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
           <option value="">-- Select Subcategory Error Reason --</option>
-          <option value="Generic subcategory fallback used (general / other / divers)">Generic subcategory fallback used (general / other / divers)</option>
-          <option value="Wrong Employer / Enterprise name for Pay Slip">Wrong Employer / Enterprise name for Pay Slip</option>
-          <option value="Wrong Bank Society name">Wrong Bank Society name</option>
-          <option value="Date numbers inside subcategory folder name">Date numbers inside subcategory folder name</option>
-          <option value="New Company / Organization needs to be created">New Company / Organization needs to be created</option>
+          <option value="Subcategory is correct — keep it as-is">Subcategory is correct — keep it as-is</option>
+          <option value="Generic fallback subcategory used (general / other / divers) — needs a specific name">Generic fallback subcategory used (general / other / divers) — needs a specific name</option>
+          <option value="Wrong organization / company name (bank, employer, insurer, school, vendor, …)">Wrong organization / company name (bank, employer, insurer, school, vendor, …)</option>
+          <option value="Organization is right but the slug / name is misspelled or uses the wrong alias">Organization is right but the slug / name is misspelled or uses the wrong alias</option>
+          <option value="New organization / entity not in the dictionary yet — needs to be created">New organization / entity not in the dictionary yet — needs to be created</option>
+          <option value="Subcategory too generic — needs a more specific entity or document-type name">Subcategory too generic — needs a more specific entity or document-type name</option>
+          <option value="Wrong document-type subcategory (e.g. invoice vs receipt, attestation vs contract)">Wrong document-type subcategory (e.g. invoice vs receipt, attestation vs contract)</option>
+          <option value="Subcategory came from the filename instead of the document content">Subcategory came from the filename instead of the document content</option>
+          <option value="Subcategory folder name contains date or random numbers">Subcategory folder name contains date or random numbers</option>
           <option value="__CUSTOM__">Other Subcategory Error Reason...</option>
         </select>
       </div>
