@@ -164,9 +164,10 @@ export async function retrieveDocuments(userMessage: string, now: Date = new Dat
   try {
     const plan = await planQuery(userMessage, now);
 
-    // A number the user actually typed ("les 3 derniers") beats the model re-deriving it. The same
-    // resolved value feeds citation pruning below, so retrieval and pruning cannot disagree about
-    // how many documents were asked for — that disagreement is what silently dropped documents before.
+    // On an explicit count ("les 3 derniers"), citation pruning below re-derives the same value
+    // from the same pure helper (extractRequestedCount), so the two cannot disagree. On the
+    // no-count path retrieval falls back to the planner's own limit (or 10) while pruning uses its
+    // own majority rule instead — independent by design there.
     const limit = extractRequestedCount(userMessage) ?? plan.limit ?? 10;
     const filters = {
       category: plan.category,
@@ -175,13 +176,21 @@ export async function retrieveDocuments(userMessage: string, now: Date = new Dat
       dateTo: plan.dateTo,
     };
 
+    // Over-fetch before de-duplicating: dedupe must run on the candidate set, never on an
+    // already-truncated one. Collapsing after the LIMIT is what let two scans of the same month
+    // eat two of three slots and push a distinct, still-requested month out of the answer.
+    const FETCH_HEADROOM = 3;
+
     let current: StructuredQuery | null = plan;
     while (current) {
       const matchExpr = buildFtsMatchExpression(current);
       if (!matchExpr) break;
       try {
-        const hits = await searchDocumentsFts(matchExpr, filters, limit);
-        if (hits.length > 0) return hits;
+        const hits = await searchDocumentsFts(matchExpr, filters, limit * FETCH_HEADROOM);
+        if (hits.length > 0) {
+          const kept = dedupeByPeriod(hits);
+          if (kept.length > 0) return kept.slice(0, limit);
+        }
       } catch (err: any) {
         logger.warn('CHAT_ASSISTANT', `FTS5 search failed (${err?.message}); using the token scorer.`);
         break;
@@ -196,7 +205,11 @@ export async function retrieveDocuments(userMessage: string, now: Date = new Dat
     logger.warn('CHAT_ASSISTANT', `Query planning failed (${err?.message}); using the token scorer.`);
   }
 
-  return searchRelevantDocuments(userMessage);
+  // This last-resort path can under-fill relative to the requested count: searchRelevantDocuments
+  // slices to its own limit internally, before dedupe ever runs, so a collapsed duplicate here is
+  // not backfilled from beyond that slice. Acceptable — this path is only reached when FTS5 itself
+  // is unavailable, and searchRelevantDocuments's exported signature is not changed to fix it.
+  return dedupeByPeriod(await searchRelevantDocuments(userMessage));
 }
 
 /**

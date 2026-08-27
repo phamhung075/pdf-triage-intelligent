@@ -239,11 +239,21 @@ describe('retrieveDocuments', () => {
 
   it('honours an explicit count in the user words over the model limit', async () => {
     mockedPlan().mockResolvedValue({ docTypes: ['bulletin'], entities: [], keywords: [], notTerms: [], limit: 10 });
-    mockedFts().mockResolvedValue([]);
+    // Six pay slips across six distinct months: more candidates than the user asked for, so the
+    // over-fetch headroom has real duplicates to absorb before the result is capped at 3.
+    mockedFts().mockResolvedValue(
+      ['2025-07-31', '2025-08-31', '2025-09-30', '2025-10-31', '2025-11-30', '2025-12-31'].map(
+        (date, i) => ({ id: i + 1, title: `Bulletin ${date}`, category: 'bulletin_salaire', subcategory: 'acme', date, summary: '', new_path: '' })
+      )
+    );
 
-    await retrieveDocuments('les 3 derniers bulletins de salaire');
+    const docs = await retrieveDocuments('les 3 derniers bulletins de salaire');
 
-    expect(mockedFts().mock.calls[0][2]).toBe(3);
+    // The user's explicit count (3) wins over the model limit (10): retrieval over-fetches with
+    // headroom so dedupe can collapse re-scanned months, but the returned set is capped at the
+    // requested count.
+    expect(docs.length).toBe(3);
+    expect(mockedFts().mock.calls[0][2]).toBeGreaterThan(3);
   });
 
   it('does not read the French indefinite article as a request for exactly one document', async () => {
@@ -260,10 +270,17 @@ describe('retrieveDocuments', () => {
 
   it('still reads an explicit singular request as one document', async () => {
     mockedPlan().mockResolvedValue({ docTypes: ['bulletin'], entities: [], keywords: [], notTerms: [] });
-    mockedFts().mockResolvedValue([]);
+    // Four distinct months: the singular request must cap the returned set at 1 even though the
+    // over-fetch headroom asked FTS for more candidates.
+    mockedFts().mockResolvedValue(
+      ['2025-06-30', '2025-07-31', '2025-08-31', '2025-09-30'].map(
+        (date, i) => ({ id: i + 1, title: `Bulletin ${date}`, category: 'bulletin_salaire', subcategory: 'acme', date, summary: '', new_path: '' })
+      )
+    );
 
-    await retrieveDocuments('mon dernier bulletin de salaire');
+    const docs = await retrieveDocuments('mon dernier bulletin de salaire');
 
-    expect(mockedFts().mock.calls[0][2]).toBe(1);
+    expect(docs.length).toBe(1);
+    expect(mockedFts().mock.calls[0][2]).toBeGreaterThan(1);
   });
 });
