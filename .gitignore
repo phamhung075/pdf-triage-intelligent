@@ -71,8 +71,10 @@ Thumbs.db
 # these tracked committed 100 copies of third-party code (obra/superpowers, MIT (c) 2025 Jesse
 # Vincent) into this repo without its LICENSE. The junctions still work locally; they just are
 # not ours to redistribute. Single source of truth for skills: docs/skills.md.
-.claude/skills/
-docs/skills/
+# No trailing slash: on Unix these junctions are SYMLINKS (git treats them as files, not dirs),
+# so the dir-only pattern below would miss them and they'd show up as untracked symlinks.
+.claude/skills
+docs/skills
 
 # Local worktree sessions
 .claude/worktrees/
