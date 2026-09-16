@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "deepseek": {
+      "command": "node",
+      "args": ["<ABSOLUTE_PATH_TO_REPO>/.agents/mcp-deepseek/server.cjs"],
+      "cwd": "<ABSOLUTE_PATH_TO_REPO>",
+      "env": {
+        "DEEPSEEK_MCP_PERMISSION": "allow"
+      }
+    }
+  }
+}

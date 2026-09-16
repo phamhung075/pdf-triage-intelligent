@@ -105,3 +105,13 @@ paddleocr-server/.pytest_cache/
 # Regenerate with scripts/crop-bench.ts / crop-score.ts; never commit.
 crop-bench-out/
 .tmp-gt/
+
+# MCP client configs are GENERATED per machine by
+# .agents/deepseek-offload/install/configure.mjs (--with-mcp-config). It writes
+# this checkout's ABSOLUTE paths into them, which is both machine-specific
+# (useless to anyone else cloning the repo) and a workstation-path leak, so
+# they are never committed. The committed template is
+# .agents/mcp_config.json.example — copy it and substitute the path.
+.agents/mcp_config.json
+.mcp.json
+
