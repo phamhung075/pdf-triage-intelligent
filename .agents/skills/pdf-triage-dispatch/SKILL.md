@@ -49,6 +49,12 @@ Slice a request by [agent role](../../../docs/agents/README.md) — one job per 
 
 Dispatch concurrently, then keep working — `start` is fire-and-forget. Poll with `result <jobId>`; `wait` only when the next step truly needs that output.
 
+## Following and steering a job
+
+The job's session does appear in the GUI at `http://127.0.0.1:3080` under this project, but it runs in a separate process and **the GUI cannot show it running or stream it**. Never prompt or act on its GUI row.
+
+Follow it in the terminal with `node .agents/skills/deepseek-offload/scripts/session-tail.mjs <jobId> --watch`, and steer a job that is going the wrong way with `dsh-offload.mjs update <jobId> "<new information>"` rather than cancelling and re-dispatching — the steer preserves the session's work so far. `cancel <jobId>` stops a run outright.
+
 ## Reviewing what comes back
 
 A worker inherits nothing of your rules, so **read its diff as if a stranger wrote it**. Run `git status` and `git diff` after any job that wrote files. Check it against the numbered rules in `AGENTS.md` — the frequent misses are the `< 10` character no-text guard, the strict no-subcategory fail guard, writing a taxonomy slug to `categories.json` instead of the private overlay, and `Promise.all`-ing the scan pipeline (Golden Rule 9 requires one file at a time with a `setTimeout(50)` yield).
