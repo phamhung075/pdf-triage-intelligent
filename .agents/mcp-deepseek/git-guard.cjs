@@ -1,0 +1,1 @@
+../deepseek-offload/.agents/mcp-deepseek/git-guard.cjs
