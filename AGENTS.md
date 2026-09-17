@@ -129,6 +129,8 @@ Read [pdf-triage-dispatch](.agents/skills/pdf-triage-dispatch/SKILL.md) before d
 
 **If you were dispatched as a worker:** your prompt is your authority — do the one job it names, do not re-delegate, do not commit or push, and return findings rather than a transcript.
 
+**Investigation is read-only by construction, never by request.** When the deliverable is a diagnosis — root-cause work, audits, tracing — dispatch the `read-only-investigator` subagent ([.claude/agents/read-only-investigator.md](.claude/agents/read-only-investigator.md)), whose tool list is `Read, Grep, Glob`: it has nothing that can write. Do not use the built-in `fork` subagent type for investigation work, and do not brief a DeepSeek job as read-only without passing `--read-only` to `dsh-offload.mjs start`, which pins the job to the Harness's `read-only` file policy. Instructions do not constrain a fork; a tool list and a file policy do.
+
 ---
 
 ## 🗂️ Repo layout
