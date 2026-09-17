@@ -4,12 +4,16 @@ import { logger } from '../infrastructure/logger.js';
 import { cleanAndParseJSON, ruleBasedClassify, buildCategoriesDescriptionStr, reconcileDocumentDate } from '../domain/classification.js';
 import { buildClassificationPrompt, buildEntityExtractionPrompt, buildMarkdownConversionPrompt, ILLEGIBLE_FRAGMENT_MARKER, MarkdownContinuationContext } from '../domain/prompt.js';
 import { refineClassification, resolveCategory, resolveSubcategory, applyEntityPriorityOverride } from '../domain/classification-resolution.js';
-import { auditMarkdownTables, measureContentRecall } from '../domain/markdown-tables.js';
+import { auditMarkdownTables, measureContentRecall, neutralizeChartLikeTables, CHART_TABLE_MAX_HEADER_CELLS } from '../domain/markdown-tables.js';
+import { normalizeMalformedPipeRows, mergeHeaderlessContinuationBlocks, reattachHeadingSplitTableRows, restoreMissingTableHeaderCells } from '../domain/markdown-tables.js';
+import { describeTableRepairNote } from '../domain/extraction-quality-gate.js';
 import { getCategoriesConfig, saveCategoriesConfig } from '../infrastructure/categories-store.js';
 import { getEntityDictionary } from '../infrastructure/entity-dictionary-store.js';
 import { getPromptPersonalization } from '../infrastructure/prompt-personalization-store.js';
 import { recordTaxonomyHint } from '../infrastructure/taxonomy-hints-store.js';
-import { ensureOllamaModel, requestClassificationCompletion, requestTextChatCompletion } from '../infrastructure/ollama-client.js';
+import { ensureOllamaModel, requestClassificationCompletion, requestTextChatCompletion, OllamaUnavailableError } from '../infrastructure/ollama-client.js';
+
+export { OllamaUnavailableError };
 
 // Condenses a model's chain-of-thought / reasoning text for structured logging — long enough to
 // be useful when tracing a bad decision later, short enough not to flood logs/triage_debug.log.
@@ -117,12 +121,42 @@ export function detectOpenTableTail(markdown: string): MarkdownContinuationConte
   return { header, separator };
 }
 
+/**
+ * Joins converted chunk snippets back into one markdown document.
+ *
+ * Chunks are joined with a blank line EXCEPT across a chunk boundary where a table continues: the
+ * continuation mechanism tells the model to output ONLY the continuing `| row |` lines (no header),
+ * and a blank line between the previous chunk's table and those rows would split one table into a
+ * header block + an orphan "headerless" block. When the previous snippet ends on a GFM row and the
+ * next snippet starts with a GFM row, join them with a single newline so the rows stay in the same
+ * table block (the header lives in the earlier chunk).
+ */
+export function joinChunkMarkdown(chunks: string[]): string {
+  let out = '';
+  for (let i = 0; i < chunks.length; i++) {
+    if (i === 0) {
+      out = chunks[i];
+      continue;
+    }
+    const prev = chunks[i - 1];
+    const curr = chunks[i];
+    const prevTail = prev.trimEnd().split(/\r?\n/).pop() ?? '';
+    const currHead = curr.trimStart().split(/\r?\n/)[0] ?? '';
+    const continuesTable = /^\|.*\|\s*$/.test(prevTail) && /^\|.*\|/.test(currHead);
+    out += (continuesTable ? '\n' : '\n\n') + curr;
+  }
+  return out;
+}
+
 export async function convertRawTextToZeroLossMarkdown(rawText: string, filename?: string): Promise<string> {
   const chunks = chunkText(rawText, 1400);
   const convertedChunks: string[] = [];
   let successCount = 0;
   let fallbackCount = 0;
   let pendingContinuation: MarkdownContinuationContext | undefined;
+  // True per chunk when the model's conversion was used (false = raw-text fallback). Kept parallel
+  // to convertedChunks so the targeted-retry pass below knows which chunks are re-convertible.
+  const convertedFlags: boolean[] = [];
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
@@ -140,6 +174,7 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
       // raw chunk is worse-formatted but complete, and completeness is Step C's actual contract.
       if (res.doneReason === 'length') {
         convertedChunks.push(chunk);
+        convertedFlags.push(false);
         fallbackCount++;
         pendingContinuation = undefined;
         logger.warn('OLLAMA_AI', `[STEP C] Chunk ${i + 1}/${chunks.length} hit the model's output limit (done_reason=length) — its markdown was truncated mid-chunk, keeping raw text instead`, { filename, chunkIndex: i + 1, totalChunks: chunks.length, chunkChars: chunk.length, truncatedChars: mdSnippet.length });
@@ -147,6 +182,7 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
       }
       if (mdSnippet && mdSnippet.length > 10) {
         convertedChunks.push(mdSnippet);
+        convertedFlags.push(true);
         successCount++;
 
         if (mdSnippet.includes(ILLEGIBLE_FRAGMENT_MARKER)) {
@@ -162,6 +198,7 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
         }
       } else {
         convertedChunks.push(chunk);
+        convertedFlags.push(false);
         fallbackCount++;
         pendingContinuation = undefined;
         logger.warn('OLLAMA_AI', `[STEP C] Chunk ${i + 1}/${chunks.length} returned empty/too-short markdown, keeping raw text chunk`, { filename, chunkIndex: i + 1, totalChunks: chunks.length });
@@ -172,6 +209,7 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
       // convert must still reach the output as raw text. Omitting it here silently deleted the
       // chunk from markdown_content — the caller sees a shorter document and no error at all.
       convertedChunks.push(chunk);
+      convertedFlags.push(false);
       fallbackCount++;
       pendingContinuation = undefined;
       logger.warn('OLLAMA_AI', `[STEP C] Chunk ${i + 1}/${chunks.length} conversion failed (${err.message}), keeping raw text chunk`, { filename, chunkIndex: i + 1, totalChunks: chunks.length, error: err.message });
@@ -191,8 +229,97 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
   // gave it. Without this line the damage was invisible — the only way to find it was to audit the
   // database after the fact, which is how the Bouygues call-detail tables were caught filing each
   // call's cost under "Unité(s) décomptée(s)".
-  const assembled = convertedChunks.join('\n\n');
-  const tables = auditMarkdownTables(assembled);
+  // ── Targeted single-chunk repair ─────────────────────────────────────────────
+  // A chunk whose markdown came back structurally broken (table rows outside the GFM pipes, an
+  // absurd header blow-out) is re-converted ONCE and ALONE with a corrective note. The other
+  // chunks' output is untouched: re-running the whole document would re-spend every healthy
+  // chunk's model round-trip. Only chunks that (a) converted successfully (not raw fallback) and
+  // (b) fail the structural screen are retried, at most once each, so a still-broken chunk keeps
+  // its first (content-preserving) output instead of looping forever.
+  const brokenChunks: number[] = [];
+  for (let ci = 0; ci < convertedChunks.length; ci++) {
+    if (!convertedFlags[ci]) continue;
+    if (describeTableRepairNote(convertedChunks[ci])) brokenChunks.push(ci);
+  }
+  if (brokenChunks.length > 0) {
+    logger.warn('OLLAMA_AI', `[STEP C] Targeted repair: re-converting ${brokenChunks.length} structurally broken chunk(s) in place (chunk ${brokenChunks.map(c => c + 1).join(', ')}) — other chunks are untouched`, { filename, brokenChunks: brokenChunks.map(c => c + 1) });
+    for (const ci of brokenChunks) {
+      const originalSnippet = convertedChunks[ci];
+      const repairNote = describeTableRepairNote(originalSnippet);
+      if (!repairNote) continue;
+      try {
+        const { system: sysR, user: usrR } = buildMarkdownConversionPrompt(chunks[ci], undefined, repairNote);
+        const resR = await requestTextChatCompletion(sysR, usrR);
+        if (resR.doneReason !== 'length') {
+          const fixed = resR.response.trim();
+          if (fixed && fixed.length > 10 && !describeTableRepairNote(fixed)) {
+            convertedChunks[ci] = fixed;
+            logger.info('OLLAMA_AI', `[STEP C] Chunk ${ci + 1}/${chunks.length} repaired by targeted re-conversion`, { filename, chunkIndex: ci + 1, totalChunks: chunks.length, reason: repairNote.slice(0, 120) });
+          } else {
+            logger.warn('OLLAMA_AI', `[STEP C] Targeted re-conversion of chunk ${ci + 1} still fails the structural screen — keeping the first output (content-preserving)`, { filename, chunkIndex: ci + 1 });
+          }
+        }
+      } catch (errR: any) {
+        logger.warn('OLLAMA_AI', `[STEP C] Targeted re-conversion of chunk ${ci + 1} failed (${errR.message}) — keeping the first output`, { filename, chunkIndex: ci + 1, error: errR.message });
+      }
+    }
+  }
+
+  const assembled = joinChunkMarkdown(convertedChunks);
+
+  // Chart/axis regions that a confused model rendered as GFM tables (doc 5009's consumption chart
+  // became a 64-column table) are converted back to verbatim blockquotes BEFORE the integrity
+  // audit below, so the audit measures only real tables. Content is never dropped — every cell
+  // stays in the output inside a blockquote. See neutralizeChartLikeTables in markdown-tables.ts.
+  const neutralized = neutralizeChartLikeTables(assembled);
+  if (neutralized.neutralizedBlocks > 0) {
+    logger.warn(
+      'OLLAMA_AI',
+      `[STEP C] Converted ${neutralized.neutralizedBlocks} chart/axis-like table block(s) (>= ${CHART_TABLE_MAX_HEADER_CELLS} columns) in '${filename || 'document'}' back to verbatim text — kept for search, not rendered as a data table`,
+      {
+        filename,
+        neutralizedBlocks: neutralized.neutralizedBlocks,
+        neutralizedLines: neutralized.neutralizedLines,
+      }
+    );
+  }
+  const assembledMarkdown = neutralized.markdown;
+
+  // Well-formedness repair: table rows that lost their edge pipes ("Base ... | 9,16 | 31,62 |
+  // 20,0%" without the leading/trailing '|') get them back. Purely syntactic — no cell is moved,
+  // merged or invented — so a row that the model dropped out of its table returns to it.
+  const normalized = normalizeMalformedPipeRows(assembledMarkdown);
+  if (normalized.fixedLines > 0) {
+    logger.warn('OLLAMA_AI', `[STEP C] Restored missing edge pipes on ${normalized.fixedLines} table row(s) in '${filename || 'document'}' (rows had dropped out of their GFM table)`, { filename, fixedLines: normalized.fixedLines });
+  }
+  // Headerless continuation rows: rows the model continued from a previous chunk (no repeated
+  // header) that a blank line separated into their own block. When they directly follow a table
+  // whose header has the same column count, they are the same table's rows — re-join them so the
+  // integrity audit (and the pre-registration quality gate) sees one healthy table.
+  const merged = mergeHeaderlessContinuationBlocks(normalized.markdown);
+  if (merged.mergedBlocks > 0) {
+    logger.warn('OLLAMA_AI', `[STEP C] Re-joined ${merged.mergedBlocks} headerless continuation row block(s) into their parent table in '${filename || 'document'}'`, { filename, mergedBlocks: merged.mergedBlocks });
+  }
+  // Heading-split rows: a row whose description the model promoted to a heading ("## Base - 03kVA -
+  // du 01/02/26 au 16/05/26" above a lone "| 9,16 | 31,62 | 20,0% |") — doc 5009's Grille tarifaire
+  // came back with 3 of its 5 rows in that shape, each one cell short of its header. The edge-pipe
+  // and blank-line passes above cannot see it (the value line is already a well-formed row), so fold
+  // the heading back into the row as its first cell and move the row into the parent table.
+  const reattached = reattachHeadingSplitTableRows(merged.markdown);
+  if (reattached.reattachedRows > 0) {
+    logger.warn('OLLAMA_AI', `[STEP C] Re-folded ${reattached.reattachedRows} table row(s) whose description had escaped to a heading back into their parent table in '${filename || 'document'}'`, { filename, reattachedRows: reattached.reattachedRows });
+  }
+  // Headers one cell short of every one of their rows: on some runs the model ALSO drops the
+  // table's leading label column (a "| Prix €HT/mois | Montant €HTTVA | TVA |" header above rows
+  // that each carry a description cell), which reattaching alone cannot fix because there is no
+  // heading to fold. Give the header back its missing leading cell (empty — the label is not
+  // derivable) so the table audits as one healthy block with no shifted values.
+  const restored = restoreMissingTableHeaderCells(reattached.markdown);
+  if (restored.restoredHeaders > 0) {
+    logger.warn('OLLAMA_AI', `[STEP C] Restored ${restored.restoredHeaders} table header(s) that were one cell short of their rows (missing leading label cell) in '${filename || 'document'}'`, { filename, restoredHeaders: restored.restoredHeaders });
+  }
+  const finalMarkdown = restored.markdown;
+  const tables = auditMarkdownTables(finalMarkdown);
   if (tables.raggedRows > 0 || tables.headerlessBlocks > 0) {
     // Only state the symptoms that actually occurred. The two are independent — a document can have
     // headerless blocks and no ragged rows — and an earlier version always led with the ragged
@@ -227,7 +354,7 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
   // reference on the same rows survived, and nothing anywhere said so. Skipped for heavily fused
   // raw text, where unmatchable raw tokens mean the model de-fused correctly rather than lost
   // anything — see measureContentRecall.
-  const recall = measureContentRecall(rawText, assembled);
+  const recall = measureContentRecall(rawText, finalMarkdown);
   if (recall.measurable && recall.recall < CONTENT_RECALL_WARN_THRESHOLD && recall.fusionSuspected) {
     // Fused source text: de-fusing and genuine loss are indistinguishable to any token measure, so
     // this cannot be asserted. It stays at DEBUG rather than becoming a WARN nobody can act on —
@@ -250,10 +377,22 @@ export async function convertRawTextToZeroLossMarkdown(rawText: string, filename
     );
   }
 
-  return assembled;
+  return finalMarkdown;
 }
 
-export async function classifyPDFText(rawText: string, filename: string, previousError?: string, now: Date = new Date()): Promise<DocumentMetadata> {
+export async function classifyPDFText(
+  rawText: string,
+  filename: string,
+  previousError?: string,
+  now: Date = new Date(),
+  // Deterministic Markdown produced by the Docling extractor (adopted when it passed the
+  // docling-quality gate at extraction). When provided, Step C's LLM chunk-by-chunk conversion is
+  // SKIPPED — docling already rebuilt the structure (headings, real GFM tables) that Step C exists
+  // to create, and asking the model to re-derive it would re-introduce the truncation/reconstruction
+  // losses Step C's repair machinery exists to catch. The adopted markdown still travels through
+  // the same pre-registration quality gate in triage-scan (assessExtractionQuality vs raw_text).
+  doclingMarkdown?: string
+): Promise<DocumentMetadata> {
   const modelHealthy = await ensureOllamaModel(CONFIG.OLLAMA_MODEL);
 
   const categoriesConfig = getCategoriesConfig();
@@ -270,7 +409,13 @@ export async function classifyPDFText(rawText: string, filename: string, previou
 
   try {
     if (!modelHealthy) {
-      throw new Error(`Model '${CONFIG.OLLAMA_MODEL}' failed capability check — skipping LLM request.`);
+      // Ollama is down: NEVER fall through to the rule-based classifier here. That silent
+      // fallback is what misfiled a SEPA mandate and two tax notices on 2026-08-31 — the
+      // fallback exists for a healthy model's unparseable JSON, not for an unreachable one.
+      // Propagate so the caller blocks the file in __raws and reminds the user to start Ollama.
+      throw new OllamaUnavailableError(
+        `Ollama is down — model '${CONFIG.OLLAMA_MODEL}' failed the capability check (${CONFIG.OLLAMA_HOST}). Start Ollama, then re-scan. No documents were triaged.`
+      );
     }
 
     // Step A: Dedicated Primary Entity & Document Type Extractor. Failures here are non-fatal —
@@ -290,9 +435,17 @@ export async function classifyPDFText(rawText: string, filename: string, previou
       logger.debug('OLLAMA_AI', `[STEP A] Entity extraction skipped for ${filename}: ${err.message}`, { filename });
     }
 
-    // Step C: Chunk-by-Chunk Zero-Loss Markdown Conversion
+    // Step C: Chunk-by-Chunk Zero-Loss Markdown Conversion — OR the Docling structured Markdown
+    // that was already adopted at extraction. When the Docling output passed its quality gate,
+    // fullMarkdownContent is that deterministic Markdown (no LLM round-trip, no truncation risk);
+    // the pre-registration quality gate in triage-scan still audits it against raw_text before
+    // anything is written. Otherwise Step C runs as before.
     let fullMarkdownContent = rawText;
-    if (rawText.trim().length > 0) {
+    const premade = (doclingMarkdown || '').trim();
+    if (premade.length > 0) {
+      fullMarkdownContent = premade;
+      logger.info('OLLAMA_AI', `[STEP C] Using Docling structured Markdown (${premade.length} chars) for ${filename} — skipping the chunk-by-chunk LLM conversion`, { filename, markdownChars: premade.length });
+    } else if (rawText.trim().length > 0) {
       logger.info('OLLAMA_AI', `[STEP C] Converting raw text (${rawText.length} chars) to Markdown chunk-by-chunk for ${filename}...`, { filename });
       fullMarkdownContent = await convertRawTextToZeroLossMarkdown(rawText, filename);
     }
@@ -355,6 +508,9 @@ export async function classifyPDFText(rawText: string, filename: string, previou
     }
 
   } catch (err: any) {
+    // Ollama down mid-pipeline (connection dropped between the health check and Step D) is the
+    // same situation as the failed capability check: block, do not rule-fall-back.
+    if (err instanceof OllamaUnavailableError) throw err;
     decisionMethod = 'Rule-Based Pattern Classifier';
     const rb = ruleBasedClassify(rawText, filename, dictionary, CONFIG.PERSONAL_NAME_DENYLIST, getPromptPersonalization());
     decisionReason = `Rule-Based fallback: ${rb.reason}`;

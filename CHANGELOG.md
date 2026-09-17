@@ -11,6 +11,321 @@ future change of any real size gets an entry here, written at the same time
 as the code/doc change, not reconstructed later from `git log`.
 
 ## Unreleased
+### Docling structured extraction — optional quality layer in front of PDF extraction
+
+Docling (layout-aware PDF → Markdown with real tables) can now run as a second, optional extractor
+ahead of the existing chain. When `DOCLING_SERVICE_URL` is set, PDF extraction is first offered to
+Docling; if its output passes a dedicated quality gate, its text becomes `raw_text`, its
+deterministic Markdown rides along as `docling_markdown` and the Step C LLM chunk-by-chunk
+conversion is skipped for that file. Any Docling failure — service down, empty output, a whole
+page classified as one picture, a garbage text-layer decode — falls back to the normal chain
+(in-process or the `PDF_EXTRACT_SERVICE_URL` microservice) unchanged.
+
+- **Pure gate — `src/domain/docling-quality.ts`** (`assessDoclingMarkdown` /
+  `projectDoclingMarkdownToText`): judges Docling's Markdown before adoption. Reuses the calibrated
+  prose-score / corruption signals from `pdf-text.ts` and the table audit from `markdown-tables.ts`,
+  plus two Docling-specific silent-failure detectors measured on the real corpus (2026-09-03 spike,
+  18 archived docs): a whole-page-picture output (`<!-- image -->` only — the photo-derived PDF
+  failure class) and a non-Latin script decode (broken ToUnicode CMap — BNP 2018 statements decoded
+  to Hangul). Optional content-recall floor vs the normal chain's raw text when the caller has it.
+- **HTTP client — `src/infrastructure/docling-remote.ts`**: POSTs PDF bytes to a Docling endpoint
+  (`POST /extract` → `{ checksum, markdown, text, numpages }`), no default timeout (Docling OCR
+  takes seconds per page). Checksums for dedupe are recomputed locally in the router, never trusted
+  from the service.
+- **Routing seam — `src/infrastructure/pdf-extractor.ts`**: `tryDoclingExtraction()` runs first for
+  `.pdf` files when `DOCLING_SERVICE_URL` is set; gate pass → adopted (raw_text = Docling text,
+  `docling_markdown` attached), any failure → fall back to the existing chain with a throttled WARN
+  (once / 30 s). `DOCLING_SERVICE_REQUIRED=1` turns a Docling failure (down OR gate-rejected) into
+  a hard error. Env unset → Docling never runs; behavior byte-identical.
+- **Step C skip — `src/application/classify-document.ts`**: `classifyPDFText()` accepts an optional
+  pre-made Markdown (the Docling export). When provided it becomes `markdown_content` directly — no
+  LLM chunk conversion, no truncation risk — and still passes through the pre-registration quality
+  gate (`assessExtractionQuality`) in triage-scan. Threaded from `extractPDFContent` results in
+  triage-scan / repair-registry / relocalize only when Docling output was actually adopted.
+- **Config** (`settings.ts` + `.env.example`): `DOCLING_SERVICE_URL`, `DOCLING_SERVICE_REQUIRED`,
+  `DOCLING_SERVICE_TIMEOUT_MS`.
+- **Tests**: `src/domain/docling-quality.test.ts` (gate accept/reject incl. both silent-failure
+  classes and content-loss floor), `src/infrastructure/pdf-extractor-docling-routing.test.ts`
+  (adopt / gate-reject fallback / unreachable fallback / `REQUIRED` hard errors / non-PDF bypass).
+
+### PDF text-extraction microservice — Dockerized split
+
+Text extraction can now run as a separate Docker container instead of inside the main process.
+The split is a pure transport swap at one seam (`extractPDFContent`), so results are identical
+byte-for-byte whether extraction runs in-process or over HTTP.
+
+- **`src/extract-service/`** (`app.ts` + `main.ts`): standalone Express microservice. `GET /health`
+  and `POST /extract` (raw file bytes + `X-File-Name` header; 400/404/413/500 JSON errors). It runs
+  the historical extraction body via `extractPDFContentLocal` on a temp file named after the
+  upload, so per-extension routing (PDF / scanned OCR / image / DOCX / XLSX / TXT) and
+  filename-based text cleaning behave exactly as if the file sat in `__raws`.
+- **Routing seam in `src/infrastructure/pdf-extractor.ts`**: `extractPDFContent()` (the export
+  triage/repair/relocalize already import) delegates to the service when `PDF_EXTRACT_SERVICE_URL`
+  is set; unreachable → falls back to in-process with a throttled WARN (once / 30 s) so documents
+  never strand when Docker is down; `PDF_EXTRACT_SERVICE_REQUIRED=1` turns that into a hard error
+  per file. Env unset → in-process, unchanged (desktop `.exe`, `npm run scan`, MCP, tests all
+  unaffected).
+- **`src/infrastructure/pdf-extract-remote.ts`**: HTTP client (raw POST, no default timeout —
+  OCR takes minutes), returns the same `ExtractedPDF` contract.
+- **Docker**: `Dockerfile.extract-service` (multi-stage `node:22-bookworm-slim`, `--ignore-scripts`
+  in both `npm ci` stages — the image never imports native addons needing a compiler), `docker-compose.yml`
+  (`docker compose up -d --build` → published on `:3981`, healthcheck, log rotation),
+  `.dockerignore`. Tesseract `eng/fra/vie.traineddata` are bundled at image build (one download
+  from the `@tesseract.js-data` CDN — the repo-root files are gitignored) and served from disk via
+  new optional `TESSERACT_LANG_PATH` support in `pdf-extractor.ts` — no CDN download at runtime.
+  PaddleOCR stays an optional upstream (`PADDLEOCR_HOST`), with `PADDLEOCR_SPAWN_CMD=/bin/false`
+  in the container.
+- **Config** (`settings.ts` + `.env.example`): `PDF_EXTRACT_SERVICE_URL`, `_REQUIRED`,
+  `_TIMEOUT_MS`, `PDF_EXTRACT_PORT` (3981) / `PDF_EXTRACT_HOST` / `PDF_EXTRACT_MAX_BYTES`.
+  `@napi-rs/canvas` moved from devDependencies → dependencies (genuine runtime dep of the
+  extractor/image pipeline — also fixes its absence from packaged production `node_modules`).
+- **Scripts**: `npm run extract:dev` runs the microservice standalone (no Docker).
+- **Tests**: `src/extract-service/app.test.ts` (endpoint contract incl. a real pdf-lib PDF) and
+  `src/infrastructure/pdf-extractor-routing.test.ts` (default in-process path, live HTTP
+  round-trip, unreachable → fallback WARN, required → hard error). Full suite green apart from
+  pre-existing environment-dependent failures (real `settings.json`/`.env` on this machine,
+  Windows-path tests under Linux, marginal OCR fixture geometry).
+- **Docs**: [pdf-extract-service.md](docs/knowledge/pdf-extract-service.md) (full reference),
+  environment doc env-var table, `.env.example`, `AGENTS.md` context map/layout/scripts, this entry.
+
+### Step C markdown repair — rows whose description escaped to a heading are re-folded
+
+When a table crosses a 1400-char chunk boundary **and** prose (an EDF footnote caption) sits between
+the chunks' rows, the model sometimes promoted each continuation row's first cell to a Markdown
+heading instead of keeping it in the row — doc 5009's *Grille tarifaire* came back with 3 of its 5
+rows as `## Base - 03kVA - du 01/02/26 au 16/05/26` above a lone `| 9,16 | 31,62 | 20,0% |` (one
+cell short of the header). The existing edge-pipe and blank-line repairs could not see the shape
+(the value line is already a well-formed row), the targeted per-chunk re-conversion kept failing its
+structural screen, and the assembled markdown — and therefore the document's Markdown view in the
+app — rendered a broken table with the footnote stuck between rows.
+
+- **`reattachHeadingSplitTableRows()`** (`src/domain/markdown-tables.ts`): deterministic,
+  content-preserving repair. When a heading is immediately followed by a lone well-formed row whose
+  cells are all pure values, whose width is exactly one short of the nearest headed table above it,
+  and no long prose gap separates them, the heading text is that row's missing first cell — fold it
+  back and move the row into the parent table (footnote stays after the complete table). Narrow
+  gates keep genuine "section title + small table" shapes untouched.
+- Wired into `convertRawTextToZeroLossMarkdown()` (`src/application/classify-document.ts`) after the
+  headerless-block merge, with its own WARN log line.
+- Tests: domain cases in `src/domain/markdown-tables.test.ts` (doc-5009 shape, textual mini-tables,
+  multi-row sections, far-away tables, no-ops) + an end-to-end Step C test in
+  `src/application/classify-document.test.ts` asserting one healthy 5-row table and the footnote
+  preserved after it.
+
+### Pre-registration quality gate + chunk-scoped repair (no full-document re-run)
+
+
+Doc 5009's table came back with rows outside the GFM pipes and the pipeline registered it with no
+error anywhere — the integrity audit only counts rows that START with '|', so the malformed rows
+were invisible. Now nothing is registered while the extraction/markdown is unusable, and the
+automatic fix is scoped to the FAILING CHUNK, not the whole document.
+
+- **`src/domain/extraction-quality-gate.ts`** (new) — `assessExtractionQuality()` over raw text +
+  assembled markdown: OCR/decoration noise, still-corrupted text, malformed pipe rows (rows
+  carrying `|` cells but not well-formed GFM), ragged tables, headerless table blocks, and heavy
+  content loss. Thresholds calibrated on the recent corpus (4991-5009) so healthy documents pass
+  with margin. `ExtractionQualityGateError` is a typed, catchable error mirroring
+  `OllamaUnavailableError`, carrying the structured report so a caller (web scan route, MCP tool,
+  or a local agent) can re-fix the file directly.
+- **Chunk-scoped repair in Step C** (`src/application/classify-document.ts`) — each chunk's output
+  is screened (`assessChunkMarkdown` / `describeTableRepairNote`) as it converts; a chunk whose
+  output has malformed rows or a chart/axis header blow-out is re-converted ONCE and ALONE with a
+  corrective `⚠️ REPAIR REQUEST` note (`prompt.ts` `buildMarkdownConversionPrompt` gained an
+  optional `repairNote`). Other chunks keep their output and their model round-trips — the document
+  is never re-converted from chunk 1. A retry that still fails keeps the first content-preserving
+  output.
+- **Deterministic markdown well-formedness repair** (`src/domain/markdown-tables.ts`) —
+  `normalizeMalformedPipeRows()` restores missing edge pipes on rows that dropped out of their GFM
+  table (purely syntactic, no cell moved/invented); `mergeHeaderlessContinuationBlocks()` re-joins
+  headerless continuation rows into the parent table when the widths match; `joinChunkMarkdown()`
+  avoids a blank-line split when a chunk's rows continue the previous chunk's table.
+- **Triage wiring** (`src/application/triage-scan.ts`) — the gate runs after classification and
+  BEFORE the DB insert / archive move; on failure the file is moved to `__raws/.blocked_files`
+  with reason `QUALITY_GATE` and the typed error message (which lists every failing check) is
+  recorded and surfaced as `FILE_FAILED`.
+- Doc 5009 (EDF régularisation) was regenerated through the new pipeline: the previously
+  malformed detail-table rows are now well-formed GFM rows, headerless continuation blocks are
+  merged, and the output passes the pre-registration gate before being written back.
+- Tests: `extraction-quality-gate.test.ts` (new), `markdown-tables.test.ts` (normalizer + block
+  merge), `classify-document.test.ts` (targeted retry = chunks+1 generate calls, no full re-run;
+  continued tables joined without headerless blocks).
+
+
+### Pre-registration quality gate + chunk-scoped repair (no full-document re-run)
+
+Doc 5009's table came back with rows outside the GFM pipes and the pipeline registered it with no
+error anywhere — the integrity audit only counts rows that START with '|', so the malformed rows
+were invisible. Now nothing is registered while the extraction/markdown is unusable, and the
+automatic fix is scoped to the FAILING CHUNK, not the whole document.
+
+- **`src/domain/extraction-quality-gate.ts`** (new) — `assessExtractionQuality()` over raw text +
+  assembled markdown: OCR/decoration noise, still-corrupted text, malformed pipe rows (rows
+  carrying `|` cells but not well-formed GFM), ragged tables, headerless table blocks, and heavy
+  content loss. Thresholds calibrated on the recent corpus (4991-5009) so healthy documents pass
+  with margin. `ExtractionQualityGateError` is a typed, catchable error mirroring
+  `OllamaUnavailableError`, carrying the structured report so a caller (web scan route, MCP tool,
+  or a local agent) can re-fix the file directly.
+- **Chunk-scoped repair in Step C** (`src/application/classify-document.ts`) — each chunk's output
+  is screened (`assessChunkMarkdown` / `describeTableRepairNote`) as it converts; a chunk whose
+  output has malformed rows or a chart/axis header blow-out is re-converted ONCE and ALONE with a
+  corrective `⚠️ REPAIR REQUEST` note (`prompt.ts` `buildMarkdownConversionPrompt` gained an
+  optional `repairNote`). Other chunks keep their output and their model round-trips — the document
+  is never re-converted from chunk 1. A retry that still fails keeps the first content-preserving
+  output.
+- **Deterministic markdown well-formedness repair** (`src/domain/markdown-tables.ts`) —
+  `normalizeMalformedPipeRows()` restores missing edge pipes on rows that dropped out of their GFM
+  table (purely syntactic, no cell moved/invented); `mergeHeaderlessContinuationBlocks()` re-joins
+  headerless continuation rows into the parent table when the widths match; `joinChunkMarkdown()`
+  avoids a blank-line split when a chunk's rows continue the previous chunk's table.
+- **Triage wiring** (`src/application/triage-scan.ts`) — the gate runs after classification and
+  BEFORE the DB insert / archive move; on failure the file is moved to `__raws/.blocked_files`
+  with reason `QUALITY_GATE` and the typed error message (which lists every failing check) is
+  recorded and surfaced as `FILE_FAILED`.
+- Doc 5009 (EDF régularisation) was regenerated through the new pipeline: the previously
+  malformed detail-table rows are now well-formed GFM rows, headerless continuation blocks are
+  merged, and the output passes the pre-registration gate before being written back.
+- Tests: `extraction-quality-gate.test.ts` (new), `markdown-tables.test.ts` (normalizer + block
+  merge), `classify-document.test.ts` (targeted retry = chunks+1 generate calls, no full re-run;
+  continued tables joined without headerless blocks).
+
+
+### Extraction-quality hardening — OCR never blindly overwrites, scans keep reading order, charts are not tables
+
+Follow-up to the doc-5009 corruption-guard fix below. The unit-token exclusion stops the *known*
+false positive; these three changes make the pipeline degrade gracefully for every *unknown*
+failure mode of the same family, and improve genuine OCR where it still runs.
+
+- **OCR vs digital-layer arbitration** (`src/domain/pdf-text.ts` `chooseBestExtraction()` /
+  `scoreTextQuality()`, wired into `src/infrastructure/pdf-extractor.ts` Step 3): whenever full-page
+  OCR runs on a corruption-triggered path, its output is no longer trusted blindly. The original
+  digital layer is kept unless (a) the layer is genuinely flagged corrupted, (b) the OCR output is
+  not itself corrupted, and (c) the OCR output looks like real prose rather than band noise
+  (`S S8 S 5 T S S S8…`). Doc-5009-style guard misfires, OCR garbage, and "recovered" noise can no
+  longer overwrite a readable layer; OCR only wins when it clearly recovered clean text.
+- **Reading order rebuilt from OCR geometry** (`src/domain/ocr-layout.ts`, `paddleocr-server/`
+  engine + `/ocr`, `src/infrastructure/paddleocr-client.ts`): the PaddleOCR service now also
+  returns `items` — one `{text, poly, score}` per detected box — while keeping the flat `text`
+  field as the compatible contract. The client re-orders boxes into visual rows (same vertical
+  band = one line) and left-to-right, so a printed row that OCR split across boxes (addresses,
+  table rows) becomes adjacent text again, and the markdown model no longer has to guess label/
+  value pairing (rule 2b) from a scrambled linear stream. Falls back to flat text when geometry is
+  missing (older server) or malformed. **Activation requires restarting the PaddleOCR Python
+  service** (it outlives dev-server restarts).
+- **Chart/axis regions are not tables** (`src/domain/markdown-tables.ts`
+  `neutralizeChartLikeTables()`, wired into `src/application/classify-document.ts` Step C): a GFM
+  block whose header claims `>= CHART_TABLE_MAX_HEADER_CELLS` (14) columns — doc 5009's
+  "Evolution de votre consommation" chart came back as a 64-column table with an all-empty data
+  row — is converted back to a verbatim blockquote *before* the integrity audit. Content is never
+  dropped (every cell survives for FTS/search); the block just stops being rendered/audited as a
+  data table. Validated against the stored doc-5009 markdown: exactly the 1 chart block (3 lines)
+  is converted.
+- **`CONFIG.OCR_RENDER_SCALE`** (env `OCR_RENDER_SCALE`, default 2.0) — the canvas render zoom
+  before OCR is now a knob; raise it to 2.5-3.0 for grainy fax/scan pages whose glyphs fall below
+  PaddleOCR's reliable size at 2.0 (split characters like "MIe PALMA BRI G TTE").
+- **Tests** — `pdf-text.test.ts` (arbitration decision matrix + quality scoring), `pdf-extractor`
+  (OCR-band-noise must not replace the layer), `ocr-layout.test.ts` (new: row/column rebuild,
+  geometry-missing fallbacks), `markdown-tables.test.ts` (neutralizer incl. the 14-column
+  boundary), `paddleocr-client.test.ts` (structured items → ordered text; legacy fallback),
+  `paddleocr-server/test_main.py` (structured endpoint shape). Typecheck clean; only the
+  pre-existing Tesseract/PaddleOCR environment failures remain.
+
+### Fix: corruption guard false-positives on SI units — clean digital layers kept instead of OCR'd
+
+On 2026-09-03 an EDF régularisation invoice (doc 5009) whose PDF has a **clean** digital text
+layer was run through full-page OCR anyway, and the OCR pass mangled exactly what the layer had
+stored perfectly — "Mlle PALMA BRIGITTE" became "MIe PALMA BRI G TTE", "Du lundi au samedi"
+became "aū samedi", decorative page bands became letter noise, and the Markdown step then built
+the bar-chart axes into a 64-column pseudo-table. Root cause: the mid-word-capitalization
+corruption detector (`detectMidWordCapitalizationCorruption` in `src/domain/pdf-text.ts`) counts
+legitimate SI-unit abbreviations — `kW`, `kWh`, `kVA`, … (lowercase prefix + uppercase unit) —
+as corruption tokens, and an energy bill packs them densely enough in tariff tables and footnotes
+to cross the window bar (14/100 = 14% in one window). The clean layer was discarded, the
+"< 10 chars" guard never saw it, and the OCR output replaced it.
+
+- **`src/domain/pdf-text.ts`** — added `isUnitLikeToken()` and an explicit `UNIT_LIKE_TOKENS`
+  allowlist (`kW`, `kWh`, `kVA`, `kVar`, `mV`, `mA`, `dBm`, `kPa`, `hPa`, …). Unit tokens are
+  excluded *before* the sliding-window step, so they count neither as corruption evidence nor as
+  window filler. Kept deliberately exact: a structural rule ("lowercase prefix + one uppercase")
+  would also swallow genuine corruption tokens like `cAn`, so only known units are exempted.
+- **`src/domain/pdf-text.test.ts`** — new negative control reproducing the doc-5009 density
+  (21 `kWh` in the first 100-word window, which the pre-fix detector reported as a 21% corruption
+  window): now `isLikelyCorruptedText(...) === false`. All genuine-corruption fixtures (doc 2545
+  balance sheet) still flag as before.
+- **`docs/knowledge/architecture.md`** — "Corrupted" text must actually be corrupted bullet in the
+  extraction-tiers section, with the doc-5009 case as the canonical false-positive example.
+- Verified end-to-end on the archived EDF PDF: `extractPDFContent()` now keeps the 16.8k-char
+  digital layer and never reaches OCR (`npm test` on `pdf-text.test.ts`: 24/24 green; the 4
+  `pdf-extractor.test.ts` failures are the pre-existing Tesseract/PaddleOCR environment ones).
+
+### Fix: Ollama down → triage stops and reminds the user (no rule-based fallback)
+
+When Ollama is unreachable the pipeline now does **nothing** to the files: no extraction, no
+classification, no rule-based fallback, no move — it emits a clear reminder and leaves every file
+in `__raws`. The silent rule-based fallback on an unreachable model is exactly what misfiled three
+documents on 2026-08-31; the fallback now only ever runs for a *healthy* model's unparseable JSON.
+
+- **`OllamaUnavailableError`** (`src/infrastructure/ollama-client.ts`): thrown when the capability
+  check fails or a classification/chat completion hits a connection-level error (ECONNREFUSED,
+  fetch failed, socket hang up, …). `classifyPDFText` rethrows it instead of rule-falling-back.
+- **Scan-level gate** (`src/application/triage-scan.ts`): `runTriageScan` checks
+  `ensureOllamaModel()` before touching a single file — before photo bundling, extraction or OCR.
+  On failure it emits an `OLLAMA_DOWN` SSE event (60 s cooldown so the 10 s auto-watcher cannot
+  spam toasts) and returns `{ scannedCount: 0, processedCount: 0, skippedCount: 0, ollamaDown: true,
+  message }` with nothing moved and no DB rows written.
+- **Per-file handling**: if Ollama drops mid-scan, the file is blocked in `__raws` with the
+  reminder instead of being classified by the fallback. Repair handles the same case per file
+  (`repair-registry.ts`); Relocalize surfaces the reminder as its error message.
+- **Web server**: the manual scan and auto-watcher routes fail the operation task with the
+  reminder (so the UI toasts it) instead of reporting "completed, processed 0".
+- **UI** (`public/ts/TriageEventsManager.ts`): handles the `OLLAMA_DOWN` event in both the global
+  SSE listener and the scan-progress modal, shows the reminder as a header + toast (deduped to one
+  per 30 s), closes the modal cleanly, and refreshes the header's Ollama status badge.
+- **Tests**: classify-document (health-check failure → `OllamaUnavailableError`, no fallback),
+  triage-scan-duplicate-collision (Ollama down → empty result, `OLLAMA_DOWN` event, zero files
+  touched). `npm test` still shows only the 15 pre-existing environment failures.
+
+### Fix: auto-learned STEP 0 rules must never hijack bank / tax / payslip documents
+
+On 2026-08-31 the Ollama capability check failed for three consecutive files, so triage ran on the
+rule-based fallback — and the fallback misfiled all three: a **SEPA mandate** (`Mandat_SEPA_*`) and
+an **income-tax notice** (`Avis d'impôt 2026`) went to `invoices/cdiscount`, and a **property-tax
+notice** (`Avis de taxes foncières 2026`) went to `housing/foncia`. Root cause: two auto-learned
+rules derived from human move decisions ("calendrier de paiement.PDF" → `invoices/cdiscount`,
+"QuittanceDeLoyer-…" → `invoices/foncia`) matched the *generic words* `paiement` / `échéance` in
+the body text of unrelated documents and overrode the tax branch. Permanent fixes:
+
+- **Filename-scoped learned rules** — `decisionsToPriorityRules` (`src/domain/decision-rule.ts`)
+  now tags every derived rule `scope: 'filename'` (`prompt-personalization.ts`): it only fires
+  when the keyword appears in a future document's *filename*, never in body text. The rendered
+  STEP 0 block tells Qwen the same thing, keeping prompt and fallback aligned (Golden Rule #6).
+- **Generic-word stopwords** — `deriveRuleKeywords` now rejects money-movement / document-type
+  words (`paiement`, `paiements`, `payer`, `paye`, `échéance`, `échéancier`, `calendrier`,
+  `credit`, `versement`, `remboursement`, `cotisation`, `transaction`, `mandat`, `sepa`, `rib`,
+  `iban`, `bic`, `confirmation`, `quittancedeloyer`, …) that describe *what* a document does,
+  never *who* issued it. The two poison decisions now derive no keywords at all.
+- **Semantic anchors in the fallback** — `ruleBasedClassify` (`src/domain/classification.ts`)
+  gains `looksLikeTaxNotice` and `looksLikePayslip` next to the existing `looksLikeBankStatement`:
+  an overlay rule whose target category disagrees with those anchors is rejected, so a tax notice
+  falls through to `administrative/impot` and a pay slip to `bulletin_salaire`. Property-tax
+  detection is notice-level (`taxe foncière` needs a second tax-authority signal) so Foncia
+  quittances that list "taxe foncière" among the charges keep classifying as `housing/foncia`.
+- **SEPA mandates** now file under `contracts/mandat_sepa` (fallback branch + prompt STEP 4 +
+  classification-flow step 9) instead of being dragged toward `invoices`.
+- **Prompt static guard** — `prompts/classification_rules.md` STEP 2 now states that a real tax
+  notice always wins over a STEP 0 keyword match.
+- **FTS delete hardening** — `updateDocumentRecord` (`src/infrastructure/db/database.ts`) now
+  coerces its id to a positive integer before the `DELETE FROM documents_fts WHERE doc_id = ?`
+  re-index: FTS5's `doc_id` is INTEGER, so a string-typed id binds as TEXT, silently deletes
+  nothing, and the re-insert leaves a stale row plus a duplicate. Regression test added in
+  `database.test.ts` (this exact corruption was produced while re-filing the three documents).
+- **Tests** — regression suites in `decision-rule.test.ts`, `prompt-personalization.test.ts`,
+  `classification.test.ts` (tax notices vs poison overlay, quittance safety, filename scope,
+  SEPA mandate).
+- **Runtime-data fix** — the three misfiled documents were first re-filed to their correct
+  folders, then (per user request) moved **back to `__raws`** with their DB/FTS/registry rows
+  purged, so the next scan re-triages them from scratch with the fixed code — the two poison
+  manual decisions were corrected (`#295` pinned to the distinctive `cdiscount` keyword, `#297`
+  disabled — the hand-curated `Foncia` rule already covers it).
 
 ### Taxonomy duplicate guard — block + return hint to the local agent
 
@@ -830,6 +1145,64 @@ Docs: [architecture — OCR engine fallback and its cost](docs/knowledge/archite
   whose `markdown_content` still has a garbled table, as the live auto-watcher
   reprocesses the corpus after the two fixes below. One-off tooling, not part
   of the shipped app.
+
+### Service-split plan — img→PDF packaging + file→Markdown (Service B shipped, Service A designed)
+
+Designed and spike-proven two further microservice seams on real documents, without touching any
+routing in `src/` (docs-only change + gitignored `.spike/` scratch):
+
+- **Design doc** — [`docs/knowledge/service-split-plan.md`](docs/knowledge/service-split-plan.md):
+  Service A = thin raster→A4 PDF packaging (`POST /pdf-from-pages`, pure pdf-lib assembly with
+  `fitImageToA4`; vision/OCR stay app-side by user decision); Service B = Docling file→Markdown
+  (`POST /to-markdown`, extension-routed: PDF → layout+TableFormer+RapidOCR pipeline, office files
+  → Docling native readers; app-side `assessDoclingMarkdown` gate and Step C LLM fallback
+  unchanged). Same opt-in/fallback philosophy as `pdf-extract`; ports 3983/3984 proposed.
+- **Spike A (Service A)** — `.spike/raster-pdf-service.ts` + `raster-pdf-spike.ts`: over the 6 real
+  source photos in `__raws/.delete_files/img_converted/`, the service output was **byte-identical
+  (7/7)** to in-process assembly — single pages and the 6-photo bundle; pdf-lib deterministic;
+  7–38 ms/call.
+- **Spike B (Service B)** — `.spike/docling_markdown_service.py` + `markdown-service-check.ts` on
+  2 archived real docx + 1 scanned 6-page PDF: **gate pass 3/3**; docx native conversion 127–696 ms
+  with recall ≥ the stored Step C output, and Docling exported **no** tables where the docx XML has
+  none — while the stored Step C markdown for the contract *invented* a 2-row table (Docling does
+  not hallucinate structure). Scanned PDF: real tables (5 blocks/64 rows) vs none stored, 36 s.
+- Full numbers and recommendation: [`.spike/split-spike-report.md`](.spike/split-spike-report.md).
+  The five open design questions were resolved (positions recorded in the plan doc — notably
+  Service A folded into roadmap step 4, not wired alone).
+- **Service B shipped — `docling-markdown-server/`** (roadmap step 1, app routing untouched).
+  The spike sidecar is now a committed, Dockerized microservice:
+  - `docling-markdown-server/` — `docling_pipeline.py` (converter factory + extension sets, no
+    server deps), `main.py` (stdlib HTTP server: `POST /extract` — the endpoint `docling-remote.ts`
+    already calls — plus `POST /to-markdown` alias; `GET /health`; conversions serialized behind a
+    lock), `requirements.txt` (docling 2.125.0 pinned), `README.md`.
+  - Extension-routed: `.pdf` → Heron layout + TableFormer + RapidOCR PP-OCRv6 `fr`; `.docx/.xlsx/
+    .pptx/.html/.md/.txt/.asciidoc` → Docling native readers; anything else (incl. legacy `.doc`)
+    → `415` (app keeps the flat branch for those). `numpages` is `0` for native conversions.
+  - `Dockerfile.docling-markdown` — python:3.12-slim; RapidOCR onnx bundled in the pip wheel; the
+    ~500 MB HF layout/table models are baked at **build time** (warm-up RUN before `main.py` is
+    COPYed, so code edits never re-download; `libgomp1` for onnxruntime; runtime offline — same
+    rule as the tesseract bundling in `Dockerfile.extract-service`).
+  - `docker-compose.yml` — `docling-markdown` service on :3984 with a python urllib healthcheck
+    (`docker compose up -d --build docling-markdown`).
+  - The app still only offers `.pdf` to Docling (as before — behavior byte-identical, gate
+    app-side); office-file routing is roadmap step 2 behind `DOCLING_ROUTE_OFFICE=1`. Config docs
+    and env examples updated to `DOCLING_SERVICE_URL=http://127.0.0.1:3984`.
+  - Smoke-tested locally on the same venv as the spikes (`.spike/venv`, docling 2.125.0): health,
+    docx via `/extract` (native, 8793 chars — byte-identical to the spike run), PDF via
+    `/to-markdown` (pdf pipeline), legacy `.doc` → 415. Image not built here — Docker is not
+    reachable from this WSL distro; `docker compose up -d --build docling-markdown` is the user's
+    step (first build downloads ~500 MB of models).
+- **Service B moved to its own repo (same day)** — for independent development, the service now
+  lives at **`/home/daihu/__projects__/markdown-extract-service`** (own git repo, initial commit
+  `35ca16a`): `docling_pipeline.py` + `main.py` + `requirements.txt` + `README.md` at the repo
+  root, its own `Dockerfile` and `docker-compose.yml` (service `markdown-extract`, still :3984,
+  healthcheck unchanged), MIT `LICENSE`, `.gitignore`. The in-tree `docling-markdown-server/`
+  folder, `Dockerfile.docling-markdown` and the `docling-markdown` compose service were **removed**
+  from this repo; pdf-triage keeps only its consumer side (`docling-remote.ts` client + app-side
+  `docling-quality.ts` gate + `DOCLING_SERVICE_URL` settings — all `src/` untouched). Service
+  renamed `markdown-extract` in `/health`; endpoints, port and response contract unchanged, so the
+  existing seam works as-is. Docs/AGENTS/env now point at the external project; local smoke of the
+  relocated layout: same venv, health + docx + pdf + 415 all green.
 
 ## 2026-08-24 — Markdown/classification correctness fixes
 

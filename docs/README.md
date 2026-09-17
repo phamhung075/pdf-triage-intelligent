@@ -28,6 +28,9 @@
 - [API Reference](./knowledge/api-reference.md) — Every REST + SSE + MCP endpoint.
 - [Category Taxonomy](./knowledge/taxonomy.md) — Categories, subcategories, aliases.
 - [Environment & Config](./knowledge/environment.md) — `settings.json`, env vars, paths.
+- [PDF Extract Microservice](./knowledge/pdf-extract-service.md) — Dockerized text-extraction split (`docker compose up`, `PDF_EXTRACT_SERVICE_URL`, fallback).
+- [Docling Extract Layer](./knowledge/docling-extract-layer.md) — optional layout-aware extraction (`DOCLING_SERVICE_URL`, quality gate, Step C skip).
+- [Service Split Plan](./knowledge/service-split-plan.md) — Service B (Docling file→Markdown) shipped as its own repo `/home/daihu/__projects__/markdown-extract-service`; Service A (img→PDF packaging) designed + spiked; roadmap, decisions, evidence.
 
 ## 👥 Agent Playbooks
 

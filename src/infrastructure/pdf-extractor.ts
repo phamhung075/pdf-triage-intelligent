@@ -7,8 +7,11 @@ import { createCanvas } from '@napi-rs/canvas';
 import { createWorker } from 'tesseract.js';
 import { logger } from './logger.js';
 import { CONFIG } from './settings.js';
-import { cleanExtractedText, detectMidWordCapitalizationCorruption, detectThinTextLayer, type CorruptionSignal } from '../domain/pdf-text.js';
+import { cleanExtractedText, detectMidWordCapitalizationCorruption, detectThinTextLayer, chooseBestExtraction, type CorruptionSignal } from '../domain/pdf-text.js';
 import { paddleOcrRecognize } from './paddleocr-client.js';
+import { extractPDFContentRemote } from './pdf-extract-remote.js';
+import { isDoclingExtractionConfigured, isDoclingExtractionRequired, extractDoclingContent } from './docling-remote.js';
+import { assessDoclingMarkdown } from '../domain/docling-quality.js';
 
 export interface ExtractedPDF {
   checksum: string;
@@ -22,6 +25,11 @@ export interface ExtractedPDF {
   // for this file (re-analysis) needs to know the new extraction is the degraded one BEFORE it
   // overwrites anything with it. Undefined/false means no OCR ran, or PaddleOCR handled it.
   ocr_degraded?: boolean;
+  // Present only when the Docling structured extractor (DOCLING_SERVICE_URL) ran and its output
+  // passed the quality gate: the layout-aware Markdown with real tables. A caller that converts
+  // raw text to Markdown (the Step C pass in classify-document) can use this directly instead of
+  // asking the LLM to rebuild structure it already has. Undefined = normal extraction, unchanged.
+  docling_markdown?: string;
 }
 
 export interface CanvasOcrResult {
@@ -121,6 +129,7 @@ export async function parseWithPdfjs(buffer: Buffer): Promise<string> {
   }
 }
 
+
 // Helper to convert raw pixel data into BMP buffer
 export function encodeToBMP(dataBuffer: Uint8Array, width: number, height: number, kind: number): Buffer {
   const isRGBA = kind === 3;
@@ -161,11 +170,26 @@ export function encodeToBMP(dataBuffer: Uint8Array, width: number, height: numbe
 
 let sharedTesseractWorkerPromise: Promise<any> | null = null;
 
+// tesseract.js downloads each language's .traineddata from a CDN the first time a worker loads.
+// In the Dockerized extraction image (and any air-gapped install) that network dependency must
+// not exist: when TESSERACT_LANG_PATH points at a folder holding fra/eng/vie.traineddata, the
+// worker reads them straight from disk instead (tesseract.js loadLanguage accepts a local
+// directory on Node). Unset = stock behavior, so local/dev environments are untouched. The repo
+// ships eng.traineddata / fra.traineddata / vie.traineddata at its root, and the image COPYs them
+// into /app/tessdata for exactly this purpose.
+function tesseractWorkerOptions(): { langPath: string; cacheMethod: 'none' } | undefined {
+  const langPath = (process.env.TESSERACT_LANG_PATH || '').trim();
+  return langPath ? { langPath, cacheMethod: 'none' } : undefined;
+}
+
 export async function getSharedTesseractWorker(): Promise<any> {
   if (!sharedTesseractWorkerPromise) {
     sharedTesseractWorkerPromise = (async () => {
       try {
-        const worker = await createWorker(['fra', 'eng', 'vie']);
+        const opts = tesseractWorkerOptions();
+        const worker = opts
+          ? await createWorker(['fra', 'eng', 'vie'], undefined, opts)
+          : await createWorker(['fra', 'eng', 'vie']);
         return worker;
       } catch (err: any) {
         sharedTesseractWorkerPromise = null;
@@ -256,7 +280,7 @@ export async function ocrPdfPagesWithCanvas(buffer: Buffer, maxPages = CONFIG.OC
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       try {
         const page = await doc.getPage(pageNum);
-        const viewport = page.getViewport({ scale: 2.0 });
+        const viewport = page.getViewport({ scale: CONFIG.OCR_RENDER_SCALE });
         const canvas = createCanvas(viewport.width, viewport.height);
         const context = canvas.getContext('2d');
         await page.render({ canvasContext: context, viewport }).promise;
@@ -386,7 +410,17 @@ function extractXlsxTextBuffer(buf: Buffer): string {
   return sanitizeDocumentNoise(textMatches.join('\n'));
 }
 
-export async function extractPDFContent(filePath: string): Promise<ExtractedPDF> {
+/**
+ * In-process document extraction: PDF text layer → pdfjs-dist recovery → full-page Canvas render
+ * + OCR (PaddleOCR first, Tesseract availability fallback), plus image OCR and DOCX/XLSX/TXT
+ * reading. This is the historical extractPDFContent body, kept exported so the Dockerized
+ * extraction service (src/extract-service) and any direct caller can invoke it explicitly.
+ *
+ * Production callers (triage-scan, relocalize-document, repair-registry) import extractPDFContent
+ * — the wrapper below — which delegates here over HTTP when PDF_EXTRACT_SERVICE_URL is set and
+ * falls back to this implementation when the service is unreachable.
+ */
+export async function extractPDFContentLocal(filePath: string): Promise<ExtractedPDF> {
   logger.debug('PDF_PARSER', `Reading file & parsing text content`, { filePath });
   const fileBuffer = fs.readFileSync(filePath);
   const filename = path.basename(filePath);
@@ -440,7 +474,10 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
       try {
         // Keeps the fra+eng+vie language set: the fallback must not be able to read FEWER
         // languages than it did before PaddleOCR was put in front of it.
-        const worker = await createWorker('fra+eng+vie');
+        const opts = tesseractWorkerOptions();
+        const worker = opts
+          ? await createWorker('fra+eng+vie', undefined, opts)
+          : await createWorker('fra+eng+vie');
         const ret = await worker.recognize(fileBuffer);
         ocrText = ret.data.text || '';
         await worker.terminate();
@@ -562,7 +599,22 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
       raw_text = `[OCR Extracted Text]\n\n${cleanedOcr}`;
       corruptionSignal = null;
       if (recoveredFromCorruption) {
-        logger.info('PDF_PARSER', `Corruption-triggered fallback chain RECOVERED clean text for '${filename}' via OCR.`, { filename });
+        // The corruption guard can misfire (doc id 5009: a clean EDF layer dense with SI units was
+        // flagged and OCR'd into "MIe PALMA BRI G TTE"). Never let OCR blindly overwrite the layer
+        // it was called in to replace — arbitrate, and keep the layer whenever OCR did not clearly
+        // beat it. See chooseBestExtraction in domain/pdf-text.ts for the decision rules.
+        const choice = chooseBestExtraction(corruptedDigitalText, cleanedOcr);
+        if (choice.source === 'digital') {
+          raw_text = choice.text;
+          logger.warn(
+            'PDF_PARSER',
+            `Corruption-triggered OCR did NOT beat the existing digital layer for '${filename}' ` +
+            `(${choice.reason}) — keeping the layer's ${raw_text.length} chars instead of the OCR output.`,
+            { filename, reason: choice.reason }
+          );
+        } else {
+          logger.info('PDF_PARSER', `Corruption-triggered fallback chain chose OCR text for '${filename}' (${choice.reason}).`, { filename, reason: choice.reason });
+        }
       }
     } else if (corruptionSignal) {
       // OCR also failed to produce usable text — keep the original
@@ -613,4 +665,138 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
     info,
     ocr_degraded: ocrDegraded
   };
+}
+
+// ---- Remote-extraction routing --------------------------------------------------------------
+//
+// extractPDFContent() is the seam triage-scan, relocalize-document and repair-registry import, so
+// the microservice split lands here and nowhere else:
+//
+//   - DOCLING_SERVICE_URL set      → PDFs are first offered to the optional Docling structured
+//     extractor (layout-aware Markdown, see src/domain/docling-quality.ts for the gate). When
+//     Docling answers AND its output passes the gate, its text becomes raw_text and its Markdown
+//     rides along as `docling_markdown` (a caller that converts text to Markdown can use it
+//     directly instead of re-running the LLM Step C pass). When Docling is unreachable, errors,
+//     or its output fails the gate (empty/whole-page-picture/garbage), extraction falls through
+//     to the normal chain below — unchanged. DOCLING_SERVICE_REQUIRED=1 turns a Docling
+//     failure into a hard error instead of a fallback.
+//   - PDF_EXTRACT_SERVICE_URL unset  → in-process extraction (unchanged behavior; desktop .exe and
+//     the test suite never notice the split).
+//   - PDF_EXTRACT_SERVICE_URL set    → the whole extraction is delegated over HTTP to the
+//     Dockerized service. If the service is unreachable or errors, the app falls back to
+//     extractPDFContentLocal() with a WARN (throttled to once per 30s — a dead Docker daemon would
+//     otherwise spam one identical warning per file) so documents never strand just because Docker
+//     is down. PDF_EXTRACT_SERVICE_REQUIRED=1 turns that fallback into a hard error instead.
+//
+// The HTTP result is the SAME ExtractedPDF contract, produced by the same code on the other side
+// of the wire, so checksums, dedupe keys, cleaning and ocr_degraded semantics are identical.
+let lastRemoteFallbackWarnAt = 0;
+const REMOTE_FALLBACK_WARN_INTERVAL_MS = 30_000;
+let lastDoclingFallbackWarnAt = 0;
+
+export function isRemoteExtractionConfigured(): boolean {
+  return CONFIG.PDF_EXTRACT_SERVICE_URL.length > 0;
+}
+
+const DOCLING_PDF_EXTENSIONS = new Set(['.pdf']);
+
+/**
+ * Tries the optional Docling structured extractor for a PDF. Returns an ExtractedPDF when Docling
+ * answered and its output passed the quality gate; null when Docling is not configured, the file
+ * is not a PDF, the service is unreachable, or the gate rejected the output — the caller then
+ * falls back to the normal chain, byte-for-byte as before.
+ */
+async function tryDoclingExtraction(filePath: string): Promise<ExtractedPDF | null> {
+  const ext = path.extname(filePath).toLowerCase();
+  if (!isDoclingExtractionConfigured() || !DOCLING_PDF_EXTENSIONS.has(ext)) return null;
+
+  const filename = path.basename(filePath);
+  let docling;
+  try {
+    docling = await extractDoclingContent(filePath);
+  } catch (err: any) {
+    if (CONFIG.DOCLING_SERVICE_REQUIRED) {
+      throw new Error(`Docling service unreachable (DOCLING_SERVICE_REQUIRED=1) for '${filename}': ${err.message}`);
+    }
+    const now = Date.now();
+    if (now - lastDoclingFallbackWarnAt > REMOTE_FALLBACK_WARN_INTERVAL_MS) {
+      lastDoclingFallbackWarnAt = now;
+      logger.warn(
+        'PDF_PARSER',
+        `Docling service (${CONFIG.DOCLING_SERVICE_URL}) unreachable — falling back to the normal extraction chain: ${err.message}`,
+        { filename }
+      );
+    }
+    return null;
+  }
+
+  const report = assessDoclingMarkdown(docling.markdown);
+  if (!report.pass) {
+    const reasons = report.failures.map(f => f.id).join(', ');
+    if (CONFIG.DOCLING_SERVICE_REQUIRED) {
+      throw new Error(
+        `Docling output rejected by the quality gate (DOCLING_SERVICE_REQUIRED=1) for '${filename}': ${reasons}`
+      );
+    }
+    const now = Date.now();
+    if (now - lastDoclingFallbackWarnAt > REMOTE_FALLBACK_WARN_INTERVAL_MS) {
+      lastDoclingFallbackWarnAt = now;
+      logger.warn(
+        'PDF_PARSER',
+        `Docling output rejected by the quality gate for '${filename}' (${reasons}) — falling back to the normal extraction chain.`,
+        { filename, failures: report.failures.map(f => ({ id: f.id, message: f.message })) }
+      );
+    }
+    return null;
+  }
+
+  logger.info('PDF_PARSER', `Docling structured extraction adopted for '${filename}' (${docling.raw_text.length} chars text, ${docling.markdown.length} chars Markdown)`, {
+    filename,
+    textChars: docling.raw_text.length,
+    markdownChars: docling.markdown.length,
+    numpages: docling.numpages,
+  });
+  return {
+    // Checksum computed locally, not trusted from the service: it is the dedupe key, and local /
+    // remote / docling extraction must all produce the SAME sha256 over the file bytes or the
+    // same physical file would be registered as different documents depending on transport.
+    checksum: crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex'),
+    raw_text: docling.raw_text,
+    numpages: docling.numpages,
+    info: docling.info || {},
+    ocr_degraded: docling.ocr_degraded,
+    docling_markdown: docling.markdown,
+  };
+}
+
+export async function extractPDFContent(filePath: string): Promise<ExtractedPDF> {
+  // Optional Docling layer first (PDFs only). On pass its structured output replaces the normal
+  // extraction; on any failure the chain below runs exactly as if Docling were not configured.
+  const doclingResult = await tryDoclingExtraction(filePath);
+  if (doclingResult) return doclingResult;
+
+  if (!isRemoteExtractionConfigured()) {
+    return extractPDFContentLocal(filePath);
+  }
+
+  const filename = path.basename(filePath);
+  try {
+    const remote = await extractPDFContentRemote(filePath);
+    logger.info('PDF_PARSER', `Extraction delegated to ${CONFIG.PDF_EXTRACT_SERVICE_URL} (${remote.raw_text.length} chars)`, { filename });
+    return remote;
+  } catch (err: any) {
+    if (CONFIG.PDF_EXTRACT_SERVICE_REQUIRED) {
+      throw new Error(`PDF extract service unreachable (PDF_EXTRACT_SERVICE_REQUIRED=1) for '${filename}': ${err.message}`);
+    }
+    const now = Date.now();
+    if (now - lastRemoteFallbackWarnAt > REMOTE_FALLBACK_WARN_INTERVAL_MS) {
+      lastRemoteFallbackWarnAt = now;
+      logger.warn(
+        'PDF_PARSER',
+        `PDF extract service (${CONFIG.PDF_EXTRACT_SERVICE_URL}) unreachable — falling back to in-process extraction: ${err.message}`,
+        { filename }
+      );
+    }
+    return extractPDFContentLocal(filePath);
+  }
 }

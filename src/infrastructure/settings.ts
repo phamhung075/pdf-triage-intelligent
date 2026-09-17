@@ -173,6 +173,14 @@ export const CONFIG = {
     const raw = parseInt(process.env.OCR_MAX_PAGES || '10', 10);
     return Number.isFinite(raw) && raw >= 1 ? raw : 10;
   })(),
+  // Zoom factor used to render each scanned page before OCR. 2.0 is the long-standing default;
+  // raising it (e.g. 2.5-3.0) helps grainy fax/scan pages whose glyphs fall below PaddleOCR's
+  // reliable size at 2.0 — split characters ("MIe PALMA BRI G TTE") are the symptom — at the cost
+  // of a bigger upload and slower inference per page.
+  OCR_RENDER_SCALE: (() => {
+    const raw = parseFloat(process.env.OCR_RENDER_SCALE || '2.0');
+    return Number.isFinite(raw) && raw >= 1.0 && raw <= 6.0 ? raw : 2.0;
+  })(),
 
   PORT: parseInt(process.env.PORT || '3971', 10),
   // Security default: bind to localhost only. This server has no authentication — binding to
@@ -181,6 +189,53 @@ export const CONFIG = {
   // to anyone on the same network. Only override this if you specifically want LAN access and
   // understand there is no auth layer protecting it.
   HOST: process.env.PDF_TRIAGE_HOST || '127.0.0.1',
+
+  // ---- PDF text-extraction microservice (Docker) -------------------------------------------
+  // When PDF_EXTRACT_SERVICE_URL is set (e.g. http://127.0.0.1:3981 when the docker-compose from
+  // the repo root is up), extractPDFContent() delegates the whole extraction — PDF text layer,
+  // scanned-page OCR, image OCR, DOCX/XLSX/TXT — to that service over HTTP instead of running the
+  // heavy parser stack in this process. Unset (the default) keeps today's in-process behavior,
+  // so `npm run dev`, the desktop .exe and the test suite are unchanged until the env var is set.
+  // The split is graceful by design: an unreachable service falls back to in-process extraction
+  // with a WARN so documents never strand just because Docker is down. Set
+  // PDF_EXTRACT_SERVICE_REQUIRED=1 to make a dead service a hard error instead of a fallback.
+  PDF_EXTRACT_SERVICE_URL: (process.env.PDF_EXTRACT_SERVICE_URL || '').trim(),
+  PDF_EXTRACT_SERVICE_REQUIRED: ['1', 'true', 'yes'].includes((process.env.PDF_EXTRACT_SERVICE_REQUIRED || '').trim().toLowerCase()),
+  // Per-request timeout for the HTTP extraction call, ms. 0 (the default) = no client timeout:
+  // OCR of a scanned page legitimately takes minutes, and the triage pipeline is strictly 1-by-1
+  // sequential (Golden Rule #9), so a per-file timeout is a foot-gun, not a safeguard.
+  PDF_EXTRACT_SERVICE_TIMEOUT_MS: (() => {
+    const raw = parseInt(process.env.PDF_EXTRACT_SERVICE_TIMEOUT_MS || '0', 10);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  })(),
+  // Listen settings for the extraction microservice itself (src/extract-service). PDF_EXTRACT_HOST
+  // defaults to 127.0.0.1 like HOST above — the Docker image overrides it to 0.0.0.0 so the
+  // published container port is reachable from the host.
+  EXTRACT_SERVICE_PORT: parseInt(process.env.PDF_EXTRACT_PORT || '3981', 10),
+  EXTRACT_SERVICE_HOST: process.env.PDF_EXTRACT_HOST || '127.0.0.1',
+  // Upload ceiling for one POST /extract body. PDFs that need page-render OCR can be large; the
+  // in-process extractor reads the whole file into RAM anyway (readFileSync), so parity means
+  // buffering the upload too.
+  EXTRACT_SERVICE_MAX_BYTES: (() => {
+    const raw = parseInt(process.env.PDF_EXTRACT_MAX_BYTES || String(512 * 1024 * 1024), 10);
+    return Number.isFinite(raw) && raw >= 1024 ? raw : 512 * 1024 * 1024;
+  })(),
+
+  // ---- Docling structured-extraction service (optional quality layer) ------------------------
+  // Docling (https://github.com/docling-project/docling, layout-aware PDF → Markdown with real
+  // tables) can run as a second extractor in front of the existing chain. When
+  // DOCLING_SERVICE_URL is set, extractPDFContent() asks Docling first for PDFs; if its output
+  // passes the pure quality gate (src/domain/docling-quality.ts), the structured Markdown becomes
+  // markdown_content directly (no Step C LLM re-conversion) and its plain text becomes raw_text.
+  // If Docling is unreachable, errors, or its output fails the gate, extraction falls back to the
+  // normal chain (in-process, or PDF_EXTRACT_SERVICE_URL when that is also set) unchanged — so the
+  // default install never notices this layer exists until DOCLING_SERVICE_URL is set.
+  DOCLING_SERVICE_URL: (process.env.DOCLING_SERVICE_URL || '').trim(),
+  DOCLING_SERVICE_REQUIRED: ['1', 'true', 'yes'].includes((process.env.DOCLING_SERVICE_REQUIRED || '').trim().toLowerCase()),
+  DOCLING_SERVICE_TIMEOUT_MS: (() => {
+    const raw = parseInt(process.env.DOCLING_SERVICE_TIMEOUT_MS || '0', 10);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  })(),
 
   // MCP Streamable HTTP transport (npm run mcp) — lets non-stdio agents (OpenAI Agents SDK,
   // other machines on the LAN) call the same tools stdio-based clients (Claude Desktop/Code)

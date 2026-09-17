@@ -95,6 +95,29 @@ Written by `updateConfig()`; reloaded on every scan via `reloadConfigFromDisk()`
 
 Loaded from `.env` via `dotenv` when the process starts.
 
+### PDF text-extraction microservice variables
+
+Split-extraction knobs (see [PDF Extract Microservice](./pdf-extract-service.md) for the full picture):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PDF_EXTRACT_SERVICE_URL` | *(unset)* | When set (e.g. `http://127.0.0.1:3981`), `extractPDFContent()` delegates extraction to the Dockerized service; unreachable → in-process fallback with a WARN. |
+| `PDF_EXTRACT_SERVICE_REQUIRED` | `0` | `1` turns the fallback into a hard error per file. |
+| `PDF_EXTRACT_SERVICE_TIMEOUT_MS` | `0` | Client timeout for one HTTP extraction call; `0` = none (OCR takes minutes). |
+| `PDF_EXTRACT_PORT` / `PDF_EXTRACT_HOST` | `3981` / `127.0.0.1` | Listen settings for the extraction service itself (image overrides host to `0.0.0.0`). |
+| `PDF_EXTRACT_MAX_BYTES` | `536870912` | Upload ceiling for one `POST /extract` body. |
+| `TESSERACT_LANG_PATH` | *(unset)* | Local folder with `fra/eng/vie.traineddata` so tesseract.js skips the CDN (set to `/app/tessdata` in the Docker image). |
+
+### Docling structured extraction variables
+
+Optional quality layer in front of PDF extraction (see [Docling Extract Layer](./docling-extract-layer.md) for the gate and failure modes):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DOCLING_SERVICE_URL` | *(unset)* | When set (e.g. `http://127.0.0.1:3984`), PDFs are first offered to Docling (layout-aware PDF → Markdown). Gate pass → text becomes `raw_text`, its Markdown rides along as `docling_markdown` and Step C's LLM conversion is skipped. Any failure (down / empty / whole-page-picture / mojibake) → normal chain, unchanged. The service is a SEPARATE project: `/home/daihu/__projects__/markdown-extract-service` (own git repo + compose on :3984). |
+| `DOCLING_SERVICE_REQUIRED` | `0` | `1` turns a Docling failure (service down OR gate-rejected output) into a hard error per file instead of a fallback. |
+| `DOCLING_SERVICE_TIMEOUT_MS` | `0` | Client timeout for one Docling HTTP call; `0` = none (Docling layout + OCR takes seconds per page). |
+
 ## Logs
 
 - Terminal: color-coded prefixes `[PDF_PARSER]`, `[OLLAMA_AI]`, `[RELOCALIZE]`, `[TRIAGE]`, `[SERVER]`, `[AUTO_WATCHER]`.

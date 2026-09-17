@@ -57,7 +57,11 @@ export interface MarkdownContinuationContext {
   separator: string;
 }
 
-export function buildMarkdownConversionPrompt(chunkText: string, continuationContext?: MarkdownContinuationContext): { system: string; user: string } {
+export function buildMarkdownConversionPrompt(
+  chunkText: string,
+  continuationContext?: MarkdownContinuationContext,
+  repairNote?: string
+): { system: string; user: string } {
   const template = loadPromptPart('micro_prompt_markdown.md', `Convert the following raw text chunk into clean, structured GitHub Flavored Markdown (GFM).
 STRICT RULES:
 1. ZERO CONTENT SKIPPING: Convert 100% of the raw text accurately into Markdown. Do NOT skip, omit, or summarize any words, numbers, amounts, or table rows.
@@ -75,9 +79,13 @@ Raw Text Chunk:
   if (continuationContext && continuationContext.header) {
     continuationBlock = `\n⚠️ CONTINUATION CONTEXT: The previous chunk ended mid-table with this open table (header row: "${continuationContext.header}"; column separator: "${continuationContext.separator}"). If this chunk continues the same tabular data, output ONLY the continuing \`| cell | cell |\` rows — do NOT repeat the header/separator row and do NOT start a new table for the same data. If this chunk does not continue that table, ignore this note.\n`;
   }
+  let repairBlock = '';
+  if (repairNote) {
+    repairBlock = `\n⚠️ REPAIR REQUEST (this is a RE-CONVERSION of the same chunk): ${repairNote}\nConvert the SAME raw text chunk below again, correcting only the listed problems. Keep 100% of the content. Output ONLY the corrected Markdown.\n`;
+  }
 
   const user = template
-    .replace('{{CONTINUATION_CONTEXT}}', continuationBlock)
+    .replace('{{CONTINUATION_CONTEXT}}', continuationBlock + repairBlock)
     .replace('{{CHUNK_TEXT}}', chunkText);
   const system = "You are a high-precision document to Markdown converter. Output ONLY valid Markdown with zero skipping.";
   return { system, user };

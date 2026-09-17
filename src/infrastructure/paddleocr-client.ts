@@ -1,6 +1,7 @@
 import { CONFIG } from './settings.js';
 import { killProcessOnPort } from './pid-lock.js';
 import { readImageDimensions } from '../domain/image-dimensions.js';
+import { layoutOcrLines, type OcrLineItem } from '../domain/ocr-layout.js';
 
 export interface PaddleOcrOrientationResult {
   rotationDegrees: 0 | 90 | 180 | 270;
@@ -217,7 +218,37 @@ export async function ensurePaddleOcrServer(): Promise<boolean> {
 
 // Builds a fresh FormData per attempt on purpose — a request body is consumed by the fetch that
 // sends it and cannot be replayed on the retry.
-async function requestOcr(imageBuffer: Buffer): Promise<string> {
+//
+// The /ocr response carries BOTH a ready-to-use `text` field (the engine's own flat transcript —
+// the only field an older server build returns) and, when the server has geometry support, an
+// `items` array: one {text, poly, score} entry per detected text box. The client keeps `text` as
+// the contract and treats `items` as an optional upgrade: layoutOcrLines() re-orders items into
+// real visual lines, and if anything about them looks unreliable the flat text is used unchanged.
+function parseOcrItems(raw: unknown): OcrLineItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  const items: OcrLineItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry.text !== 'string') return null;
+    let poly: number[][] | null = null;
+    if (entry.poly != null) {
+      if (!Array.isArray(entry.poly)) return null;
+      poly = [];
+      for (const point of entry.poly) {
+        if (!Array.isArray(point) || typeof point[0] !== 'number' || typeof point[1] !== 'number') return null;
+        poly.push([point[0], point[1]]);
+      }
+    }
+    items.push({ text: entry.text, poly, score: typeof entry.score === 'number' ? entry.score : null });
+  }
+  return items;
+}
+
+interface PaddleOcrResponse {
+  text: string;
+  items: OcrLineItem[] | null;
+}
+
+async function requestOcr(imageBuffer: Buffer): Promise<PaddleOcrResponse> {
   const form = buildImageForm(imageBuffer);
 
   // The abort signal is created HERE, as the request actually goes out — not when it was queued —
@@ -235,7 +266,7 @@ async function requestOcr(imageBuffer: Buffer): Promise<string> {
   if (typeof data.text !== 'string') {
     throw new Error('PaddleOCR /ocr returned an unexpected response shape (missing text field)');
   }
-  return data.text;
+  return { text: data.text, items: parseOcrItems(data.items) };
 }
 
 export async function paddleOcrRecognize(imageBuffer: Buffer): Promise<string> {
@@ -246,13 +277,21 @@ export async function paddleOcrRecognize(imageBuffer: Buffer): Promise<string> {
   // waits on the same warm-up would serialize the wait for no reason.
   await waitForPaddleOcrModel('ocr');
 
+  const recognizeOnce = async (): Promise<string> => {
+    const response = await requestOcr(imageBuffer);
+    // Geometry upgrade: when the server returned per-box items, rebuild the text in real reading
+    // order (see domain/ocr-layout.ts). Fall back to the server's flat text whenever the layout
+    // cannot be trusted or the server predates the items field.
+    return layoutOcrLines(response.items) ?? response.text;
+  };
+
   return runExclusive(async () => {
     try {
-      return await requestOcr(imageBuffer);
+      return await recognizeOnce();
     } catch (err) {
       if (!(err instanceof TransientPaddleOcrError)) throw err;
       await new Promise(r => setTimeout(r, OCR_RETRY_DELAY_MS));
-      return requestOcr(imageBuffer);
+      return recognizeOnce();
     }
   });
 }

@@ -187,6 +187,23 @@ describe('updateDocumentRecord', () => {
     const freshMatches = await db.all("SELECT doc_id FROM documents_fts WHERE documents_fts MATCH 'xyzzy'");
     expect(freshMatches.some((r: any) => r.doc_id === id)).toBe(true);
   });
+
+  it('coerces a string-typed id so the FTS delete cannot silently no-op into a duplicate row', async () => {
+    // FTS5's doc_id is INTEGER; a TEXT-bound 'id' makes `DELETE ... WHERE doc_id = ?` delete
+    // nothing while the re-insert adds a second row — stale FTS rows that search then hits
+    // twice. The coercion must make a string id behave exactly like the numeric one.
+    const { getDb, insertDocumentRecord, updateDocumentRecord } = await freshDb();
+    const db = await getDb();
+    const id = await insertDocumentRecord(sampleDoc({ summary: 'ancien contenu mensuelle' }));
+    await updateDocumentRecord(String(id) as any, { summary: 'nouveau contenu xyzzy' });
+
+    const rows = await db.all('SELECT doc_id FROM documents_fts WHERE doc_id = ?', [id]);
+    expect(rows).toHaveLength(1);
+    const hits = await db.all("SELECT doc_id FROM documents_fts WHERE documents_fts MATCH 'xyzzy'");
+    expect(hits.some((r: any) => r.doc_id === id)).toBe(true);
+    const stale = await db.all("SELECT doc_id FROM documents_fts WHERE documents_fts MATCH 'mensuelle'");
+    expect(stale.some((r: any) => r.doc_id === id)).toBe(false);
+  });
 });
 
 describe('blocked files CRUD', () => {

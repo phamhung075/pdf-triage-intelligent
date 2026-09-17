@@ -208,7 +208,7 @@ Why both layers exist: a worktree-launched instance kept running and squatted on
      can tell a fresh extraction is the WORSE one before overwriting anything with it — see
      [OCR engine fallback and its cost](#ocr-engine-fallback-and-its-cost).
 
-     Two things about this tier are easy to get wrong, and both used to be silent:
+     Several things about this tier are easy to get wrong, and most used to be silent:
 
      - **A thin text layer is not a text layer.** A scan often carries a scanner watermark or page
        numbers, which sail past an "is the text empty?" test and suppress OCR entirely — one 8-page
@@ -216,6 +216,27 @@ Why both layers exist: a worktree-launched instance kept running and squatted on
        content ever reached the registry. `detectThinTextLayer()` (`domain/pdf-text.ts`) treats
        "≥2 pages and under 100 chars/page" or "≥2 pages of ≤2 distinct lines totalling ≤200 chars"
        as un-extracted, and falls through to OCR. Single-page documents are exempt on purpose.
+     - **"Corrupted" text must actually be corrupted.** `detectMidWordCapitalizationCorruption()`
+       (`domain/pdf-text.ts`) catches PDFs whose embedded font has no valid ToUnicode CMap and whose
+       pdf-parse output is garbled-but-nonempty — but legitimate SI units (`kW`, `kWh`, `kVA`…)
+       look exactly like its symptom (one uppercase letter not at position 0) and energy bills pack
+       them densely enough to trip it. 2026-09-03 doc 5009: a **clean** EDF digital layer was
+       flagged corrupted, discarded and replaced by degraded full-page OCR
+       ("Mlle PALMA BRIGITTE" → "MIe PALMA BRI G TTE"). Unit abbreviations are excluded via the
+       `isUnitLikeToken()` allowlist *before* windowing, so a false trigger cannot replace good
+       text with OCR again.
+     - **OCR pages render at `CONFIG.OCR_RENDER_SCALE`** (env `OCR_RENDER_SCALE`, default 2.0).
+       Raising it to 2.5-3.0 helps grainy fax/scan pages whose glyphs fall below PaddleOCR's
+       reliable size at 2.0 — split characters like "MIe PALMA BRI G TTE" are the symptom — at the
+       cost of a bigger upload and slower inference per page.
+     - **Reading order is rebuilt from OCR geometry.** PaddleOCR's `/ocr` also returns an `items`
+       array — one `{text, poly, score}` per detected box (older server builds keep returning only
+       `text`, which the client handles unchanged). `layoutOcrLines()` (`domain/ocr-layout.ts`)
+       re-orders boxes into visual rows (same vertical band = one text line) and left-to-right
+       within each row, then joins each row into one line — so a physical printed row that OCR
+       split across several boxes (an address, a table row) becomes adjacent text again instead of
+       a scrambled list. Activating it needs a restart of the PaddleOCR service, which is a
+       separate Python process that survives dev-server restarts.
      - **OCR is page-capped.** Only the first `CONFIG.OCR_MAX_PAGES` pages (env `OCR_MAX_PAGES`,
        default 10) are rendered and OCR'd, because each page is a real OCR round-trip. Anything past
        the cap is genuinely absent from `raw_text`, the classifier, the Markdown and FTS5 — so

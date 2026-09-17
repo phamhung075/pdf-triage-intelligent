@@ -1,6 +1,37 @@
 import { Ollama } from 'ollama';
 import { CONFIG } from './settings.js';
 
+/**
+ * Thrown when Ollama itself is unreachable or the model cannot generate — the "Ollama is down"
+ * case. Callers must NEVER silently fall back to the rule-based classifier on this error: that
+ * fallback is exactly what misfiled a SEPA mandate and two tax notices on 2026-08-31 when the
+ * capability check failed. Triage stops, the file stays in `__raws`, and the user is reminded
+ * to start Ollama (see runTriageScan's scan-level gate).
+ */
+export class OllamaUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OllamaUnavailableError';
+  }
+}
+
+// Connection-level failure signatures from the ollama SDK / Node fetch — everything that means
+// "Ollama cannot be reached at all" rather than "the model answered something odd".
+const OLLAMA_DOWN_PATTERNS = /fetch failed|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|getaddrinfo|socket hang up|network.*unreachable|connect.*refused|server.*offline/i;
+
+function isOllamaDownError(err: unknown): boolean {
+  return err instanceof Error && OLLAMA_DOWN_PATTERNS.test(err.message);
+}
+
+function rethrowAsOllamaUnavailable(err: unknown): never {
+  if (isOllamaDownError(err)) {
+    throw new OllamaUnavailableError(
+      `Ollama is down — cannot reach ${CONFIG.OLLAMA_MODEL} at ${CONFIG.OLLAMA_HOST}: ${(err as Error).message}. Start Ollama, then retry.`
+    );
+  }
+  throw err;
+}
+
 interface ModelHealthCacheEntry {
   modelName: string;
   checkedAt: number;
@@ -71,26 +102,30 @@ export async function ensureOllamaModel(modelName: string = CONFIG.OLLAMA_MODEL)
 // test in src/application/classify-document.test.ts).
 export async function requestClassificationCompletion(system: string, user: string): Promise<{ response: string; thinking?: string }> {
   const ollama = new Ollama({ host: CONFIG.OLLAMA_HOST });
-  const result: any = await ollama.generate({
-    model: CONFIG.OLLAMA_MODEL,
-    system,
-    prompt: user,
-    format: 'json',
-    think: false,
-    options: {
-      temperature: 0.1,
-      // 16384, not 8192. The system prompt alone is ~6.6k tokens (decision flow + the archive's
-      // taxonomy) and the document text adds ~1.2k, so at 8192 there was almost no room left to
-      // answer: the response was cut off mid-sentence, repairTruncatedJSON silently closed the
-      // JSON, and every field after `tags` in the schema — total_amount, vat_amount, siren, iban,
-      // expiry_date and all five contact_* — came back empty. Measured on a real invoice: at 8192
-      // the reply was unparseable; at 16384 the same prompt returned 18 keys with 7 of those 10
-      // fields populated. Costs more VRAM; that is the trade for the data actually arriving.
-      num_ctx: 16384,
-      num_predict: 4096
-    }
-  });
-  return { response: result.response, thinking: result.thinking };
+  try {
+    const result: any = await ollama.generate({
+      model: CONFIG.OLLAMA_MODEL,
+      system,
+      prompt: user,
+      format: 'json',
+      think: false,
+      options: {
+        temperature: 0.1,
+        // 16384, not 8192. The system prompt alone is ~6.6k tokens (decision flow + the archive's
+        // taxonomy) and the document text adds ~1.2k, so at 8192 there was almost no room left to
+        // answer: the response was cut off mid-sentence, repairTruncatedJSON silently closed the
+        // JSON, and every field after `tags` in the schema — total_amount, vat_amount, siren, iban,
+        // expiry_date and all five contact_* — came back empty. Measured on a real invoice: at 8192
+        // the reply was unparseable; at 16384 the same prompt returned 18 keys with 7 of those 10
+        // fields populated. Costs more VRAM; that is the trade for the data actually arriving.
+        num_ctx: 16384,
+        num_predict: 4096
+      }
+    });
+    return { response: result.response, thinking: result.thinking };
+  } catch (err) {
+    rethrowAsOllamaUnavailable(err);
+  }
 }
 
 // General text chat completion wrapper (without format: 'json') for Markdown Q&A responses.
@@ -102,20 +137,24 @@ export async function requestClassificationCompletion(system: string, user: stri
 // the chunk's real content. Callers that care about losslessness must check it.
 export async function requestTextChatCompletion(system: string, user: string): Promise<{ response: string; thinking?: string; doneReason?: string }> {
   const ollama = new Ollama({ host: CONFIG.OLLAMA_HOST });
-  const result: any = await ollama.generate({
-    model: CONFIG.OLLAMA_MODEL,
-    system,
-    prompt: user,
-    think: false,
-    options: {
-      temperature: 0.2,
-      // Same reasoning as requestClassificationCompletion above — the chat assistant is fed
-      // document context that easily fills an 8k window before it can reply.
-      num_ctx: 16384,
-      num_predict: 4096
-    }
-  });
-  return { response: result.response || '', thinking: result.thinking, doneReason: result.done_reason };
+  try {
+    const result: any = await ollama.generate({
+      model: CONFIG.OLLAMA_MODEL,
+      system,
+      prompt: user,
+      think: false,
+      options: {
+        temperature: 0.2,
+        // Same reasoning as requestClassificationCompletion above — the chat assistant is fed
+        // document context that easily fills an 8k window before it can reply.
+        num_ctx: 16384,
+        num_predict: 4096
+      }
+    });
+    return { response: result.response || '', thinking: result.thinking, doneReason: result.done_reason };
+  } catch (err) {
+    rethrowAsOllamaUnavailable(err);
+  }
 }
 
 export async function generateEmbedding(text: string): Promise<number[]> {

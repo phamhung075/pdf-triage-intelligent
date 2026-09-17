@@ -1,0 +1,52 @@
+# PDF text-extraction microservice — the split half of the triage pipeline (see
+# docs/knowledge/pdf-extract-service.md).
+#
+#   docker compose up -d --build
+#   curl http://127.0.0.1:3981/health
+#
+# Then point the main pdf-triage app at it by setting in .env (or your shell):
+#   PDF_EXTRACT_SERVICE_URL=http://127.0.0.1:3981
+#   # optional: PDF_EXTRACT_SERVICE_REQUIRED=1   → fail hard when the service is down
+#
+# PaddleOCR is OPTIONAL and stays host-side by default: the container falls back to its bundled
+# Tesseract when PADDLEOCR_HOST is unreachable. If you run the paddleocr-server python service on
+# the same machine (Windows/Docker Desktop), uncomment the two lines below; if it runs inside this
+# WSL distro instead, use the WSL host IP (e.g. http://172.x.x.x:8871) — host.docker.internal
+# resolves to the Windows host, not the distro.
+#
+# The Docling file→Markdown service (optional quality layer, DOCLING_SERVICE_URL) is NOT defined
+# here: it lives in its own project — /home/daihu/__projects__/markdown-extract-service — with its
+# own docker-compose.yml on :3984 (see docs/knowledge/docling-extract-layer.md).
+
+services:
+  pdf-extract:
+    build:
+      context: .
+      dockerfile: Dockerfile.extract-service
+    image: pdf-triage/pdf-extract:latest
+    container_name: pdf-triage-pdf-extract
+    restart: unless-stopped
+    ports:
+      - "3981:3981"
+    environment:
+      PDF_EXTRACT_PORT: "3981"
+      PDF_EXTRACT_HOST: "0.0.0.0"
+      TESSERACT_LANG_PATH: "/app/tessdata"
+      PADDLEOCR_SPAWN_CMD: "/bin/false"
+      # PADDLEOCR_HOST: "http://host.docker.internal:8871"
+      # extra_hosts:
+      #   - "host.docker.internal:host-gateway"
+      # Scale the OCR ceiling for very long scans if needed (defaults 10 pages):
+      # OCR_MAX_PAGES: "10"
+      # OCR_RENDER_SCALE: "2.0"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3981/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

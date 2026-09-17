@@ -11,6 +11,7 @@
     "dist:exe": "node scripts/build-exe.mjs",
     "scan": "tsx src/index.ts scan",
     "mcp": "tsx src/index.ts mcp",
+    "extract:dev": "tsx src/extract-service/main.ts",
     "vision:dev": "tsx src/vision-lab-main.ts",
     "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean:dist && npm run build:css && tsc && tsc -p tsconfig.frontend.json",
@@ -38,6 +39,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.6.1",
+    "@napi-rs/canvas": "^0.1.100",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "marked": "^18.0.9",
@@ -50,7 +52,6 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@napi-rs/canvas": "^0.1.100",
     "@types/express": "^5.0.0",
     "@types/node": "^22.13.5",
     "@types/pdf-parse": "^1.1.4",

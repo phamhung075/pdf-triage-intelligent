@@ -53,7 +53,10 @@ const { getEntityDictionaryMock } = vi.hoisted(() => ({ getEntityDictionaryMock:
 vi.mock('../infrastructure/entity-dictionary-store.js', () => ({ getEntityDictionary: getEntityDictionaryMock }));
 
 const { generateEmbeddingMock } = vi.hoisted(() => ({ generateEmbeddingMock: vi.fn(async () => []) }));
-vi.mock('../infrastructure/ollama-client.js', () => ({ generateEmbedding: generateEmbeddingMock }));
+vi.mock('../infrastructure/ollama-client.js', () => ({
+  generateEmbedding: generateEmbeddingMock,
+  OllamaUnavailableError: class OllamaUnavailableError extends Error { name = 'OllamaUnavailableError'; },
+}));
 
 beforeEach(() => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-triage-repair-'));

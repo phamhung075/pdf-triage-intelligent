@@ -567,3 +567,78 @@ describe('matchEntityDictionary — pre-filter and per-dictionary memoization', 
     expect(matchEntityDictionary('contrat axa 2024', ['insurance'], dict)).toEqual({ categorie: 'insurance', subcategorie: 'axa' });
   });
 });
+
+describe('ruleBasedClassify — STEP 0 overlay vs semantic anchors (2026-08-31 regression)', () => {
+  // The exact poison rules that misfiled the last three triaged documents: auto-learned from a
+  // manual move ("calendrier de paiement.PDF" -> invoices/cdiscount and a Foncia quittance ->
+  // invoices/foncia), they matched GENERIC words in the body text of unrelated documents.
+  const poisonOverlay = PromptPersonalizationSchema.parse({
+    priority_rules: [
+      { keywords: ['paiement'], category: 'invoices', subcategory: 'cdiscount' },
+      { keywords: ['echeance'], category: 'invoices', subcategory: 'foncia' },
+    ],
+  });
+
+  it('does not let a generic-keyword overlay pull an income-tax notice out of administrative/impot', () => {
+    const text = 'AVIS_IR_RG\nCENTRE DES FINANCES PUBLIQUES\nSIP MARSEILLE REPUBLIQUE\nImpôt sur les revenus de 2025\nDate de paiement: votre paiement sera prélevé le 25 septembre';
+    const r = ruleBasedClassify(text, 'Avis_d_impot_2026_sur_les_revenus_2025.pdf', EMPTY_DICTIONARY, DEFAULT_PERSONAL_NAME_DENYLIST, poisonOverlay);
+    expect(r.categorie).toBe('administrative');
+    expect(r.subcategorie).toBe('impot');
+  });
+
+  it('does not let a generic-keyword overlay pull a property-tax notice into housing/foncia', () => {
+    const text = 'AVIS_TF_RG\nCENTRE DES FINANCES PUBLIQUES\nSIP MARSEILLE REPUBLIQUE\nSomme à payer 2 396,00 €\nDate limite de paiement : 15/10/2026\nprélèvement à l\'échéance avant le 01/10/2026\nLes taxes foncières sont affectées aux collectivités';
+    const r = ruleBasedClassify(text, 'Avis_de_taxes_foncieres_2026.pdf', EMPTY_DICTIONARY, DEFAULT_PERSONAL_NAME_DENYLIST, poisonOverlay);
+    expect(r.categorie).toBe('administrative');
+    expect(r.subcategorie).toBe('impot');
+  });
+
+  it('still lets a Foncia quittance stay housing/foncia even though its charges list "taxe foncière"', () => {
+    // 'taxe foncière' alone is NOT a tax-notice signal (quittances list it among recoverable
+    // charges) — the hand-curated 'Foncia' overlay rule must keep working for the real landlord
+    // document, exactly as it does in the merged real-world personalization.
+    const merged = PromptPersonalizationSchema.parse({
+      priority_rules: [
+        { keywords: ['paiement'], category: 'invoices', subcategory: 'cdiscount' },
+        { keywords: ['echeance'], category: 'invoices', subcategory: 'foncia' },
+        { keywords: ['Foncia'], category: 'housing', subcategory: 'foncia' },
+      ],
+    });
+    const text = 'FONCIA VIEUX PORT\nQuittance de loyer\nLoyer : 1 200,00 €\nCharges récupérables dont taxe foncière : 40,00 €\nTotal à payer';
+    const r = ruleBasedClassify(text, 'QuittanceDeLoyer-20190101.pdf', EMPTY_DICTIONARY, DEFAULT_PERSONAL_NAME_DENYLIST, merged);
+    expect(r.categorie).toBe('housing');
+    expect(r.subcategorie).toBe('foncia');
+  });
+
+  it('does not let a generic-keyword overlay pull a pay slip into invoices', () => {
+    const text = 'BULLETIN DE SALAIRE\nSalaire brut : 2 500,00 €\nNet à payer : 1 900,00 €\nMode de paiement : virement';
+    const r = ruleBasedClassify(text, 'bulletinDeSalaire20181031.pdf', EMPTY_DICTIONARY, DEFAULT_PERSONAL_NAME_DENYLIST, poisonOverlay);
+    expect(r.categorie).toBe('bulletin_salaire');
+  });
+
+  it('honours a filename-scoped learned rule: body mention alone never fires it', () => {
+    const filenameScoped = PromptPersonalizationSchema.parse({
+      priority_rules: [
+        { keywords: ['paiement'], category: 'invoices', subcategory: 'cdiscount', scope: 'filename' },
+      ],
+    });
+    // 'paiement' appears only in the body, not in the filename -> rule must NOT fire.
+    const miss = ruleBasedClassify(
+      'Mandat de prélèvement SEPA\nType de paiement : Récurrent\nIBAN FR76 3000 3020 2600 0509 7464 283',
+      'Mandat_SEPA_XX502170932SEPA.pdf', EMPTY_DICTIONARY, DEFAULT_PERSONAL_NAME_DENYLIST, filenameScoped);
+    expect(miss.categorie).not.toBe('invoices');
+    // Same rule DOES fire when the keyword is in the filename (its derivation source).
+    const hit = ruleBasedClassify(
+      'MON CALENDRIER DE PAIEMENT\npour le contrat N° CO00047332',
+      'calendrier de paiement.PDF', EMPTY_DICTIONARY, DEFAULT_PERSONAL_NAME_DENYLIST, filenameScoped);
+    expect(hit.categorie).toBe('invoices');
+    expect(hit.subcategorie).toBe('cdiscount');
+  });
+
+  it('files a SEPA direct-debit mandate under contracts/mandat_sepa, not invoices', () => {
+    const text = 'Objet : Mandat de prélèvement\nMANDAT DE PRELEVEMENT SEPA\nVous autorisez le créancier à envoyer des instructions à votre banque pour débiter votre compte\nIBAN: FR76\nCode BIC';
+    const r = ruleBasedClassify(text, 'Mandat_SEPA_XX502170932SEPA.pdf', EMPTY_DICTIONARY, DEFAULT_PERSONAL_NAME_DENYLIST);
+    expect(r.categorie).toBe('contracts');
+    expect(r.subcategorie).toBe('mandat_sepa');
+  });
+});

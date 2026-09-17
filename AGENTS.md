@@ -46,11 +46,16 @@
 | Ollama / Qwen 3.5 — prompt design, JSON contract, fallbacks | [docs/knowledge/ollama-qwen.md](docs/knowledge/ollama-qwen.md) |
 | On-disk canonical folder layout & naming | [docs/knowledge/canonical-paths.md](docs/knowledge/canonical-paths.md) |
 | REST + SSE + MCP API reference | [docs/knowledge/api-reference.md](docs/knowledge/api-reference.md) |
+| PDF extraction microservice (Docker split) — `docker-compose.yml`, `Dockerfile.extract-service`, `src/extract-service/` | [docs/knowledge/pdf-extract-service.md](docs/knowledge/pdf-extract-service.md) |
+| Docling structured extraction (optional quality layer) — `DOCLING_SERVICE_URL`, `src/domain/docling-quality.ts`, `src/infrastructure/docling-remote.ts` | [docs/knowledge/docling-extract-layer.md](docs/knowledge/docling-extract-layer.md) |
+| Service-split plan — Service B (Docling file→Markdown) lives in its own repo `/home/daihu/__projects__/markdown-extract-service`; Service A (raster→A4) designed + spiked only | [docs/knowledge/service-split-plan.md](docs/knowledge/service-split-plan.md) |
 | Taxonomy — categories, subcategories, private overlays | [docs/knowledge/taxonomy.md](docs/knowledge/taxonomy.md) |
 | Environment & config (`settings.json`, env vars) | [docs/knowledge/environment.md](docs/knowledge/environment.md) |
 | Workflows — triage, repair, relocalize, clear, SSE broadcast | [docs/workflows/](docs/workflows/) |
 | Skills index — methodology (Superpowers plugin) | [docs/skills.md](docs/skills.md) |
 | Per-agent playbooks (lazy-loaded on invocation) | [docs/agents/](docs/agents/) |
+| DeepSeek Harness delegation — orchestrator → worker dispatch, command surface, safety | [.agents/skills/deepseek-offload/SKILL.md](.agents/skills/deepseek-offload/SKILL.md) |
+| Repository-owned skills & Agent Notes — procedures and decision records | [.agents/skills/](.agents/skills/) · [.agents/notes/](.agents/notes/README.md) |
 
 ---
 
@@ -96,15 +101,33 @@ Shells in `.claude/agents/*.md` are **description-only frontmatter** linking to 
 
 ---
 
-## 🛠️ Skills (single source: docs/skills.md)
+## 🛠️ Skills
 
-The [obra/superpowers](https://github.com/obra/superpowers) plugin (v6.2.0) is vendored at [`.claude/plugins/superpowers/`](.claude/plugins/superpowers/) and exposed via Windows directory junctions:
-- [`.claude/skills/`](.claude/skills/) — Claude Code auto-discovery path.
-- [`docs/skills/`](docs/skills/) — same target, accessible from the docs tree.
+**Repository-owned skills** live in [`.agents/skills/`](.agents/skills/) — one `SKILL.md` per procedure, each stating its trigger in its own frontmatter and linking out to the `docs/` file that owns its facts. Read the matching one before acting.
 
-**Single source of truth for skills**: [`docs/skills.md`](docs/skills.md) — indexed catalog with per-agent affinity table. The plugin is registered as `superpowers@superpowers-dev` in [`.claude/settings.json`](.claude/settings.json); a `SessionStart` hook auto-invokes `using-superpowers` on startup/clear/compact.
+**Methodology skills** are the vendored [obra/superpowers](https://github.com/obra/superpowers) plugin (v6.2.0) at [`.claude/plugins/superpowers/`](.claude/plugins/superpowers/), exposed via Windows directory junctions: [`.claude/skills/`](.claude/skills/) is Claude Code's auto-discovery path — the repository-owned skills are **not** discovered there — and [`docs/skills/`](docs/skills/) is the same target read from the docs tree.
+
+**Single source of truth for methodology skills**: [`docs/skills.md`](docs/skills.md). The plugin is registered as `superpowers@superpowers-dev` in [`.claude/settings.json`](.claude/settings.json); a `SessionStart` hook auto-invokes `using-superpowers` on startup/clear/compact.
 
 **Rule of thumb**: Skills are HOW to work; agent playbooks are WHAT to work on. Layer both. (`.claude/plugins/superpowers/docs/` is vendor material — intentionally NOT merged into `docs/`.)
+
+**Agent Notes** in [`.agents/notes/`](.agents/notes/README.md) are the decision records: write one when a change gives something up or rejects a plausible alternative — the changelog says what changed, a note says why, and what lost.
+
+---
+
+## 🧭 Claude is the Orchestrator (DeepSeek Harness = worker)
+
+> Claude thinks, plans, reviews and stays user-facing. Token-heavy, multi-file or research-shaped
+> execution is dispatched to background DeepSeek Harness workers on `deepseek-flash`, which cost a
+> fraction of the orchestrator's tokens. The bridge is registered as `deepseek` in
+> [`.mcp.json`](.mcp.json) — machine-local and gitignored; approve it the first time Claude Code
+> prompts for the server.
+
+`deepseek_agent` is the blocking MCP call for a quick inline answer or one small precise edit. `node .agents/skills/deepseek-offload/scripts/dsh-offload.mjs start "<task>" --label <name>` is the fire-and-forget path for anything multi-step, multi-file or research-heavy: it prints a job id and returns immediately, so keep working and poll with `result <jobId>` rather than blocking.
+
+Read [pdf-triage-dispatch](.agents/skills/pdf-triage-dispatch/SKILL.md) before delegating — it owns the work-order contract, the constraints every prompt must carry, the role split and the review rule. The [deepseek-offload skill](.agents/skills/deepseek-offload/SKILL.md) owns the command surface, the mandatory safety rules, prompt contracts and troubleshooting; install and refresh from [INSTALL.md](.agents/deepseek-offload/INSTALL.md).
+
+**If you were dispatched as a worker:** your prompt is your authority — do the one job it names, do not re-delegate, do not commit or push, and return findings rather than a transcript.
 
 ---
 
@@ -128,14 +151,18 @@ pdf_triage/
 ├── pdf_triage.db               # SQLite (runtime, gitignored)
 ├── registry.json               # JSON mirror (runtime, gitignored)
 ├── package.json                # tsx dev + build scripts
+├── Dockerfile.extract-service  # multi-stage image for the standalone PDF extraction microservice (src/extract-service)
+├── docker-compose.yml          # `docker compose up -d --build` → pdf-extract service on :3981 · Docling file→Markdown service = EXTERNAL project /home/daihu/__projects__/markdown-extract-service (own git repo, own compose on :3984)
+├── .dockerignore               # keeps node_modules/personal data out of the extraction image build context
 ├── docs/                      # → knowledge, workflows, agent playbooks (LAZY-LOADED — see context map above)
 │   ├── README.md
 │   ├── overview.md
 │   ├── skills.md              # UNIFIED skill index (single source of truth)
 │   ├── skills/                # junction → .claude/plugins/superpowers/skills
 │   ├── agents/{README,*.md}   # per-agent playbooks
-│   ├── knowledge/*.md         # architecture, data-model, ollama-qwen, canonical-paths, api-reference, taxonomy, environment, golden-rules
+│   ├── knowledge/*.md         # architecture, data-model, ollama-qwen, canonical-paths, api-reference, taxonomy, environment, golden-rules, pdf-extract-service, docling-extract-layer, service-split-plan
 │   └── workflows/*.md         # triage-pipeline, repair-registry, relocalize, clear-registry, classification-flow, sse-broadcast
+├── .agents/                    # agent tooling — repository-owned skills, Agent Notes, DeepSeek delegation
 ├── .claude/
 │   ├── settings.json          # enables superpowers plugin locally
 │   ├── agents/*.md            # description-only shells → link to docs/agents/*
@@ -167,7 +194,7 @@ pdf_triage/
 │   │   ├── relocalize-document.ts
 │   │   ├── clear-registry.ts
 │   │   ├── scan-lock.ts
-│   └── infrastructure/                # I/O adapters
+│   ├── infrastructure/                # I/O adapters
 │       ├── settings.ts                # CONFIG, BASE_DIR (defaults to process.cwd(), overridable via PDF_TRIAGE_BASE_DIR)
 │       ├── os-open.ts                 # the ONLY module that launches Explorer/Chrome — WSL-safe, see Golden Rule 21
 │       ├── logger.ts
@@ -187,6 +214,7 @@ pdf_triage/
 │       ├── json-registry.ts
 │       ├── http/web-server.ts         # all real REST/SSE routes live here
 │       └── mcp/mcp-server.ts
+│   └── extract-service/                # standalone Dockerized text-extraction microservice — app.ts (Express) + main.ts (entry, `npm run extract:dev`)
 ├── public/                    # UI — public/ts/ (source) compiled to public/js/ (served), public/scss/ (source) compiled to public/style.css (served), public/js/vendor/ (marked.js, vendored not CDN)
 │   └── test-image-to-pdf.html # standalone Vision Lab diagnostic page (served by vision-lab-server.ts, not the main app)
 ├── paddleocr-server/           # standalone Python/FastAPI OCR service (PaddleOCR) — separate process, see paddleocr-server/README.md
@@ -201,6 +229,7 @@ pdf_triage/
 - `npm run dev` / `npm start` — dev server (web + SSE + 10s auto-watcher). **User runs this, not the agent.**
 - `npm run scan` — one-shot triage scan.
 - `npm run mcp` — MCP stdio server.
+- `npm run extract:dev` — run the PDF extraction microservice standalone (`src/extract-service/main.ts`, port `3981`) without Docker.
 - `npm run vision:dev` — standalone Vision Lab diagnostic server (port `3179`), run independently of `npm run dev`.
 - `npm run build` — `clean:dist` + `build:css` + `tsc` (backend) + `tsc -p tsconfig.frontend.json` (frontend).
 - `npm run clean:dist` — removes `dist/`. Runs first in `build` because `tsc` never prunes output for

@@ -18,16 +18,24 @@ def test_health_returns_ok():
 
 
 def test_ocr_endpoint_returns_recognized_text():
-    with patch("main.paddleocr_engine.recognize_text", return_value="Hello World"):
+    with patch(
+        "main.paddleocr_engine.recognize_text_structured",
+        return_value=("Hello World", [{"text": "Hello World", "poly": None, "score": None}]),
+    ):
         resp = client.post(
             "/ocr", files={"file": ("test.png", io.BytesIO(b"fake-bytes"), "image/png")}
         )
     assert resp.status_code == 200
-    assert resp.json() == {"text": "Hello World"}
+    assert resp.json() == {
+        "text": "Hello World",
+        "items": [{"text": "Hello World", "poly": None, "score": None}],
+    }
 
 
 def test_ocr_endpoint_returns_500_on_engine_error():
-    with patch("main.paddleocr_engine.recognize_text", side_effect=ValueError("bad image")):
+    with patch(
+        "main.paddleocr_engine.recognize_text_structured", side_effect=ValueError("bad image")
+    ):
         resp = client.post(
             "/ocr", files={"file": ("test.png", io.BytesIO(b"fake-bytes"), "image/png")}
         )

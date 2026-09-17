@@ -115,3 +115,37 @@ describe('decisionsToPriorityRules', () => {
     expect(rules[0].subcategory).toBeUndefined();
   });
 });
+
+describe('deriveRuleKeywords — generic finance-word guard (2026-08-31 regression)', () => {
+  it('rejects the single-word keywords that misfiled three documents ("paiement", "échéance", "calendrier")', () => {
+    // These derived keywords fired on the BODY TEXT of unrelated documents: a SEPA mandate and
+    // an income-tax notice matched 'paiement' -> invoices/cdiscount, a property-tax notice
+    // matched 'échéance' -> invoices/foncia. They describe WHAT a document does, never WHO
+    // issued it, so they must never become match keywords.
+    expect(deriveRuleKeywords('calendrier de paiement.PDF', 'calendrier de paiement')).toEqual([]);
+    expect(deriveRuleKeywords('QuittanceDeLoyer-20190101.pdf', "Relevé de compte Crédit - Quittance et Avis d'échéance")).toEqual([]);
+    expect(deriveRuleKeywords('Echeancier 2024.pdf', 'Échéancier')).toEqual([]);
+  });
+
+  it('still keeps genuinely distinctive tokens from the same documents', () => {
+    // The vendor name survives; only the generic money-movement words are filtered.
+    expect(deriveRuleKeywords('calendrier de paiement cdiscount energie.PDF', 'Calendrier de paiement Cdiscount Energie'))
+      .toContain('cdiscount');
+    expect(deriveRuleKeywords('QuittanceDeLoyer-Foncia-20190101.pdf', 'Quittance de loyer Foncia'))
+      .toContain('foncia');
+  });
+});
+
+describe('decisionsToPriorityRules — filename scope', () => {
+  it('tags every learned rule as filename-scoped so body-text mentions can never re-fire it', () => {
+    const rules = decisionsToPriorityRules([{
+      id: 7,
+      original_filename: 'STMT_CHK_101.pdf',
+      title: 'Relevé de chèques BNP',
+      new_category: 'bank',
+      new_subcategory: 'bnp_paribas',
+      enabled: 1,
+    }]);
+    expect(rules[0].scope).toBe('filename');
+  });
+});

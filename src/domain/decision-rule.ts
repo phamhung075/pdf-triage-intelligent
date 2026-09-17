@@ -69,6 +69,19 @@ const STOPWORD_TOKENS = new Set([
   'acte', 'actes', 'duplicata', 'original', 'expiration', 'renouvellement', 'validite',
   'suivi', 'reclamation', 'reclamations', 'plainte', 'litige', 'litiges', 'conflit',
   'arbitrage', 'feuille', 'feuilles', 'tableau', 'tableaux', 'grille', 'grilles', 'pointage',
+  // generic finance / money-movement words. Single-word rules derived from these hijacked
+  // unrelated documents on 2026-08-31: 'paiement' (learned from "calendrier de paiement.PDF"
+  // -> invoices/cdiscount) fired on a SEPA mandate and an income-tax notice, and 'échéance'
+  // (learned from a Foncia quittance) fired on a property-tax notice — all three were filed
+  // under the wrong category. They describe WHAT the document does, never WHO issued it, so
+  // they are useless as match keywords. Derived rules are also filename-scoped (see
+  // decisionsToPriorityRules), so even a survivor can only re-fire on a filename.
+  'paiement', 'paiements', 'payer', 'paye', 'payee', 'echeance', 'echeances', 'echeancier',
+  'calendrier', 'credit', 'credits', 'crediteur', 'crediteurs', 'debit', 'debiteur',
+  'debiteurs', 'versement', 'versements', 'remboursement', 'remboursements', 'cotisation',
+  'cotisations', 'abonnement', 'abonnements', 'facturation', 'transaction', 'transactions',
+  'operation', 'operations', 'encaissement', 'encaissements', 'mandat', 'mandats', 'sepa',
+  'rib', 'iban', 'bic', 'confirmation', 'quittancedeloyer',
 ]);
 
 /** Strips diacritics so 'relevé' and 'releve' hit the same stopword entry. */
@@ -191,6 +204,12 @@ export function decisionsToPriorityRules(
       keywords: keywords.slice(0, MAX_KEYWORDS_PER_DECISION),
       category,
       ...(subcategory ? { subcategory } : {}),
+      // Derived rules are FILENAME-scoped by construction: they were learned from a moved
+      // file's own name, and matching them against arbitrary body text is what let a generic
+      // word ('paiement', 'échéance') hijack unrelated documents. matchPriorityRules honours
+      // this scope; renderPriorityRulesBlock tells the model the same thing, so the prompt
+      // and the deterministic fallback stay aligned (Golden Rule #6).
+      scope: 'filename',
       note: note.length > 240 ? `${note.slice(0, 240)}…` : note,
     });
   }

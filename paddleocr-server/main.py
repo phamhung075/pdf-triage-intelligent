@@ -93,11 +93,13 @@ def ready():
 def ocr_endpoint(file: UploadFile = File(...)):
     image_bytes = file.file.read()
     try:
-        text = paddleocr_engine.recognize_text(image_bytes)
+        text, items = paddleocr_engine.recognize_text_structured(image_bytes)
     except Exception as exc:
         logger.exception("OCR failed")
         raise HTTPException(status_code=500, detail=str(exc))
-    return {"text": text}
+    # `text` stays the primary contract (older clients read only it); `items` carries the per-box
+    # geometry newer clients use to rebuild reading order (see src/domain/ocr-layout.ts).
+    return {"text": text, "items": items}
 
 
 @app.post("/orientation")

@@ -260,6 +260,65 @@ describe('classifyPDFText', () => {
     expect(generateMock).toHaveBeenCalledTimes(4); // health + Step A + Step C + Step D
     expect(result.markdown_content).toBe('# SFR\n\n**Total TTC:** 45.99€');
   });
+
+  it('throws OllamaUnavailableError when the model is down — it must NEVER silently fall back to the rule-based classifier (2026-08-31 regression)', async () => {
+    // Model is listed locally, but the health probe (1-token generate) fails => Ollama down.
+    listMock.mockResolvedValue({ models: [{ name: 'qwen3.5:9b' }] });
+    generateMock.mockRejectedValue(new Error('fetch failed'));
+
+    const { classifyPDFText, OllamaUnavailableError } = await import('./classify-document.js');
+    await expect(classifyPDFText('SFR Facture Total TTC 45.99', 'facture.pdf'))
+      .rejects.toBeInstanceOf(OllamaUnavailableError);
+  });
+
+  it('uses Docling markdown as markdown_content and SKIPS the Step C chunk-by-chunk LLM conversion when doclingMarkdown is provided', async () => {
+    const doclingMd = [
+      '# Relevé de compte Crédit Mutuel',
+      '',
+      '| Date | Opération | Débit |',
+      '| --- | --- | --- |',
+      '| 03/10/2023 | PRLV SEPA PAYPAL | -2,00 EUR |',
+      '| 28/09/2023 | VIR DE MME DUPONT MARIE | +1 000,00 EUR |',
+    ].join('\n');
+
+    generateMock
+      .mockResolvedValueOnce({ response: 'ok' }) // health probe
+      .mockResolvedValueOnce({ response: JSON.stringify({ issuing_entity: 'Crédit Mutuel', document_type: 'Bank Statement' }) }) // Step A
+      .mockResolvedValueOnce({ // Step D — note: NO Step C mock in between
+        response: JSON.stringify({
+          titre: 'Relevé Crédit Mutuel', registre: '', date: '2023-10-03',
+          categorie: 'bank', subcategorie: 'credit_mutuel', summary: 's', tags: [],
+        }),
+      });
+
+    const { classifyPDFText } = await import('./classify-document.js');
+    const result = await classifyPDFText('Relevé Crédit Mutuel PAYPAL DUPONT', 'releve.pdf', undefined, undefined, doclingMd);
+
+    // health + Step A + Step D only — Step C never ran.
+    expect(generateMock).toHaveBeenCalledTimes(3);
+    // The deterministic Docling markdown IS the stored markdown_content.
+    expect(result.markdown_content).toBe(doclingMd);
+    expect(result.categorie).toBe('bank');
+  });
+
+  it('still runs the normal Step C path when doclingMarkdown is empty/whitespace', async () => {
+    generateMock
+      .mockResolvedValueOnce({ response: 'ok' }) // health probe
+      .mockResolvedValueOnce({ response: JSON.stringify({ issuing_entity: 'SFR', document_type: 'Invoice' }) }) // Step A
+      .mockResolvedValueOnce({ response: '# SFR\n\n**Total TTC:** 45.99€' }) // Step C (empty doclingMarkdown must not suppress it)
+      .mockResolvedValueOnce({
+        response: JSON.stringify({
+          titre: 'Facture SFR', registre: '', date: '2024-05-12',
+          categorie: 'invoices', subcategorie: 'sfr', summary: 's', tags: [],
+        }),
+      }); // Step D
+
+    const { classifyPDFText } = await import('./classify-document.js');
+    const result = await classifyPDFText('SFR Facture Total TTC 45.99', 'facture.pdf', undefined, undefined, '   ');
+
+    expect(generateMock).toHaveBeenCalledTimes(4); // health + Step A + Step C + Step D
+    expect(result.markdown_content).toBe('# SFR\n\n**Total TTC:** 45.99€');
+  });
 });
 
 describe('convertRawTextToZeroLossMarkdown — Problem B continuation across chunk boundaries', () => {
@@ -807,5 +866,209 @@ describe('convertRawTextToZeroLossMarkdown — reports content that did not surv
     const hits = warnSpy.mock.calls.filter(c => String(c[1]).includes('Content preservation'));
     expect(hits).toHaveLength(0);
     warnSpy.mockRestore();
+  });
+});
+
+describe('convertRawTextToZeroLossMarkdown — targeted single-chunk repair (no full re-run)', () => {
+  // When ONE chunk's converted markdown comes back structurally broken (table rows missing their
+  // edge pipes, an absurd header blow-out), ONLY that chunk is re-converted, with a corrective
+  // repair note. The other chunks' output — and their model round-trips — are untouched: the whole
+  // document is NOT re-run from chunk 1.
+  beforeEach(() => {
+    vi.resetModules();
+    generateMock.mockReset();
+    listMock.mockReset();
+    pullMock.mockReset();
+    vi.mocked(Ollama).mockImplementation(function () {
+      return {
+        generate: generateMock,
+        list: listMock,
+        pull: pullMock,
+      } as any;
+    } as any);
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+  });
+
+  function multiChunkRawText(): string {
+    const lines: string[] = [];
+    for (let i = 1; i <= 60; i++) {
+      lines.push(`Line ${i}: padding content to push this document past the 1400-char chunk boundary for testing purposes.`);
+    }
+    return lines.join('\n');
+  }
+
+  const MALFORMED_CHUNK = [
+    '| Période | Prix | Montant | TVA |',
+    '| --- | --- | --- | --- |',
+    '| Base - du 17/05/25 au 31/07/25 | 8,60 | 21,49 | 5,5% |',
+    'Base - du 01/02/26 au 16/05/26 | 9,16 | 31,62 | 20,0%',
+    'Base - du 17/05/26 au 15/06/26 | 9,16 | 9,16 | 20,0%',
+  ].join('\n');
+
+  const FIXED_CHUNK = [
+    '| Période | Prix | Montant | TVA |',
+    '| --- | --- | --- | --- |',
+    '| Base - du 17/05/25 au 31/07/25 | 8,60 | 21,49 | 5,5% |',
+    '| Base - du 01/02/26 au 16/05/26 | 9,16 | 31,62 | 20,0% |',
+    '| Base - du 17/05/26 au 15/06/26 | 9,16 | 9,16 | 20,0% |',
+  ].join('\n');
+
+  it('re-converts ONLY the broken chunk (chunks + 1 generate calls), leaving others untouched', async () => {
+    const rawText = multiChunkRawText();
+    const { chunkText } = await import('./classify-document.js');
+    const chunks = chunkText(rawText, 1400);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+
+    const target = 1; // 0-based chunk that returns the malformed markdown
+    const responses: string[] = chunks.map((_, i) =>
+      i === target ? MALFORMED_CHUNK : `## Section ${i + 1}\n\nClean prose without any pipes.`
+    );
+    responses.push(FIXED_CHUNK); // one extra generate call for the targeted re-conversion
+    responses.forEach(r => generateMock.mockResolvedValueOnce({ response: r, done_reason: 'stop' }));
+
+    const { convertRawTextToZeroLossMarkdown } = await import('./classify-document.js');
+    const markdown = await convertRawTextToZeroLossMarkdown(rawText, 'edf.pdf');
+
+    // Exactly one extra call: the broken chunk retried once, NOT a re-run of every chunk.
+    expect(generateMock).toHaveBeenCalledTimes(chunks.length + 1);
+
+    // The extra call's prompt carries the corrective repair note.
+    const repairCallArgs = generateMock.mock.calls[chunks.length][0];
+    expect(repairCallArgs.prompt).toContain('⚠️ REPAIR REQUEST');
+    expect(repairCallArgs.prompt).toContain('NOT well-formed GFM rows');
+
+    // The final markdown contains the repaired rows, and no malformed pipe lines remain.
+    expect(markdown).toContain('| Base - du 01/02/26 au 16/05/26 | 9,16 | 31,62 | 20,0% |');
+    const { countMalformedPipeLines } = await import('../domain/extraction-quality-gate.js');
+    expect(countMalformedPipeLines(markdown)).toBe(0);
+  });
+
+  it('keeps the first (content-preserving) output and stops when the repair still fails', async () => {
+    const rawText = multiChunkRawText();
+    const { chunkText } = await import('./classify-document.js');
+    const chunks = chunkText(rawText, 1400);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+
+    const target = 1;
+    const responses: string[] = chunks.map((_, i) =>
+      i === target ? MALFORMED_CHUNK : `## Section ${i + 1}\n\nClean prose without any pipes.`
+    );
+    responses.push(MALFORMED_CHUNK); // the re-conversion comes back broken again
+    responses.forEach(r => generateMock.mockResolvedValueOnce({ response: r, done_reason: 'stop' }));
+
+    const { logger } = await import('../infrastructure/logger.js');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    const { convertRawTextToZeroLossMarkdown } = await import('./classify-document.js');
+    const markdown = await convertRawTextToZeroLossMarkdown(rawText, 'edf-still-broken.pdf');
+
+    // One retry per broken chunk, then we stop — never a second retry of the same chunk.
+    expect(generateMock).toHaveBeenCalledTimes(chunks.length + 1);
+    expect(warnSpy.mock.calls.some(c => String(c[1]).includes('still fails the structural screen'))).toBe(true);
+    // First output is preserved rather than deleted.
+    expect(markdown).toContain('Base - du 01/02/26 au 16/05/26 | 9,16 | 31,62 | 20,0%');
+    warnSpy.mockRestore();
+  });
+});
+
+describe('convertRawTextToZeroLossMarkdown — continued tables are joined, not split into headerless blocks', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    generateMock.mockReset();
+    listMock.mockReset();
+    pullMock.mockReset();
+    vi.mocked(Ollama).mockImplementation(function () {
+      return { generate: generateMock, list: listMock, pull: pullMock } as any;
+    } as any);
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+  });
+
+  it('keeps continuation rows in the same table block as their header (no blank-line split)', async () => {
+    const rawText = Array.from({ length: 60 }, (_, i) =>
+      `Line ${i + 1}: padding content to push this document past the 1400-char chunk boundary for testing purposes.`
+    ).join('\n');
+    const { chunkText, convertRawTextToZeroLossMarkdown } = await import('./classify-document.js');
+    const chunks = chunkText(rawText, 1400);
+    expect(chunks.length).toBeGreaterThanOrEqual(2);
+
+    const headerAndRows = [
+      '## Transactions',
+      '',
+      '| Date | Montant | Label |',
+      '| --- | --- | --- |',
+      '| 2024-05-01 | 100.00 | Salaire |',
+      '| 2024-05-02 | 200.00 | Loyer |',
+    ].join('\n');
+    generateMock.mockResolvedValueOnce({ response: headerAndRows, done_reason: 'stop' });
+    for (let i = 1; i < chunks.length; i++) {
+      generateMock.mockResolvedValueOnce({ response: '| 2024-05-0' + (i + 2) + ' | 300.00 | Facture |', done_reason: 'stop' });
+    }
+
+    const markdown = await convertRawTextToZeroLossMarkdown(rawText, 'joined.pdf');
+    const { auditMarkdownTables } = await import('../domain/markdown-tables.js');
+    const audit = auditMarkdownTables(markdown);
+    expect(audit.headerlessBlocks).toBe(0);
+    // All continuation rows share ONE table block (the one with the header).
+    expect(audit.blocks).toBe(1);
+    expect(markdown).toContain('2024-05-0');
+  });
+});
+
+// doc 5009's Grille tarifaire: rows whose description the model promoted to a heading ("## Base -
+// 03kVA - du 01/02/26 au 16/05/26" above a lone "| 9,16 | 31,62 | 20,0% |") must be re-folded into
+// the parent table by the assembled-markdown repair, even when a footnote paragraph sits between the
+// table's rows and the escaped ones. The per-chunk structural screen cannot see the shape (the value
+// line is already a well-formed row), so this is the document-level pass that must catch it.
+describe('convertRawTextToZeroLossMarkdown — re-folds rows whose description escaped to a heading', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    generateMock.mockReset();
+    listMock.mockReset();
+    pullMock.mockReset();
+    vi.mocked(Ollama).mockImplementation(function () {
+      return { generate: generateMock, list: listMock, pull: pullMock } as any;
+    } as any);
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+  });
+
+  it('rejoins the escaped rows into one healthy table and keeps the footnote after it', async () => {
+    const response = [
+      '| Période | Prix €HT/mois | Montant €HT | TVA |',
+      '| :--- | :---: | :---: | :---: |',
+      '| **Base - 03kVA** du 17/05/25 au 31/07/25 | 8,60 | 21,49 | 5,5% |',
+      '| **Base - 03kVA** du 01/08/25 au 31/01/26 | 8,51 | 51,48 | 20,0% |',
+      '',
+      '--- habituellement 2 fois par an, au 1er février et au 1er août. Vous pouvez retrouver la grille tarifaire en vigueur sur notre site : https://particulier.edf.fr/fr/accueil/electricite-gaz/tarif-bleu.html',
+      'Nous vous rappelons que vous restez libre de changer de contrat à tout moment et sans frais.',
+      '',
+      'Document à conserver 5 ans',
+      '',
+      '## Base - 03kVA - du 01/02/26 au 16/05/26',
+      '| 9,16 | 31,62 | 20,0% |',
+      '',
+      '## Base - 03kVA - du 17/05/26 au 15/06/26',
+      '| 9,16 | 9,16 | 20,0% |',
+      '',
+      '## Déduction - Base - 03kVA - du 17/05/25 au 15/06/25',
+      '| 8,60 | -8,60 | 5,5% |',
+    ].join('\n');
+    generateMock.mockResolvedValueOnce({ response, done_reason: 'stop' });
+
+    const { convertRawTextToZeroLossMarkdown } = await import('./classify-document.js');
+    const markdown = await convertRawTextToZeroLossMarkdown('Détail de la facture du 19/05/2026', 'edf-5009.pdf');
+
+    const { auditMarkdownTables } = await import('../domain/markdown-tables.js');
+    const audit = auditMarkdownTables(markdown);
+    expect(audit.headerlessBlocks).toBe(0);
+    expect(audit.raggedRows).toBe(0);
+    expect(audit.blocks).toBe(1);
+    expect(audit.dataRows).toBe(5);
+
+    expect(markdown).toContain('| Base - 03kVA - du 01/02/26 au 16/05/26 | 9,16 | 31,62 | 20,0% |');
+    expect(markdown).toContain('| Déduction - Base - 03kVA - du 17/05/25 au 15/06/25 | 8,60 | -8,60 | 5,5% |');
+    // The footnote is preserved, after the complete table — never dropped, never inside it.
+    expect(markdown.indexOf('| Déduction - Base - 03kVA - du 17/05/25 au 15/06/25')).toBeLessThan(
+      markdown.indexOf('habituellement 2 fois par an')
+    );
   });
 });

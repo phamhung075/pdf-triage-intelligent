@@ -18,6 +18,7 @@ STEP 2: TAX DOCUMENTS, KBIS & BUSINESS REGISTRATION (High Priority Override)
 - Search document for "Kbis", "Extrait Kbis", "Avis d'impôt", "Avis d'imposition", "Prélèvements sociaux", "Revenus <ANNÉE>", "Finances Publiques", "DGFIP", "Taxe foncière", "Taxe d'habitation", "Dossier administratif", "Tax Return", "Tax Assessment", "W-2", "Form 1040", "Tax Notice", "HMRC", "Property Tax", "Inland Revenue".
 - IF MATCH: -> Category = 'administrative', Subcategory = 'kbis', 'impot', or 'dossier_administratif'.
 - ⚠️ CRITICAL RULE: NEVER classify Kbis or tax forms as 'correspondence' or 'courriers'!
+- ⚠️ CRITICAL RULE: A real tax notice (STEP 2 signals above) always wins over any personal keyword override — a generic word like 'paiement' or 'échéance' appearing in the notice's body text does NOT make it an invoice or a housing document. Classify the notice under STEP 2.
 
 STEP 3: PAY SLIPS / PAYROLL (HIGH PRIORITY CATEGORY)
 - Search document for "Bulletin de salaire", "Bulletin de paie", "Fiche de paie", "Salaire brut", "Net à payer", "Payslip", "Pay slip", "Paystub", "Pay stub", "Salary statement", "Wage statement", "Gross pay", "Net pay".
@@ -25,8 +26,8 @@ STEP 3: PAY SLIPS / PAYROLL (HIGH PRIORITY CATEGORY)
 - ⚠️ CRITICAL RULE: NEVER put pay slips under 'invoices' (Factures)!
 
 STEP 4: CONTRACTS & GENERAL CONDITIONS
-- Search for "Contrat de travail", "CDI", "CDD", "Avenant au contrat", "Conditions générales", "Notice employeur", "Convention collective", "Rupture conventionnelle", "Acte de cession", "Cession de véhicule", "Acte de société", "Dépôt d'entreprise", "Employment contract", "Employment agreement", "Terms and conditions", "Non-disclosure agreement", "NDA", "Service agreement", "Lease agreement", "Tenancy agreement".
-- IF MATCH: -> Category = 'contracts', Subcategory = Work, Conditions, or Document Type (e.g. 'cdi_cdd', 'conditions_generales', 'statuts_societe', 'acte_cession', 'bail_habitation', 'nda').
+- Search for "Contrat de travail", "CDI", "CDD", "Avenant au contrat", "Mandat de prélèvement SEPA", "SEPA mandate", "Conditions générales", "Notice employeur", "Convention collective", "Rupture conventionnelle", "Acte de cession", "Cession de véhicule", "Acte de société", "Dépôt d'entreprise", "Employment contract", "Employment agreement", "Terms and conditions", "Non-disclosure agreement", "NDA", "Service agreement", "Lease agreement", "Tenancy agreement".
+- IF MATCH: -> Category = 'contracts', Subcategory = Work, Conditions, or Document Type (e.g. 'cdi_cdd', 'conditions_generales', 'statuts_societe', 'acte_cession', 'bail_habitation', 'nda', 'mandat_sepa').
 
 STEP 5: IDENTITY, CIVIL PAPERS & VEHICLE REGISTRATION
 - Search for "Passeport", "Passport", "Carte d'Identité", "CNI", "Pièce d'identité", "Titre de Séjour", "Récépissé de demande", "Carte Vitale", "Permis de conduire", "Accusé d'enregistrement de cession", "Carte grise", "Certificat d'immatriculation", "Acte de mariage", "Acte de naissance", "Identity card", "ID card", "Driver's license", "Residence permit", "Visa", "Birth certificate", "Marriage certificate".

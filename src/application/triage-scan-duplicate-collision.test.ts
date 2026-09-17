@@ -43,8 +43,15 @@ vi.mock('./classify-document.js', () => ({ classifyPDFText: classifyPDFTextMock 
 const { extractPDFContentMock } = vi.hoisted(() => ({ extractPDFContentMock: vi.fn() }));
 vi.mock('../infrastructure/pdf-extractor.js', () => ({ extractPDFContent: extractPDFContentMock }));
 
-const { generateEmbeddingMock } = vi.hoisted(() => ({ generateEmbeddingMock: vi.fn(async () => []) }));
-vi.mock('../infrastructure/ollama-client.js', () => ({ generateEmbedding: generateEmbeddingMock }));
+const { generateEmbeddingMock, ensureOllamaModelMock } = vi.hoisted(() => ({
+  generateEmbeddingMock: vi.fn(async () => []),
+  ensureOllamaModelMock: vi.fn(async () => true),
+}));
+vi.mock('../infrastructure/ollama-client.js', () => ({
+  generateEmbedding: generateEmbeddingMock,
+  ensureOllamaModel: ensureOllamaModelMock,
+  OllamaUnavailableError: class OllamaUnavailableError extends Error { name = 'OllamaUnavailableError'; },
+}));
 
 function sampleDoc(overrides: Record<string, any> = {}) {
   return {
@@ -79,6 +86,7 @@ describe('runTriageScan — checksum collision at insert time', () => {
     classifyPDFTextMock.mockReset();
     extractPDFContentMock.mockReset();
     generateEmbeddingMock.mockReset().mockResolvedValue([]);
+    ensureOllamaModelMock.mockReset().mockResolvedValue(true);
   });
 
   afterEach(async () => {
@@ -131,5 +139,27 @@ describe('runTriageScan — checksum collision at insert time', () => {
 
     const allDocs = await database.getAllDocuments();
     expect(allDocs.length).toBe(1);
+  });
+
+  it('does not touch any file when Ollama is down — emits OLLAMA_DOWN and returns empty instead of rule-falling-back', async () => {
+    const { triageScanMod } = await fresh();
+    const filePath = path.join(inputDir, 'pending.pdf');
+    fs.writeFileSync(filePath, 'some pdf bytes');
+    ensureOllamaModelMock.mockResolvedValue(false);
+
+    const events: any[] = [];
+    const result = await triageScanMod.runTriageScan(e => events.push(e));
+
+    // Nothing was extracted, classified, embedded or moved; the file is untouched in __raws.
+    expect(result.ollamaDown).toBe(true);
+    expect(result.scannedCount).toBe(0);
+    expect(result.processedCount).toBe(0);
+    expect(result.items).toHaveLength(0);
+    expect(events.some(e => e.type === 'OLLAMA_DOWN')).toBe(true);
+    expect(events.some(e => e.type === 'SCAN_COMPLETED')).toBe(false);
+    expect(extractPDFContentMock).not.toHaveBeenCalled();
+    expect(classifyPDFTextMock).not.toHaveBeenCalled();
+    expect(generateEmbeddingMock).not.toHaveBeenCalled();
+    expect(fs.existsSync(filePath)).toBe(true);
   });
 });

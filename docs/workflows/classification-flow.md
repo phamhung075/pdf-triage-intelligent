@@ -9,8 +9,21 @@ as a rendered STEP 0 block, `ruleBasedClassify()` via `matchPriorityRules()`. Th
 personal signals live — statement filename codes, scan prefixes, an archive's own schools and
 practitioners — so the committed prompt and classifier stay publishable.
 
-⚠️ **Step 1 still wins.** A non-bank overlay rule never overrides a bank statement, so a landlord
-or vendor name matched only inside a transaction row cannot pull the document out of `bank`.
+⚠️ **Steps 1–3 still win.** A STEP 0 override never overrides a bank statement, a tax notice or a
+pay slip when its target category disagrees with what the document actually is: a landlord or
+vendor name matched only inside a transaction row cannot pull the document out of `bank`, and a
+generic keyword like `paiement`/`échéance` cannot pull an *avis d'impôt* or a *taxe foncière*
+notice into `invoices` (this is the 2026-08-31 regression — two tax notices were filed under
+`invoices/cdiscount` and `housing/foncia` because auto-learned rules fired on the notices' body
+text). Property-tax detection is notice-level: `taxe foncière` alone is not enough (Foncia
+quittances list it among the recoverable charges) — it needs a second tax-authority signal.
+
+⚠️ **Auto-learned rules are filename-scoped.** Rules derived from human move decisions
+(`manual_decisions` → `decisionsToPriorityRules`) only match the *filename* of future documents,
+never body text, and generic money-movement words (`paiement`, `échéance`, `calendrier`,
+`credit`, `mandat`, `sepa`, …) are rejected at derivation. A hand-curated rule in
+`.prompts.private.json` matches text or filename as before — keep those distinctive (codes and
+entity names), never generic single words.
 
 See [taxonomy](../knowledge/taxonomy.md#personal-prompt-overlay).
 
@@ -78,9 +91,9 @@ Signals: `Facture n°`, `Invoice`, `Montant à payer`, `Total TTC`, plus a vendo
 
 ### 9. Contracts & general conditions
 
-Signals: `Contrat de travail`, `CDI`, `CDD`, `Avenant au contrat`, `Conditions générales`, `Notice employeur`, `Convention collective`.
+Signals: `Contrat de travail`, `CDI`, `CDD`, `Avenant au contrat`, `Mandat de prélèvement SEPA`, `SEPA mandate`, `Conditions générales`, `Notice employeur`, `Convention collective`.
 
-→ `category = contracts`, `subcategory` = work/conditions/company (`cdi_cdd`, `conditions_generales`, `attestation_employeur`).
+→ `category = contracts`, `subcategory` = work/conditions/company (`cdi_cdd`, `conditions_generales`, `attestation_employeur`, `mandat_sepa`).
 
 ### 10. Education & academic
 

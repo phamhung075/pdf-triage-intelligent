@@ -122,9 +122,31 @@ Two rules govern the fallback path:
 - **Only rules with an explicit `subcategory` apply.** A rule that defers subcategory resolution
   to the issuing entity gives a regex classifier nothing to resolve from, and inventing one would
   manufacture a subcategory the document never supported.
-- **A non-bank rule never outranks a bank statement** (Golden Rule #6). A landlord or vendor name
-  matched only inside a statement's transaction rows cannot pull the document out of `bank`. The
-  rendered STEP 0 block states the same exception to the model in words.
+- **Semantic anchors never outrank a mismatched overlay** (Golden Rule #6). A bank statement, a
+  tax notice, or a pay slip is always classified under its own STEP (1/2/3): an overlay rule whose
+  target category disagrees is rejected, so a landlord or vendor name matched inside a statement's
+  transaction rows cannot pull the document out of `bank` — and a generic keyword like `paiement`
+  or `échéance` cannot pull an *avis d'impôt* or a *taxe foncière* notice into `invoices`. The
+  rendered STEP 0 block states the same exceptions to the model in words. Property-tax detection
+  is deliberately notice-level: `taxe foncière` alone is not enough (Foncia quittances list it
+  among the recoverable charges) — it needs a second tax-authority signal (`somme à payer`,
+  `montant de votre impôt`, `date limite de paiement`, `taux d'imposition`, `impots.gouv.fr`).
+
+Three mechanisms keep the auto-learned rules (`manual_decisions` → STEP 0) from poisoning future
+runs — this is what the 2026-08-31 regression needed, when 'paiement' (learned from
+`calendrier de paiement.PDF` → `invoices/cdiscount`) misfiled a SEPA mandate and two tax notices:
+
+1. **Filename scope.** `decisionsToPriorityRules` tags every learned rule `scope: 'filename'`
+   (`src/domain/decision-rule.ts`): the rule only fires when its keyword appears in the *filename*
+   of a future document, never in body text. `matchPriorityRules` and the rendered STEP 0 block
+   honour the same scope, so the prompt and the fallback stay aligned.
+2. **Generic-word stopwords.** `deriveRuleKeywords` rejects money-movement / document-type words
+   (`paiement`, `échéance`, `calendrier`, `credit`, `versement`, `mandat`, `sepa`, `confirmation`,
+   …) that describe *what* a document does, never *who* issued it. A decision whose filename
+   yields nothing distinctive simply does not become an active rule.
+3. **Anchor guards in the fallback.** `ruleBasedClassify` computes `looksLikeTaxNotice` /
+   `looksLikePayslip` next to `looksLikeBankStatement` and skips any overlay whose target
+   category disagrees with those anchors.
 
 Keyword matching excludes adjacent **letters**, not digits: `gan` must not fire inside
 `organization`, but a statement code or scan prefix is routinely glued to a date or account number

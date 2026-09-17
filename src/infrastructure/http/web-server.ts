@@ -1462,7 +1462,11 @@ export function createWebServer(): express.Express {
               }
               broadcastTriageEvent(evt);
             }, () => scanAbortRequested);
-            finishTask(result, `Auto-scan completed. Processed ${result.processedCount || 0} file(s).`);
+            if (result && result.ollamaDown) {
+              failTask(result.message || 'Ollama is down — start Ollama and re-scan.');
+            } else {
+              finishTask(result, `Auto-scan completed. Processed ${result.processedCount || 0} file(s).`);
+            }
           } catch (scanErr: any) {
             failTask(scanErr.message);
           }
@@ -1493,8 +1497,15 @@ export function createWebServer(): express.Express {
         }
         broadcastTriageEvent(evt);
       }, () => scanAbortRequested);
-      finishTask(result, `Triage scan completed. Processed ${result.processedCount || 0} file(s).`);
-      res.json({ message: 'Triage scan completed', ...result });
+      if (result && result.ollamaDown) {
+        // Ollama is down: the scan did nothing — fail the task so the UI shows the reminder
+        // toast instead of a misleading "completed, processed 0".
+        failTask(result.message || 'Ollama is down — start Ollama and re-scan.');
+        res.json({ ...result, message: result.message || 'Ollama is down — start Ollama and re-scan.' });
+      } else {
+        finishTask(result, `Triage scan completed. Processed ${result.processedCount || 0} file(s).`);
+        res.json({ message: 'Triage scan completed', ...result });
+      }
     } catch (err: any) {
       failTask(err.message);
       res.status(500).json({ error: err.message });

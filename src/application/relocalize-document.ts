@@ -227,6 +227,10 @@ export async function reclassifyAndRelocalizeDocument(
   const extracted = await extractPDFContent(actualPath);
   const freshText = extracted.raw_text || '';
   const storedText = doc.raw_text || '';
+  // Docling structured Markdown, when the fresh extraction adopted it — only usable when the fresh
+  // text is the input actually re-analyzed (the stored text predates Docling, so its markdown must
+  // not replace a markdown built from stored text).
+  const freshDoclingMarkdown = (extracted as { docling_markdown?: string }).docling_markdown;
 
   // A re-analysis must never make the record WORSE than it already was.
   //
@@ -268,9 +272,16 @@ export async function reclassifyAndRelocalizeDocument(
     newCategory = explicitCategory.toLowerCase().trim();
     newSubcategory = explicitSubcategory.toLowerCase().trim();
   } else {
-    // Re-run Qwen 3.5 AI with optional user feedback note
+    // Re-run Qwen 3.5 AI with optional user feedback note. When the fresh Docling extraction was
+    // adopted AND is the text actually being analyzed, its deterministic Markdown rides along so
+    // Step C's LLM conversion is skipped; otherwise call exactly as before (3 args) so the
+    // historical call shape — and tests asserting it — never change just because Docling is
+    // configured elsewhere.
     logger.info('RELOCALIZE', `Re-analyzing document content with AI for ID ${id} (${doc.title})...`, { userFeedbackReason });
-    const meta = await classifyPDFText(textToAnalyze, doc.original_filename || path.basename(actualPath), userFeedbackReason);
+    const doclingMd = useFreshText ? freshDoclingMarkdown : undefined;
+    const meta = doclingMd && doclingMd.trim().length > 0
+      ? await classifyPDFText(textToAnalyze, doc.original_filename || path.basename(actualPath), userFeedbackReason, undefined, doclingMd)
+      : await classifyPDFText(textToAnalyze, doc.original_filename || path.basename(actualPath), userFeedbackReason);
 
     newCategory = meta.categorie;
     newSubcategory = meta.subcategorie;

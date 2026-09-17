@@ -334,9 +334,25 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
   // not literals here — they come from the gitignored .prompts.private.json overlay, the same
   // source that feeds the prompt's STEP 0. A statement whose only signal is such a code is
   // recognized through `priorityMatch` below.
-  const priorityMatch = matchPriorityRules(combined, personalization);
+  const priorityMatch = matchPriorityRules(combined, personalization, filename);
   const looksLikeBankStatement = /(relev[ée]\s*de\s*compte|relev[ée]\s*de\s*ch[èe]ques|synth[èe]se\s*(d'|de\s*)?[ée]pargne|solde\s*cr[ée]diteur|relev[ée]\s*bancaire|extrait\s*de\s*compte|releve\s*de\s*cheques|bank\s*statement|account\s*statement|checking\s*account|savings\s*account|statement\s*of\s*account|credit\s*card\s*statement|opening\s*balance|closing\s*balance|bank\s*summary)/i.test(combined)
     || priorityMatch?.categorie === 'bank';
+
+  // Semantic anchors mirroring the prompt's STEP 2/3, the same way looksLikeBankStatement mirrors
+  // STEP 1: a tax notice or a pay slip is never outranked by a STEP 0 overlay rule whose target
+  // category disagrees. This is what the 2026-08-31 regression needed: 'paiement'/'échéance'
+  // (auto-learned from "calendrier de paiement.PDF" -> invoices/cdiscount) fired on the body text
+  // of an income-tax notice and a property-tax notice, filing both under the wrong category.
+  //
+  // Deliberately notice-level discrimination for property tax: 'taxe foncière' ALONE is not
+  // enough — Foncia quittances list it among the recoverable charges — so a taxe foncière /
+  // taxe d'habitation notice needs a second tax-authority signal (somme à payer, montant de
+  // votre impôt, date limite de paiement, taux d'imposition, impots.gouv.fr) to count.
+  const looksLikeTaxNotice =
+    /(avis[ _-]?d[ _-]?impot|avis[ _-]?d'imposition|impot[ _-]?sur[ _-]?les[ _-]?revenus|impot[ _-]?sur[ _-]?le[ _-]?revenu|centre[ _-]?des[ _-]?finances[ _-]?publiques|finances[ _-]?publiques|dgfip|impots\.gouv\.fr|prelevements[ _-]?sociaux)/i.test(combined)
+    || (/(taxe[ _-]?fonciere|taxe[ _-]?d'habitation)/i.test(combined)
+        && /(somme[ _-]?a[ _-]?payer|montant[ _-]?de[ _-]?votre[ _-]?impot|date[ _-]?limite[ _-]?de[ _-]?paiement|taux[ _-]?d'imposition|prelevement[ _-]?a[ _-]?l'echeance|impots\.gouv\.fr)/i.test(combined));
+  const looksLikePayslip = /(bulletin[ _-]?de[ _-]?salaire|bulletin[ _-]?de[ _-]?paie|fiche[ _-]?de[ _-]?paie|salaire[ _-]?brut|net[ _-]?a[ _-]?payer|net[ _-]?à[ _-]?payer|payslip|pay[ _-]?slip|paystub|pay[ _-]?stub)/i.test(combined);
 
   let categorie = 'administrative';
   let subcategorie = 'general';
@@ -345,8 +361,13 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
   // 0a. User overlay overrides — the deterministic mirror of the prompt's STEP 0
   // (.prompts.private.json). Golden Rule #6 still wins: a non-bank override never beats a bank
   // statement, so a landlord / vendor / employer name appearing only inside a statement's
-  // transaction rows cannot pull the document out of 'bank'.
-  if (priorityMatch && !(looksLikeBankStatement && priorityMatch.categorie !== 'bank')) {
+  // transaction rows cannot pull the document out of 'bank'. The same anchor applies to tax
+  // notices (STEP 2) and pay slips (STEP 3): a generic-keyword overlay whose target disagrees
+  // is rejected so the document falls through to its real branch below.
+  if (priorityMatch
+      && !(looksLikeBankStatement && priorityMatch.categorie !== 'bank')
+      && !(looksLikeTaxNotice && priorityMatch.categorie !== 'administrative')
+      && !(looksLikePayslip && priorityMatch.categorie !== 'bulletin_salaire')) {
     categorie = priorityMatch.categorie;
     subcategorie = priorityMatch.subcategorie;
     reason = `Matched user overlay priority rule '${priorityMatch.keyword}' -> ${categorie}/${subcategorie}`;
@@ -408,11 +429,12 @@ export function ruleBasedClassify(rawText: string, filename: string, dictionary:
     subcategorie = 'justificatif_domicile';
   }
   // 1. Contracts, Commercial Mandates & General Conditions & Company Incorporation
-  else if (/\b(contrat de travail|cdi|cdd|avenant au contrat|mandat d'agent commercial|mandat d'agent|droit à l'image|droit a l'image|cg de mon contrat|conditions générales|notice-attestation-employeur|attestation-employeur|attestation employeur|engagement|convention collective|acte de société|acte de societe|dépôt d'entreprise|depot d'entreprise|employment\s*contract|employment\s*agreement|terms\s*and\s*conditions|non-disclosure\s*agreement|nda|service\s*agreement|lease\s*agreement|tenancy\s*agreement)\b/i.test(combined)) {
+  else if (/\b(contrat de travail|cdi|cdd|avenant au contrat|mandat d'agent commercial|mandat d'agent|mandat de prélèvement|mandat de prelevement|mandat sepa|sepa mandate|droit à l'image|droit a l'image|cg de mon contrat|conditions générales|notice-attestation-employeur|attestation-employeur|attestation employeur|engagement|convention collective|acte de société|acte de societe|dépôt d'entreprise|depot d'entreprise|employment\s*contract|employment\s*agreement|terms\s*and\s*conditions|non-disclosure\s*agreement|nda|service\s*agreement|lease\s*agreement|tenancy\s*agreement)\b/i.test(combined)) {
     categorie = 'contracts';
     if (/\bcg|conditions générales|terms\s*and\s*conditions\b/i.test(combined)) subcategorie = 'conditions_generales';
     else if (/\battestation[ _-]employeur\b/i.test(combined)) subcategorie = 'attestation_employeur';
     else if (/\bacte de société|acte de societe|dépôt d'entreprise|depot d'entreprise\b/i.test(combined)) subcategorie = 'statuts_societe';
+    else if (/\bmandat de prélèvement|mandat de prelevement|mandat sepa|sepa mandate\b/i.test(combined)) subcategorie = 'mandat_sepa';
     else subcategorie = 'cdi_cdd';
   }
   // 2. Identity & Passports & Civil Records & Vehicle Cession

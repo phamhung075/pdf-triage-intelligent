@@ -11,7 +11,7 @@ import { moveBackToRaws, findActualFileOnDisk, relocalizeFileIfNeeded } from './
 import { ruleBasedClassify, extractRuleBasedContact } from '../domain/classification.js';
 import { getEntityDictionary } from '../infrastructure/entity-dictionary-store.js';
 import { getPromptPersonalization } from '../infrastructure/prompt-personalization-store.js';
-import { classifyPDFText } from './classify-document.js';
+import { classifyPDFText, OllamaUnavailableError } from './classify-document.js';
 import { generateEmbedding } from '../infrastructure/ollama-client.js';
 import { syncJSONRegistry } from '../infrastructure/json-registry.js';
 import { logger } from '../infrastructure/logger.js';
@@ -76,7 +76,11 @@ export async function repairRegistry(onProgress?: (event: any) => void): Promise
         stage: 'REPAIRING',
         message: `Analyzing & repairing file ${processedIndex}/${archivedFiles.length}: ${file}`
       });
-      const { checksum, raw_text } = await extractPDFContent(filePath);
+      const extractedFile = await extractPDFContent(filePath);
+      const { checksum, raw_text } = extractedFile;
+      // When the fresh extraction came from the Docling structured extractor, its deterministic
+      // Markdown rides along so Step C's LLM re-conversion is skipped for re-classified files too.
+      const doclingMarkdown = (extractedFile as { docling_markdown?: string }).docling_markdown;
 
       const isMissingContent = !raw_text || raw_text.trim().length === 0 || raw_text.includes('[No raw text extracted]');
 
@@ -165,7 +169,9 @@ export async function repairRegistry(onProgress?: (event: any) => void): Promise
         const pathSub = parts.length >= 3 ? parts[1] : 'general';
 
         console.log(`Repairing & analyzing unindexed file '${file}' (Path hint: ${pathCat}/${pathSub})...`);
-        const metadata = await classifyPDFText(raw_text, file);
+        const metadata = doclingMarkdown && doclingMarkdown.trim().length > 0
+          ? await classifyPDFText(raw_text, file, undefined, undefined, doclingMarkdown)
+          : await classifyPDFText(raw_text, file);
         const embedding = await generateEmbedding(raw_text);
         const ruleContact = extractRuleBasedContact(raw_text);
 
@@ -231,6 +237,19 @@ export async function repairRegistry(onProgress?: (event: any) => void): Promise
         }
       }
     } catch (err: any) {
+      // Ollama down: repair must NOT rule-fall-back either (same 2026-08-31 lesson). Skip the
+      // file untouched and remind the user, instead of a bare console.warn.
+      if (err instanceof OllamaUnavailableError) {
+        const message = `⛔ Ollama is down — ${CONFIG.OLLAMA_MODEL} unreachable. Start Ollama, then re-run Repair. Skipped: ${path.basename(filePath)}`;
+        logger.warn('REPAIR', message, { filePath });
+        onProgress?.({
+          type: 'FILE_FAILED',
+          filename: path.basename(filePath),
+          stage: 'FAILED',
+          message
+        });
+        continue;
+      }
       console.warn(`Error repairing file ${filePath}:`, err.message);
     }
   }

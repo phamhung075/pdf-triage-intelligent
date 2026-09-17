@@ -173,3 +173,44 @@ describe('matchPriorityRules', () => {
     expect(matchPriorityRules('a shared token', both)?.subcategorie).toBe('first');
   });
 });
+
+describe('matchPriorityRules — filename scope (2026-08-31 regression)', () => {
+  const scoped = PromptPersonalizationSchema.parse({
+    priority_rules: [
+      { keywords: ['paiement'], category: 'invoices', subcategory: 'cdiscount', scope: 'filename' },
+    ],
+  });
+  const unscoped = PromptPersonalizationSchema.parse({
+    priority_rules: [
+      { keywords: ['paiement'], category: 'invoices', subcategory: 'cdiscount' },
+    ],
+  });
+
+  it('never fires a filename-scoped rule on body text alone', () => {
+    // 'paiement' appears in the body but NOT in the filename — the learned rule must stay silent.
+    expect(matchPriorityRules('avis d impôt — mode de paiement', scoped, 'Avis_d_impot_2026.pdf')).toBeNull();
+  });
+
+  it('fires a filename-scoped rule when the keyword is in the filename', () => {
+    expect(matchPriorityRules('some body text', scoped, 'calendrier de paiement.PDF')?.subcategorie).toBe('cdiscount');
+  });
+
+  it('keeps the legacy default scope of matching text or filename for hand-curated rules', () => {
+    expect(matchPriorityRules('mode de paiement', unscoped, 'Avis_d_impot_2026.pdf')?.subcategorie).toBe('cdiscount');
+  });
+});
+
+describe('renderPriorityRulesBlock — filename scope wording', () => {
+  it('tells the model a filename-scoped rule matches the FILENAME only', () => {
+    const block = renderPriorityRulesBlock(PromptPersonalizationSchema.parse({
+      priority_rules: [
+        { keywords: ['paiement'], category: 'invoices', subcategory: 'cdiscount', scope: 'filename' },
+        { keywords: ['Foncia'], category: 'housing', subcategory: 'foncia' },
+      ],
+    }));
+    expect(block).toMatch(/FILENAME contains/i);
+    expect(block).not.toMatch(/text or filename contains "paiement"/i);
+    expect(block).toMatch(/text or filename contains "Foncia"/i);
+    expect(block).toMatch(/STEPS 1-3 STILL WIN/i);
+  });
+});

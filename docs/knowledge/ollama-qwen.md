@@ -32,6 +32,24 @@ await ollama.generate({
 
 Text is truncated to 4000 chars before sending (`textSnippet`).
 
+## Ollama down — triage stops, no rule-based fallback
+
+When Ollama is unreachable, the pipeline **does nothing** and reminds the user to start Ollama —
+it must never silently fall back to `ruleBasedClassify()`. That silent fallback is what misfiled
+a SEPA mandate and two tax notices on 2026-08-31: the rule-based classifier exists for a *healthy*
+model's unparseable JSON, not for an unreachable one.
+
+- `runTriageScan()` checks `ensureOllamaModel()` **before touching a single file** (no bundling, no
+  extraction, no OCR, no classification, no move). If it fails, it emits an `OLLAMA_DOWN` SSE event
+  (broadcast to the UI, cooldown 60 s so the 10 s watcher cannot spam toasts) and returns an empty
+  result with `ollamaDown: true`.
+- `classifyPDFText()` throws `OllamaUnavailableError` (`src/infrastructure/ollama-client.ts`) when
+  the capability check fails or a completion call hits a connection-level error; the catch block
+  rethrows it instead of falling back. Triage and Repair catch it per file and block the file in
+  `__raws` with the reminder; Relocalize surfaces it as a 500 with the same message.
+- The UI shows the reminder in the scan-progress modal header and as a toast, and refreshes the
+  header's Ollama status badge (the "▶️ Start Ollama" button) so the user can act on it.
+
 ## Step C — chunked Markdown conversion
 
 `markdown_content` is **not** produced by the classification call. `convertRawTextToZeroLossMarkdown()`
@@ -58,6 +76,16 @@ split lands before the model has emitted a separator, the next chunk starts with
 the output contains a headerless "orphan" table block. Measured on the live registry, 24.2% of
 archived documents carry at least one malformed table block (ragged rows, a table restarted
 mid-block, or an orphan) — dense grid layouts like payslips are the worst affected.
+
+One more failure shape is repaired deterministically at the assembled level (see
+`reattachHeadingSplitTableRows` in `src/domain/markdown-tables.ts`): when prose — usually a footnote
+caption — sits between a table's rows across a chunk boundary, the model may promote each
+continuation row's first cell to a Markdown heading (`## Base - 03kVA - du 01/02/26 au 16/05/26`
+above a lone `| 9,16 | 31,62 | 20,0% |`), leaving the row one cell short of its header. Doc 5009's
+*Grille tarifaire* came back this way. The heading is folded back into the row as its first cell and
+the row is moved into the parent table, provided the row is alone, all its cells are pure values,
+and its width plus the heading exactly matches the nearest headed table above (narrow gates — a
+heading that introduces its own small table is never touched).
 
 ### Two failure modes, both fall back to raw text
 

@@ -76,15 +76,49 @@ def _decode_image(image_bytes: bytes) -> np.ndarray:
 
 
 def recognize_text(image_bytes: bytes) -> str:
-    # Decoding is thread-safe and cheap, so it stays outside the lock — only inference is
-    # serialized, which keeps the queue as short as it can be.
+    """Flat OCR transcript: one detected text line per output line (backwards-compatible)."""
+    text, _ = recognize_text_structured(image_bytes)
+    return text
+
+
+def recognize_text_structured(image_bytes: bytes) -> tuple:
+    """OCR transcript + per-line geometry.
+
+    Returns (flat_text, items) where every item is
+        {"text": str, "poly": [[x, y] x4] | None, "score": float | None}
+    in the detector's own order. The TypeScript client rebuilds real reading order from `poly`
+    (see src/domain/ocr-layout.ts) — the flat text stays the compatible contract for callers that
+    do not want geometry. `poly`/`score` are None when this PaddleOCR build does not expose them
+    for a given result; the client falls back to the flat text then.
+    """
     img = _decode_image(image_bytes)
     with _ocr_lock:
         results = _get_ocr().predict(img)
-        lines = []
+        texts = []
+        items = []
         for res in results:
-            lines.extend(res.json["res"].get("rec_texts", []))
-    return "\n".join(lines)
+            payload = res.json.get("res") if isinstance(res.json, dict) else None
+            if not payload:
+                continue
+            rec_texts = payload.get("rec_texts") or []
+            dt_polys = payload.get("dt_polys") or payload.get("rec_polys") or []
+            rec_scores = payload.get("rec_scores") or []
+            for idx, token in enumerate(rec_texts):
+                if not token:
+                    continue
+                texts.append(token)
+                poly = dt_polys[idx] if idx < len(dt_polys) else None
+                score = rec_scores[idx] if idx < len(rec_scores) else None
+                items.append({
+                    "text": token,
+                    "poly": (
+                        [[float(x), float(y)] for x, y in poly]
+                        if poly is not None
+                        else None
+                    ),
+                    "score": float(score) if score is not None else None,
+                })
+    return "\n".join(texts), items
 
 
 def detect_orientation(image_bytes: bytes) -> dict:

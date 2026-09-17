@@ -28,6 +28,15 @@ const PriorityRuleSchema = z.object({
   // Optional free-text clarification appended to the rendered rule (e.g. a caveat about what
   // NOT to match).
   note: z.string().optional(),
+  // Where the keyword must appear for the rule to fire:
+  //   'all'      — anywhere in the document text or filename. Only hand-curated rules should
+  //                use this: they carry distinctive codes / entity names (RLV_CHQ_, CESI, …).
+  //   'filename' — ONLY in the filename. Auto-learned rules (decisionsToPriorityRules) are
+  //                derived from a moved file's name and are forced to this scope: a generic
+  //                word like 'paiement' must never fire again because some OTHER document's
+  //                body text happens to mention it (this is what filed a SEPA mandate and two
+  //                tax notices under invoices/cdiscount on 2026-08-31).
+  scope: z.enum(['all', 'filename']).optional().default('all'),
 });
 
 export const PromptPersonalizationSchema = z.object({
@@ -68,7 +77,8 @@ export function renderPriorityRulesBlock(p: PromptPersonalization): string {
     '',
     'STEP 0: USER-SPECIFIC HIGH-PRIORITY OVERRIDES (EVALUATE BEFORE STEP 1):',
     '- These keyword sets come from this archive\'s own documents. If one matches, apply it and SKIP the remaining steps.',
-    '- ⚠️ EXCEPTION — STEP 1 STILL WINS: if the document is itself a bank statement, classify it under STEP 1 and treat any name matched here as transaction-row noise. A non-bank override never beats a bank statement.',
+    '- ⚠️ EXCEPTION — STEPS 1-3 STILL WIN: if the document is itself a bank statement (STEP 1), a tax notice (STEP 2) or a pay slip (STEP 3), classify it under that STEP and treat any name matched here as content noise. A non-matching STEP 0 override never beats those three semantic anchors.',
+    '- A rule marked FILENAME-ONLY matches the document FILENAME, never the body text: a word appearing inside the text is not evidence that the rule applies.',
   ];
 
   for (const rule of rules) {
@@ -76,7 +86,10 @@ export function renderPriorityRulesBlock(p: PromptPersonalization): string {
     const target = rule.subcategory
       ? `Category = '${rule.category}', Subcategory = '${rule.subcategory}'`
       : `Category = '${rule.category}' (resolve the Subcategory from the issuing entity as usual)`;
-    lines.push(`- IF the document text or filename contains ${keywords} -> ${target}.${rule.note ? ` ${rule.note.trim()}` : ''}`);
+    const where = rule.scope === 'filename'
+      ? 'the document FILENAME contains'
+      : 'the document text or filename contains';
+    lines.push(`- IF ${where} ${keywords} -> ${target}.${rule.note ? ` ${rule.note.trim()}` : ''}`);
   }
 
   if (extra) lines.push(extra);
@@ -94,14 +107,20 @@ export function renderPriorityRulesBlock(p: PromptPersonalization): string {
  * resolution to the issuing entity has nothing for a regex-based classifier to act on, and
  * guessing one would manufacture a subcategory the document never supported.
  *
- * `combined` is the caller's lowercased filename + text haystack.
+ * `combined` is the caller's lowercased filename + text haystack; `filename` is the bare
+ * (lowercased) filename. Rules with `scope: 'filename'` are matched against the filename ONLY —
+ * never against body text — so an auto-learned rule derived from one moved file's name cannot
+ * re-fire on an unrelated document that merely mentions the same generic word.
  */
 export function matchPriorityRules(
   combined: string,
-  p: PromptPersonalization
+  p: PromptPersonalization,
+  filename?: string
 ): { categorie: string; subcategorie: string; keyword: string } | null {
   for (const rule of p.priority_rules) {
     if (!rule.subcategory) continue;
+    const haystack = rule.scope === 'filename' ? (filename || '').toLowerCase() : combined;
+    if (rule.scope === 'filename' && !filename) continue;
     for (const raw of rule.keywords) {
       const keyword = raw.trim().toLowerCase();
       if (!keyword) continue;
@@ -113,7 +132,7 @@ export function matchPriorityRules(
       // ("stmt_", "c/c ") needs no trailing guard at all.
       const trailing = /\p{L}$/u.test(keyword) ? '(?!\\p{L})' : '';
       const leading = /^\p{L}/u.test(keyword) ? '(?<!\\p{L})' : '';
-      if (new RegExp(`${leading}${escaped}${trailing}`, 'iu').test(combined)) {
+      if (new RegExp(`${leading}${escaped}${trailing}`, 'iu').test(haystack)) {
         return { categorie: rule.category, subcategorie: rule.subcategory, keyword };
       }
     }

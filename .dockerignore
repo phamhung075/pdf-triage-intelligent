@@ -1,0 +1,46 @@
+# Build context hygiene for `docker compose build` (context = repo root). Keeps the image build
+# small and keeps personal data out of the image.
+
+# VCS
+.git
+
+# Dependencies / build output
+node_modules
+dist
+dist-installer
+__packages
+.pytest_cache
+
+# Runtime state & personal data — must NEVER land in the image
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.bak
+registry.json
+manual_decisions.json
+.categories.private.json
+.prompts.private.json
+taxonomy_hints.json
+settings.json
+.env
+.server.lock
+.scan.lock
+logs
+
+# Local input/output folders
+input
+organized
+__raws
+__archive
+.tmp-gt
+.tmp*
+social
+
+# Python OCR sidecar (not used by this image)
+.venv-paddle
+paddleocr-server
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db

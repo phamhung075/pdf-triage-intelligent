@@ -20,7 +20,7 @@ and Markdown.
 - `paddleocr-server/` (Python/FastAPI) and the never-fully-wired Python Docling sidecar
   (`DOCLING_SERVICE_URL`) are both being replaced by one dependency: **pdf2w**, a self-hosted
   Go gateway + Rust extraction core, built as new code in a dedicated submodule repo
-  (`https://github.com/phamhung075/pdf-triage-pdf2w`), following the same architecture family as
+  (`https://github.com/pdf-triage-org/pdf-triage-pdf2w`), following the same architecture family as
   the sibling project `/home/daihu/__projects__/markdown-extract-service` (Rust `pdf2md-core` +
   Go `server-go` gateway) but owned and versioned independently by pdf-triage.
 - pdf2w's Go gateway already implements native PDF→Markdown extraction plus a Gemini→DeepSeek
@@ -37,14 +37,14 @@ main pdf-triage app (TypeScript, unchanged 3-layer architecture — Golden Rule 
    │  POST /convert  (plain HTTP — same seam shape as today's PDF_EXTRACT_SERVICE_URL /
    │                   DOCLING_SERVICE_URL clients; no MCP client embedded in the running app)
    ▼
-services/pdf2w-extract/   ← git submodule → https://github.com/phamhung075/pdf-triage-pdf2w
+services/pdf2w-extract/   ← git submodule → https://github.com/pdf-triage-org/pdf-triage-pdf2w
    Go gateway + Rust extraction core, self-hosted via docker-compose, no calls to app.pdf2w.com,
    no per-document billing. Handles: native PDF text/table extraction, and vision-rescue OCR
    (Gemini → DeepSeek) for scanned pages and image-only PDFs.
 ```
 
 - The submodule is a **separate GitHub repo** (already created:
-  `https://github.com/phamhung075/pdf-triage-pdf2w`), checked out at `services/pdf2w-extract/`
+  `https://github.com/pdf-triage-org/pdf-triage-pdf2w`), checked out at `services/pdf2w-extract/`
   via `.gitmodules`. New Go/Rust code is written there, not copy-pasted from
   `markdown-extract-service` — though depending on the public `pdf2md-core` Rust crate
   (`public/crates/pdf2md-core`, BSL-1.1, from the sibling repo) as a build dependency instead of

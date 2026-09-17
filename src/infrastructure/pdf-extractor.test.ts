@@ -260,6 +260,45 @@ describe('extractPDFContent — corrupted-but-nonempty digital text (bad font To
   }, 60_000);
 });
 
+describe('extractPDFContent — corruption-triggered OCR arbitration (keep the better candidate)', () => {
+  // The corruption guard can misfire or OCR can recover garbage; either way the OCR output must
+  // not blindly overwrite the digital layer it was called in to replace (doc id 5009: clean EDF
+  // layer → OCR'd into "MIe PALMA BRI G TTE"). Decision rules live in domain/pdf-text.ts
+  // (chooseBestExtraction); these tests pin the behaviour end-to-end through the extractor.
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.doUnmock('pdf-parse');
+    vi.resetModules();
+  });
+
+  it('keeps the original digital text when OCR recovered only band noise, not words', async () => {
+    const garbledText = buildGarbledCorruptedText();
+    vi.doMock('pdf-parse', () => ({
+      PDFParse: undefined,
+      default: async () => ({ text: garbledText, numpages: 1, info: {} })
+    }));
+    const { extractPDFContent: extractPDFContentFresh } = await import('./pdf-extractor.js');
+
+    // PaddleOCR is UP and "recognizes" the page — but its output is decoration/band noise
+    // (single letters and dashes), the shape a faxed page produces. That must not replace the
+    // (garbled but real) layer with pure noise.
+    paddleOcrRecognizeMock.mockResolvedValue('S S8 S 5 T S S S8 S S S8 S - 8 Sd S te 0-Z : S0 2 S0 e de e -');
+
+    const bytes = await buildImageOnlyPdf('IGNORED');
+    const filePath = writeTempPdf(bytes, 'corrupted-ocr-noise.pdf');
+    try {
+      const result = await extractPDFContentFresh(filePath);
+      expect(result.raw_text.startsWith('[OCR Extracted Text]')).toBe(false);
+      expect(result.raw_text).toBe(garbledText);
+      expect(result.raw_text).toContain('roAN');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+});
+
 describe('parseWithPdfjs', () => {
   it('returns an empty string instead of throwing on a non-PDF buffer', async () => {
     const text = await parseWithPdfjs(Buffer.from('not a pdf at all'));

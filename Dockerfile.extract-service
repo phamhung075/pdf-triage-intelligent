@@ -1,0 +1,59 @@
+# PDF text-extraction microservice image (see docker-compose.yml at the repo root and
+# docs/knowledge/pdf-extract-service.md).
+#
+# Multi-stage on purpose:
+#   build  — full `npm ci` (dev deps included: typescript) + `tsc` over src/ → dist/
+#   run    — production node_modules only + dist + Tesseract fra/eng/vie bundled at build time.
+#
+# Debian bookworm-slim (glibc), NOT alpine: @napi-rs/canvas ships a prebuilt
+# linux-x64-gnu binary; the musl variant would force a source build.
+#
+# Build with:  docker build -f Dockerfile.extract-service -t pdf-triage/pdf-extract:latest .
+
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+# --ignore-scripts: this image only ever runs the extraction graph (tsc at build time, then the
+# compiled service). Native addons that need a compiler toolchain (sqlite3, electron) are never
+# imported by it, so skipping their install scripts keeps the build off python3/make/g++ entirely.
+RUN npm ci --no-audit --no-fund --ignore-scripts
+
+COPY tsconfig.json ./
+COPY src ./src
+RUN npx tsc -p tsconfig.json
+
+# -----------------------------------------------------------------------------------------------
+
+FROM node:22-bookworm-slim
+ENV NODE_ENV=production
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+# Same --ignore-scripts rationale as the build stage: the compiled service requires only
+# pdf-parse / pdfjs-dist / tesseract.js / @napi-rs/canvas (prebuilt) at runtime — none of them run
+# install scripts. @napi-rs/canvas-linux-x64-gnu is an optionalDependency pulled automatically.
+RUN npm ci --omit=dev --no-audit --no-fund --ignore-scripts && npm cache clean --force
+
+COPY --from=build /app/dist ./dist
+
+# Tesseract language data (fra+eng+vie, matching the in-process extractor's language set),
+# served from disk via TESSERACT_LANG_PATH so OCR never touches the network at RUNTIME.
+# Downloaded once at BUILD time from the same @tesseract.js-data CDN tesseract.js would use by
+# default — the repo-root *.traineddata are gitignored, so a COPY would break fresh-clone builds.
+# Files are kept as .traineddata.gz: loadLang() reads `${langPath}/${lang}.traineddata.gz` for a
+# local langPath (gzip defaults on), detects the gzip magic bytes and decompresses them.
+RUN node -e "const fs=require('fs');const d='/app/tessdata';fs.mkdirSync(d,{recursive:true});const ls=['eng','fra','vie'];(async()=>{for(const l of ls){const f=d+'/'+l+'.traineddata.gz';if(fs.existsSync(f))continue;const r=await fetch('https://cdn.jsdelivr.net/npm/@tesseract.js-data/'+l+'/4.0.0_best_int/'+l+'.traineddata.gz');if(!r.ok)throw new Error('traineddata download failed for '+l+' ('+r.status+')');fs.writeFileSync(f,Buffer.from(await r.arrayBuffer()));console.log('bundled '+l+'.traineddata.gz');}})()"
+
+# The service listens on 0.0.0.0 inside the container so docker's published port can reach it;
+# the host-facing default of the same env var (127.0.0.1) lives in src/infrastructure/settings.ts.
+ENV PDF_EXTRACT_PORT=3981
+ENV PDF_EXTRACT_HOST=0.0.0.0
+ENV TESSERACT_LANG_PATH=/app/tessdata
+# No python inside this image — never attempt the host auto-spawn dance; PaddleOCR stays an
+# optional upstream you can point at via PADDLEOCR_HOST (see docker-compose.yml).
+ENV PADDLEOCR_SPAWN_CMD=/bin/false
+
+EXPOSE 3981
+
+CMD ["node", "dist/extract-service/main.js"]

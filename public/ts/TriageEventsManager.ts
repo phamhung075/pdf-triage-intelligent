@@ -125,6 +125,8 @@ class TriageEventsManager {
           } else if (evt.type === 'TASK_FAILED') {
             this.app.toast.error(`❌ ${evt.taskState ? evt.taskState.message : 'Operation failed'}`, 6000);
             refreshDashboard();
+          } else if (evt.type === 'OLLAMA_DOWN') {
+            this.showOllamaDownReminder(evt.message);
           }
 
           if (['FILE_COMPLETED', 'SCAN_COMPLETED', 'REGISTRY_UPDATED', 'CATEGORIES_UPDATED', 'REPAIR_COMPLETED', 'FILE_FAILED'].includes(evt.type)) {
@@ -446,6 +448,13 @@ class TriageEventsManager {
                 badgeEl.textContent = 'FAILED';
               }
             }
+          } else if (evt.type === 'OLLAMA_DOWN') {
+            if (header) {
+              header.innerHTML = `⛔ <strong>Ollama is down!</strong> ${state.escapeHtml(evt.message || 'Start Ollama, then re-scan.')}`;
+            }
+            this.showOllamaDownReminder(evt.message);
+            if (btnDone) btnDone.style.display = 'inline-block';
+            if (sse) sse.close();
           } else if (evt.type === 'SCAN_COMPLETED') {
             if (header) {
               header.innerHTML = `🎉 <strong>Triage Scan Complete!</strong> Scanned: ${evt.scannedCount} | Processed: ${evt.processedCount} | Skipped: ${evt.skippedCount}`;
@@ -460,10 +469,16 @@ class TriageEventsManager {
     try {
       const res = await fetch('/api/triage/scan', { method: 'POST' });
       const data = await res.json();
-      if (header) {
+      if (data && data.ollamaDown) {
+        if (header) {
+          header.innerHTML = `⛔ <strong>Ollama is down!</strong> ${state.escapeHtml(data.message || 'Start Ollama, then re-scan.')}`;
+        }
+        this.showOllamaDownReminder(data.message);
+        if (btnDone) btnDone.style.display = 'inline-block';
+      } else if (header) {
         header.innerHTML = `🎉 <strong>Triage Scan Complete!</strong> Scanned: ${data.scannedCount} | Processed: ${data.processedCount} | Skipped: ${data.skippedCount}`;
+        if (btnDone) btnDone.style.display = 'inline-block';
       }
-      if (btnDone) btnDone.style.display = 'inline-block';
     } catch (err: any) {
       if (!(err && err.name === 'AbortError')) {
         this.app.toast.error('Error running triage scan: ' + err.message);
@@ -520,6 +535,23 @@ class TriageEventsManager {
 
   exportDocumentsMarkdown(): void {
     window.location.href = '/api/documents/export/markdown';
+  }
+
+  // Dedupe guard: the scan flow can raise the reminder through several channels at once
+  // (the OLLAMA_DOWN SSE event, the paired TASK_FAILED toast, and the POST response), and the
+  // 10s auto-watcher re-fires it while Ollama stays down. Show the same message at most once
+  // per 30s so the user is reminded without being spammed.
+  private lastOllamaReminder: { key: string; at: number } = { key: '', at: 0 };
+
+  showOllamaDownReminder(message?: string): void {
+    const key = (message || '').trim();
+    const now = Date.now();
+    if (key && key === this.lastOllamaReminder.key && now - this.lastOllamaReminder.at < 30_000) return;
+    this.lastOllamaReminder = { key, at: now };
+    this.app.toast.error(message || 'Ollama is down — start Ollama and re-scan.', 8000);
+    // The header badge already flips to "Ollama Disconnected"; refresh it so the user sees
+    // the actionable "Start Ollama" button.
+    this.checkOllamaStatus();
   }
 }
 

@@ -438,3 +438,49 @@ describe('takeOverPaddleOcrServer', () => {
     expect(killMock).not.toHaveBeenCalled();
   });
 });
+
+describe('paddleOcrRecognize — structured geometry (layout upgrade)', () => {
+  it('rebuilds real reading order from per-box geometry when the server returns items', async () => {
+    // PaddleOCR can return boxes in detector order; the client must re-order them into visual
+    // rows top-to-bottom, left-to-right (see domain/ocr-layout.ts).
+    route({
+      ocr: () => ({
+        ok: true,
+        json: async () => ({
+          text: 'flat fallback',
+          items: [
+            { text: '21,49', poly: [[180, 200], [210, 200], [210, 220], [180, 220]], score: 0.9 },
+            { text: 'Montant', poly: [[300, 100], [330, 100], [330, 120], [300, 120]], score: 0.9 },
+            { text: 'Base', poly: [[20, 100], [50, 100], [50, 120], [20, 120]], score: 0.9 },
+          ],
+        }),
+      }),
+    });
+
+    const { paddleOcrRecognize } = await import('./paddleocr-client.js');
+    const result = await paddleOcrRecognize(Buffer.from('x'));
+    expect(result).toBe('Base  Montant\n21,49');
+  });
+
+  it('falls back to the flat text when items carry no geometry (older server build)', async () => {
+    route({
+      ocr: () => ({
+        ok: true,
+        json: async () => ({
+          text: 'Hello World',
+          items: [{ text: 'Hello World', poly: null, score: null }],
+        }),
+      }),
+    });
+
+    const { paddleOcrRecognize } = await import('./paddleocr-client.js');
+    await expect(paddleOcrRecognize(Buffer.from('x'))).resolves.toBe('Hello World');
+  });
+
+  it('falls back to the flat text when the response has no items field at all', async () => {
+    route({ ocr: () => ({ ok: true, json: async () => ({ text: 'legacy text' }) }) });
+
+    const { paddleOcrRecognize } = await import('./paddleocr-client.js');
+    await expect(paddleOcrRecognize(Buffer.from('x'))).resolves.toBe('legacy text');
+  });
+});

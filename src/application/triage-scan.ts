@@ -14,10 +14,11 @@ import {
   deleteBlockedFile,
   pruneBlockedFiles
 } from '../infrastructure/db/database.js';
-import { classifyPDFText } from './classify-document.js';
-import { generateEmbedding } from '../infrastructure/ollama-client.js';
+import { classifyPDFText, OllamaUnavailableError } from './classify-document.js';
+import { generateEmbedding, ensureOllamaModel } from '../infrastructure/ollama-client.js';
 import { relocalizeFileIfNeeded } from './relocalize-document.js';
 import { isForbiddenSubcategory } from '../domain/taxonomy.js';
+import { assessExtractionQuality, ExtractionQualityGateError } from '../domain/extraction-quality-gate.js';
 import { syncJSONRegistry } from '../infrastructure/json-registry.js';
 import { logger } from '../infrastructure/logger.js';
 
@@ -32,7 +33,7 @@ export interface TriageResultItem {
 }
 
 export interface TriageProgressEvent {
-  type: 'SCAN_STARTED' | 'FILE_PROGRESS' | 'FILE_COMPLETED' | 'FILE_FAILED' | 'SCAN_COMPLETED';
+  type: 'SCAN_STARTED' | 'FILE_PROGRESS' | 'FILE_COMPLETED' | 'FILE_FAILED' | 'SCAN_COMPLETED' | 'OLLAMA_DOWN';
   totalFiles?: number;
   files?: string[];
   filename?: string;
@@ -46,6 +47,15 @@ export interface TriageProgressEvent {
   scannedCount?: number;
   processedCount?: number;
   skippedCount?: number;
+}
+
+// Cooldown on the OLLAMA_DOWN reminder: the 10s auto-watcher keeps calling runTriageScan while
+// Ollama is down and PDFs are pending, and without this the UI would get a toast every tick.
+let lastOllamaDownBroadcastAt = 0;
+const OLLAMA_DOWN_BROADCAST_COOLDOWN_MS = 60_000;
+
+export function ollamaDownReminder(model: string): string {
+  return `⛔ Ollama is down — ${model} unreachable. Start Ollama, then re-scan. No files were processed.`;
 }
 
 /**
@@ -62,6 +72,8 @@ export async function runTriageScan(
   processedCount: number;
   skippedCount: number;
   items: TriageResultItem[];
+  ollamaDown?: boolean;
+  message?: string;
 }> {
   const release = acquireScanLock();
   try {
@@ -70,6 +82,22 @@ export async function runTriageScan(
 
   console.log(`Scanning for PDFs in: ${CONFIG.INPUT_DIR}`);
   console.log(`Output Root Directory: ${CONFIG.OUTPUT_ROOT_DIR}`);
+
+  // Ollama-down gate — BEFORE touching a single file (no bundling, no extraction, no OCR, no
+  // classification, no move). When the model is unreachable the rule-based fallback must NOT
+  // run: that is exactly what misfiled three documents on 2026-08-31. Emit a reminder and
+  // return empty so the user starts Ollama and re-scans.
+  const modelUp = await ensureOllamaModel(CONFIG.OLLAMA_MODEL);
+  if (!modelUp) {
+    const message = ollamaDownReminder(CONFIG.OLLAMA_MODEL);
+    logger.warn('TRIAGE', message);
+    const now = Date.now();
+    if (now - lastOllamaDownBroadcastAt >= OLLAMA_DOWN_BROADCAST_COOLDOWN_MS) {
+      lastOllamaDownBroadcastAt = now;
+      onProgress?.({ type: 'OLLAMA_DOWN', message, scannedCount: 0, processedCount: 0, skippedCount: 0, totalFiles: 0 });
+    }
+    return { scannedCount: 0, processedCount: 0, skippedCount: 0, items: [], ollamaDown: true, message };
+  }
 
   // Photo bundles first: a folder in __raws holding only photos is ONE multi-page document, not N
   // loose pages. Done BEFORE the file walk so the resulting PDF is picked up by this same scan,
@@ -123,6 +151,9 @@ export async function runTriageScan(
     // artifact that is actually kept rather than on a source image that no longer exists.
     let originalPath = incomingPath;
     let file = path.basename(originalPath);
+    // Mirrors originalPath so the catch block below (outside the try's lexical scope) can move/record
+    // the file that a quality-gate failure should block.
+    let activePath = originalPath;
 
     try {
       const docLog = logger.forDocument(file);
@@ -169,6 +200,7 @@ export async function runTriageScan(
           converted = await convertImageToPdf(originalPath);
           originalPath = converted.pdfPath;
           file = path.basename(originalPath);
+          activePath = originalPath;
         } catch (convErr: any) {
           // Conversion is an enhancement, not a gate. The photo is untouched on this path, so fall
           // through and triage it exactly as before rather than blocking a readable document.
@@ -176,9 +208,10 @@ export async function runTriageScan(
         }
       }
 
-      const { checksum, raw_text } = converted
+      const extracted = converted
         ? { checksum: converted.checksum, raw_text: converted.rawText }
         : await extractPDFContent(originalPath);
+      const { checksum, raw_text } = extracted;
 
       const cleanText = (raw_text || '').trim();
       if (!cleanText || cleanText.length < 10) {
@@ -250,7 +283,14 @@ export async function runTriageScan(
       });
 
       console.log(`Classifying '${file}'...`);
-      const metadata = await classifyPDFText(raw_text, file);
+      // Docling structured Markdown (when adopted for this file) rides along so Step C's LLM
+      // chunk-by-chunk conversion is skipped — the deterministic tables/headings Docling already
+      // produced are exactly what Step C would have asked the model to rebuild. The pre-registration
+      // quality gate below still audits raw_text vs markdown_content before anything is registered.
+      const doclingMarkdown = !converted ? (extracted as { docling_markdown?: string }).docling_markdown : undefined;
+      const metadata = doclingMarkdown && doclingMarkdown.trim().length > 0
+        ? await classifyPDFText(raw_text, file, undefined, undefined, doclingMarkdown)
+        : await classifyPDFText(raw_text, file);
 
       // Golden Rule #4. Use the canonical predicate, not a hand-rolled three-value test: it is the
       // same one every other write path uses (web-server.ts, relocalize-document.ts, mcp-server.ts,
@@ -282,6 +322,15 @@ export async function runTriageScan(
         });
         await new Promise(resolve => setTimeout(resolve, 50));
         continue;
+      }
+
+      // Pre-registration quality gate: nothing is written to the DB / moved / registered while the
+      // extraction or the Step C markdown is unusable. Step C already repaired broken chunks in
+      // place; whatever still fails here is a real problem the file needs manual/agent attention
+      // for (throw a typed error so a local agent can catch it and re-fix the file directly).
+      const qualityReport = assessExtractionQuality(raw_text, metadata.markdown_content || '');
+      if (!qualityReport.pass) {
+        throw new ExtractionQualityGateError(file, qualityReport);
       }
 
       const embedding = await generateEmbedding(raw_text);
@@ -416,7 +465,49 @@ export async function runTriageScan(
 
       logger.info('TRIAGE', `Successfully triaged '${file}' -> ID: ${docId}, Category: ${metadata.categorie}/${metadata.subcategorie}`);
     } catch (err: any) {
-      logger.error('TRIAGE', `Error processing file ${file}: ${err.message}`);
+      if (err instanceof ExtractionQualityGateError) {
+        // Quality gate: nothing was inserted or moved (the gate runs before insert). Move the file
+        // to the blocked folder and record WHY, so the auto-watcher stops retrying identical bytes
+        // and a human or agent can re-fix the file directly (the typed error message lists the
+        // failing checks and their reasons).
+        let movedPath = activePath;
+        try {
+          movedPath = moveBlockedFileToBlockedFolder(activePath);
+        } catch {}
+        let mtimeMs = 0;
+        let size = 0;
+        try {
+          const st = fs.statSync(movedPath);
+          mtimeMs = st.mtimeMs;
+          size = st.size;
+        } catch {}
+        logger.warn('TRIAGE', `BLOCKED by quality gate: ${err.message}`, { originalPath: movedPath, filename: file });
+        await upsertBlockedFile({
+          original_path: movedPath,
+          filename: file,
+          reason: 'QUALITY_GATE',
+          message: err.message,
+          mtime_ms: mtimeMs,
+          size
+        });
+        onProgress?.({
+          type: 'FILE_FAILED',
+          filename: file,
+          stage: 'FAILED',
+          scannedCount,
+          processedCount,
+          totalFiles,
+          message: err.message
+        });
+        await new Promise(resolve => setTimeout(resolve, 50));
+        continue;
+      }
+      // Ollama dropped mid-scan (after the start gate passed): block this file with the reminder
+      // and keep it in __raws — no rule-based fallback, no move.
+      const message = err instanceof OllamaUnavailableError
+        ? `⛔ Ollama is down — ${CONFIG.OLLAMA_MODEL} unreachable. Start Ollama, then re-scan. '${file}' stays in __raws.`
+        : err.message;
+      logger.error('TRIAGE', `Error processing file ${file}: ${message}`);
       onProgress?.({
         type: 'FILE_FAILED',
         filename: file,
@@ -424,7 +515,7 @@ export async function runTriageScan(
         scannedCount,
         processedCount,
         totalFiles,
-        message: err.message
+        message
       });
     } finally {
       await new Promise(resolve => setTimeout(resolve, 50));

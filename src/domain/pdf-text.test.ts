@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { cleanExtractedText, isLikelyCorruptedText, detectMidWordCapitalizationCorruption , detectThinTextLayer } from './pdf-text.js';
+import {
+  cleanExtractedText, isLikelyCorruptedText, detectMidWordCapitalizationCorruption, detectThinTextLayer,
+  isUnitLikeToken, scoreTextQuality, chooseBestExtraction,
+} from './pdf-text.js';
 
 // --- Real-data fixtures ---
 //
@@ -43,6 +46,27 @@ const CLEAN_BANK_STATEMENT_EXCERPT =
 const CLEAN_CERTIFICATE_EXCERPT =
   "SAS GLOBEX.SARL 75014 PARIS  CERTIFICAT DE TRAVAIL  NAF :   4791A SIRET :   00000000000000 Nous certifions que   MR DUPOND Jean Luc  demeurant   10 Boulvard Exemple 75009 PARIS a été employé(e) par nous du   au 01/02/2020   01/07/2023  services rendus sont pris en compte dans l'exemption.\" La formule \"libre de tout engagement\" et toute autre constatant l'expiration régulière du contrat de travail, les qualités professionnelles et les donnant lieu au droit proportionnel. prévues à l'alinéa 1 du présent article, toutes les fois que ces mentions ne contiennent ni obligations, ni quittances, ni aucune autre convention Sont exempts de timbre et d'enregistrement les certificats de travail délivrés aux salariés même s'ils contiennent d'autres mentions que celles emplois ont été tenus. celle de sa sortie, et la nature de l'emploi, ou le cas échéant, des emplois successivement occupés ainsi que les périodes pendant lesquelles ces \"L'employeur doit, à l'expiration du contrat de travail, délivrer au travailleur un certificat contenant exclusivement la date d'entrée et  Le présent certificat a été établi conformément à l'article L1234-19 du Code du Travail :  en qualité de Fait à   PARI";
 
+// NEGATIVE CONTROL 4 (unit-token exception): doc id 5009, an EDF régularisation
+// invoice triaged 2026-09-03 — see calibration notes in pdf-text.ts. Its PDF
+// has a CLEAN digital layer ("Mlle PALMA BRIGITTE", accents intact), but
+// "kW"/"kWh"/"kVA" (lowercase SI prefix + uppercase unit) pack the tariff table
+// and footnotes densely enough that the pre-allowlist detector reported a
+// 14/100 (14%) corruption window and the pipeline discarded the layer for a
+// degraded OCR pass ("MIe PALMA BRI G TTE", "Du lundi aū samedi"). The fixture
+// reproduces that density from the real footnote wording (7 kWh tokens per
+// tariff line, repeated as the invoice does) — without any actual
+// per-character corruption.
+const CLEAN_EDF_UNITS_EXCERPT =
+  'Sur les 1207 kWh facturés, 318 kWh à 0,1343 €/kWh, 594 kWh à 0,1327 €/kWh et 295 kWh à 0,1308 €/kWh. '.repeat(3) +
+  'Base - 03kVA - du 17/05/25 au 31/07/25, Base - 03kVA - du 01/08/25 au 31/01/26, ' +
+  'Base - 03kVA - du 01/02/26 au 16/05/26 et Base - 03kVA - du 17/05/26 au 15/06/26 ' +
+  'décomposent le montant total de l\'abonnement avec les relevés de votre compteur communicant. ' +
+  'La contribution tarifaire d\'acheminement électricité évolue conformément à la réglementation en vigueur ' +
+  'et le taux de la TVA évolue conformément à la loi de finances pour 2025 sur la facture d\'énergie. ' +
+  'Le montant total TTC de votre facture correspond à la différence entre les montants facturés ' +
+  'et les prélèvements déjà effectués sur votre compte, sur la période concernée. ' +
+  'Vous trouverez ci-joint votre facture de régularisation et votre bilan personnalisé.';
+
 describe('cleanExtractedText', () => {
   it('returns empty string for text under 10 clean chars', () => {
     expect(cleanExtractedText('short')).toBe('');
@@ -76,6 +100,15 @@ describe('isLikelyCorruptedText — real-data calibration', () => {
 
   it('does NOT flag a clean short administrative certificate (doc 2548)', () => {
     expect(isLikelyCorruptedText(CLEAN_CERTIFICATE_EXCERPT)).toBe(false);
+  });
+
+  it('does NOT flag a clean EDF invoice whose digital layer is dense with SI-unit tokens (doc 5009 regression)', () => {
+    // kW/kWh/kVA legitimately carry one uppercase not at position 0. Before the
+    // isUnitLikeToken allowlist this CLEAN layer was flagged corrupted, the
+    // digital text discarded and full-page OCR run over it — which mangled the
+    // very content the layer had stored perfectly ("Mlle PALMA BRIGITTE" →
+    // "MIe PALMA BRI G TTE", "Du lundi au samedi" → "aū samedi").
+    expect(isLikelyCorruptedText(CLEAN_EDF_UNITS_EXCERPT)).toBe(false);
   });
 
   it('returns false for empty or very short text (insufficient signal, handled by the separate <10-char guard)', () => {
@@ -116,6 +149,83 @@ describe('detectMidWordCapitalizationCorruption', () => {
     expect(signal.ratio).toBe(0);
     expect(signal.matchCount).toBe(0);
     expect(signal.sampleWords).toEqual([]);
+  });
+});
+
+describe('isUnitLikeToken', () => {
+  it('recognises lowercase-prefix SI unit abbreviations that only look mid-word-capitalized', () => {
+    for (const token of ['kW', 'kWh', 'kVA', 'kVAr', 'dBm', 'kPa', 'hPa', 'mA', 'mV', 'mSv', 'kB']) {
+      expect(isUnitLikeToken(token)).toBe(true);
+    }
+  });
+
+  it('does not recognise real corruption tokens or brand names', () => {
+    // These must keep flowing into the corruption detector: a broken CMap
+    // produces mangled source words, never exact unit abbreviations.
+    expect(isUnitLikeToken('khAu')).toBe(false);
+    expect(isUnitLikeToken('cAn')).toBe(false);
+    expect(isUnitLikeToken('roAN')).toBe(false);
+    expect(isUnitLikeToken('iPhone')).toBe(false);
+  });
+});
+
+// Clean French prose that carries NO mid-word-capitalized tokens (so the corruption detector
+// clears it), standing in for a healthy digital layer — e.g. doc 5009's EDF letter.
+const CLEAN_DIGITAL_LAYER_EXCERPT =
+  'Bonjour Mademoiselle Palma, vous avez choisi la mensualisation pour régler vos factures ' +
+  'électricité et vous trouverez ci-joint votre facture de régularisation ainsi que votre bilan ' +
+  'personnalisé. Le montant total de votre facture correspond à la différence entre les montants ' +
+  'facturés et les prélèvements déjà effectués sur votre compte sur la période concernée.';
+
+// OCR-band noise — the decorative page bands PaddleOCR reads as letters on faxed pages.
+const OCR_BAND_NOISE =
+  'S S8 S 5 T S S S8 S S S8 S - 8 Sd S te 0-Z : S0 2 S0 e de e - x';
+
+describe('scoreTextQuality', () => {
+  it('scores clean prose far above OCR band/decoration noise', () => {
+    expect(scoreTextQuality(CLEAN_DIGITAL_LAYER_EXCERPT).score)
+      .toBeGreaterThan(scoreTextQuality(OCR_BAND_NOISE).score + 2);
+  });
+
+  it('reports zeros for empty text', () => {
+    const m = scoreTextQuality('');
+    expect(m.tokens).toBe(0);
+    expect(m.score).toBe(-1);
+  });
+});
+
+describe('chooseBestExtraction — OCR must never blindly overwrite the digital layer', () => {
+  it('keeps a layer the corruption detector clears, whatever OCR says (doc-5009 class)', () => {
+    const choice = chooseBestExtraction(CLEAN_DIGITAL_LAYER_EXCERPT, 'Mle PALMA BRI G TTE 14 boulevard Trufheme');
+    expect(choice.source).toBe('digital');
+    expect(choice.reason).toBe('clean-layer-kept');
+    expect(choice.text).toBe(CLEAN_DIGITAL_LAYER_EXCERPT);
+  });
+
+  it('keeps the original when OCR is empty or too short to be useful', () => {
+    const choice = chooseBestExtraction(CORRUPTED_BALANCE_SHEET_EXCERPT, '  ');
+    expect(choice.source).toBe('digital');
+    expect(choice.reason).toBe('ocr-unusable');
+  });
+
+  it('keeps the original when the OCR pass itself is still corrupted', () => {
+    const choice = chooseBestExtraction(CORRUPTED_BALANCE_SHEET_EXCERPT, CORRUPTED_BALANCE_SHEET_EXCERPT);
+    expect(choice.source).toBe('digital');
+    expect(choice.reason).toBe('ocr-unusable');
+  });
+
+  it('keeps the original when OCR recovered only band noise, not words', () => {
+    const choice = chooseBestExtraction(CORRUPTED_BALANCE_SHEET_EXCERPT, OCR_BAND_NOISE);
+    expect(choice.source).toBe('digital');
+    expect(choice.reason).toBe('ocr-not-prose');
+  });
+
+  it('prefers OCR when the layer is genuinely corrupted and OCR recovered real prose', () => {
+    const cleanOcr = 'Recovered clean text from the rendered page facture de regularisation EDF';
+    const choice = chooseBestExtraction(CORRUPTED_BALANCE_SHEET_EXCERPT, cleanOcr);
+    expect(choice.source).toBe('ocr');
+    expect(choice.reason).toBe('ocr-clean-recovery');
+    expect(choice.text).toBe(cleanOcr);
   });
 });
 
@@ -197,3 +307,4 @@ describe('detectThinTextLayer — the density rule also requires vocabulary-poor
     expect(signal.distinctWordsPerPage).toBeCloseTo(3 / 8, 5);
   });
 });
+

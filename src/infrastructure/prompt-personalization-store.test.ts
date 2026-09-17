@@ -53,7 +53,7 @@ describe('prompt-personalization-store (with human decision feedback)', () => {
     const { getPromptPersonalization } = await import('./prompt-personalization-store.js');
     const p = getPromptPersonalization();
     expect(p.known_entities).toEqual(['ACME CORP']);
-    expect(p.priority_rules).toEqual([{ keywords: ['STMT_CHK_'], category: 'bank', subcategory: 'my_bank' }]);
+    expect(p.priority_rules).toEqual([{ keywords: ['STMT_CHK_'], category: 'bank', subcategory: 'my_bank', scope: 'all' }]);
   });
 
   it('appends enabled human decisions as STEP 0 rules AFTER the hand-curated ones', async () => {

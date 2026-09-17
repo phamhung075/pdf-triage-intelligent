@@ -401,7 +401,13 @@ export async function updateDocumentRecord(id: number, updates: {
   status?: string;
 }): Promise<boolean> {
   const db = await getDb();
-  const existing = await db.get<DocumentRecord>('SELECT * FROM documents WHERE id = ?', [id]);
+  // The FTS delete below is strictly typed on the INTEGER doc_id: a string-typed id binds as
+  // TEXT, FTS5's strict comparison silently deletes nothing (changes: 0), and the re-insert
+  // then leaves a stale row PLUS a duplicate — silent FTS corruption. Coerce once here so no
+  // caller (HTTP route, MCP tool, future code) can trip it.
+  const numericId = Number(id);
+  if (!Number.isInteger(numericId) || numericId <= 0) return false;
+  const existing = await db.get<DocumentRecord>('SELECT * FROM documents WHERE id = ?', [numericId]);
   if (!existing) return false;
 
   const now = new Date().toISOString();
@@ -439,11 +445,11 @@ export async function updateDocumentRecord(id: number, updates: {
 
   // Update FTS
   try {
-    await db.run('DELETE FROM documents_fts WHERE doc_id = ?', [id]);
+    await db.run('DELETE FROM documents_fts WHERE doc_id = ?', [numericId]);
     await db.run(
       `INSERT INTO documents_fts (doc_id, title, original_filename, original_path, new_path, registre, summary, category, subcategory, tags, raw_text)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [id, title, existing.original_filename || '', existing.original_path || '', new_path || '', registre, summary, category, subcategory, tagsStr, raw_text]
+      [numericId, title, existing.original_filename || '', existing.original_path || '', new_path || '', registre, summary, category, subcategory, tagsStr, raw_text]
     );
   } catch (err) {
     // Ignore FTS errors
