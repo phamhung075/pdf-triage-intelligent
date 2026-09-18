@@ -6,7 +6,7 @@
 > ([2026-09-17-pdf2w-extraction-swap-design.md](2026-09-17-pdf2w-extraction-swap-design.md)).
 >
 > All statements about current behavior below are cited from the read-only evidence inventory
-> [`scratch/go-backend-inventory.md`](../../../scratch/go-backend-inventory.md) ("inv"), which
+> [`2026-09-18-go-backend-inventory.md`](./2026-09-18-go-backend-inventory.md) ("inv"), which
 > carries the `file:line` evidence. This spec does not re-derive that evidence.
 
 ## Scope
