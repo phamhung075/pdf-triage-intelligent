@@ -675,7 +675,7 @@ export function createWebServer(): express.Express {
       for (const doc of matchingDocs) {
         const actualPath = findActualFileOnDisk(doc);
         if (actualPath && fs.existsSync(actualPath)) {
-          const { newPath } = relocalizeFileIfNeeded(actualPath, doc.category, cleanNew, doc.date);
+          const { newPath } = await relocalizeFileIfNeeded(actualPath, doc.category, cleanNew, doc.date);
           await updateDocumentRecord(doc.id, {
             subcategory: cleanNew,
             new_path: newPath,
@@ -1276,7 +1276,7 @@ export function createWebServer(): express.Express {
         // Golden Rule #5: the category/subcategory must exist in categories.json BEFORE
         // the physical move — this route previously skipped that step entirely.
         ensureCategoryAndSubcategoryExist(targetCategory, targetSubcategory);
-        const { newPath } = relocalizeFileIfNeeded(
+        const { newPath } = await relocalizeFileIfNeeded(
           docBefore.new_path,
           targetCategory,
           targetSubcategory,

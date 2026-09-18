@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../infrastructure/settings.js';
-import { computeCanonicalPath, isForbiddenSubcategory } from '../domain/taxonomy.js';
+import { isForbiddenSubcategory } from '../domain/taxonomy.js';
+import { computeCanonicalPathRemote } from '../infrastructure/canonical-path-remote.js';
 import { getPDFsRecursively } from '../infrastructure/pdf-scanner.js';
 import { getCategoriesConfig, saveCategoriesConfig } from '../infrastructure/categories-store.js';
 import { extractPDFContent } from '../infrastructure/pdf-extractor.js';
@@ -43,15 +44,15 @@ function renameAtomicNoOverwrite(sourcePath: string, desiredTargetPath: string, 
   throw new Error(`Failed to move '${sourcePath}' to a unique path after ${maxAttempts} attempts`);
 }
 
-export function relocalizeFileIfNeeded(
+export async function relocalizeFileIfNeeded(
   filePath: string,
   category: string,
   subcategory?: string,
   dateStr?: string,
   title?: string
-): { newPath: string; moved: boolean } {
+): Promise<{ newPath: string; moved: boolean }> {
   const originalFilename = path.basename(filePath);
-  const targetPath = computeCanonicalPath(filePath, category, CONFIG.OUTPUT_ROOT_DIR, subcategory, dateStr, title);
+  const targetPath = await computeCanonicalPathRemote(filePath, category, CONFIG.OUTPUT_ROOT_DIR, subcategory, dateStr, title);
   const targetFilename = path.basename(targetPath);
 
   const normTarget = path.normalize(targetPath).toLowerCase();
@@ -297,7 +298,7 @@ export async function reclassifyAndRelocalizeDocument(
     ensureCategoryAndSubcategoryExist(newCategory, newSubcategory);
   }
 
-  const { newPath, moved } = relocalizeFileIfNeeded(actualPath, newCategory, newSubcategory, newDate, newTitle);
+  const { newPath, moved } = await relocalizeFileIfNeeded(actualPath, newCategory, newSubcategory, newDate, newTitle);
 
   await updateDocumentRecord(id, {
     title: newTitle,

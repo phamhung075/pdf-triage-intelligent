@@ -156,7 +156,7 @@ async function main() {
     const actualPath = findActualFileOnDisk(doc);
     let newPath = doc.new_path;
     if (actualPath && fs.existsSync(actualPath)) {
-      const res = relocalizeFileIfNeeded(actualPath, toCat, toSub, doc.date, doc.title);
+      const res = await relocalizeFileIfNeeded(actualPath, toCat, toSub, doc.date, doc.title);
       newPath = res.newPath;
       if (res.moved) movedCount++;
     } else {

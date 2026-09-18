@@ -262,7 +262,7 @@ export async function handleMcpToolCall(name: string, args: Record<string, unkno
         const targetCategory = updates.category ?? updates.categorie ?? docBefore.category;
         const targetSubcategory = updates.subcategory ?? updates.subcategorie ?? docBefore.subcategory;
         ensureCategoryAndSubcategoryExist(targetCategory, targetSubcategory);
-        const { newPath } = relocalizeFileIfNeeded(
+        const { newPath } = await relocalizeFileIfNeeded(
           docBefore.new_path,
           targetCategory,
           targetSubcategory,

@@ -16,7 +16,7 @@ vi.mock('../categories-store.js', () => ({
 }));
 
 vi.mock('../../application/relocalize-document.js', () => ({
-  relocalizeFileIfNeeded: vi.fn(() => ({ newPath: '', moved: false })),
+  relocalizeFileIfNeeded: vi.fn(async () => ({ newPath: '', moved: false })),
   ensureCategoryAndSubcategoryExist: vi.fn(),
   findActualFileOnDisk: vi.fn(() => null),
 }));
@@ -264,7 +264,7 @@ describe('handleMcpToolCall — update_document_metadata', () => {
       const id = await database.insertDocumentRecord(sampleDoc({ checksum: 'reloc', category: 'invoices', subcategory: 'sfr', new_path: tempFile }));
 
       const mockedNewPath = path.join(os.tmpdir(), 'organized', 'telecom', 'orange', '2026', 'facture.pdf');
-      vi.mocked(relocalize.relocalizeFileIfNeeded).mockReturnValue({ newPath: mockedNewPath, moved: true });
+      vi.mocked(relocalize.relocalizeFileIfNeeded).mockResolvedValue({ newPath: mockedNewPath, moved: true });
 
       const result = await mcpServer.handleMcpToolCall('update_document_metadata', { docId: id, category: 'telecom', subcategory: 'orange' });
       expect(result.isError).toBeUndefined();
@@ -289,7 +289,7 @@ describe('handleMcpToolCall — update_document_metadata', () => {
 
     try {
       const id = await database.insertDocumentRecord(sampleDoc({ checksum: 'nomove', category: 'invoices', subcategory: 'sfr', new_path: tempFile }));
-      vi.mocked(relocalize.relocalizeFileIfNeeded).mockReturnValue({ newPath: tempFile, moved: false });
+      vi.mocked(relocalize.relocalizeFileIfNeeded).mockResolvedValue({ newPath: tempFile, moved: false });
 
       await mcpServer.handleMcpToolCall('update_document_metadata', { docId: id, category: 'invoices', subcategory: 'sfr2' });
 

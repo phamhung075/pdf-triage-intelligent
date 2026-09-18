@@ -40,6 +40,28 @@ vi.mock('./classify-document.js', () => ({ classifyPDFText: classifyPDFTextMock 
 const { extractPDFContentMock } = vi.hoisted(() => ({ extractPDFContentMock: vi.fn() }));
 vi.mock('../infrastructure/pdf-extractor.js', () => ({ extractPDFContent: extractPDFContentMock }));
 
+// relocalizeFileIfNeeded() now builds its target path via the pdf-triage-pdf2w service over HTTP
+// (computeCanonicalPathRemote). Mock it to build the real path under this suite's temp outputDir,
+// so repair's physical relocalization is still exercised without a live service.
+vi.mock('../infrastructure/canonical-path-remote.js', () => ({
+  computeCanonicalPathRemote: async (
+    originalPath: string,
+    category: string,
+    outputRootDir: string,
+    subcategory?: string,
+    dateStr?: string
+  ): Promise<string> => {
+    const year = dateStr?.match(/\b(20\d{2})\b/)?.[1] || String(new Date().getFullYear());
+    return path.join(
+      outputRootDir,
+      category.toLowerCase().trim(),
+      (subcategory || 'general').toLowerCase().trim(),
+      year,
+      path.basename(originalPath)
+    );
+  },
+}));
+
 const { ruleBasedClassifyMock, extractRuleBasedContactMock } = vi.hoisted(() => ({
   ruleBasedClassifyMock: vi.fn(),
   extractRuleBasedContactMock: vi.fn(() => ({ contact_name: '', contact_email: '', contact_phone: '', contact_address: '', contact_website: '' }))

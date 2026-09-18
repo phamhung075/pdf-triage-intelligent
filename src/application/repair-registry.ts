@@ -135,7 +135,7 @@ export async function repairRegistry(onProgress?: (event: any) => void): Promise
           }
         }
 
-        const { newPath, moved } = relocalizeFileIfNeeded(filePath, currentCat, currentSub, existing.date, existing.title);
+        const { newPath, moved } = await relocalizeFileIfNeeded(filePath, currentCat, currentSub, existing.date, existing.title);
 
         if (moved) relocalizedCount++;
 
@@ -187,7 +187,7 @@ export async function repairRegistry(onProgress?: (event: any) => void): Promise
           continue;
         }
 
-        const { newPath, moved } = relocalizeFileIfNeeded(filePath, targetCat, targetSub, targetDate, metadata.titre);
+        const { newPath, moved } = await relocalizeFileIfNeeded(filePath, targetCat, targetSub, targetDate, metadata.titre);
         if (moved) relocalizedCount++;
 
         try {

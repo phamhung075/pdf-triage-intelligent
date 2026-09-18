@@ -424,7 +424,7 @@ export async function runTriageScan(
         message: `Moving file to __archive/${metadata.categorie}/${metadata.subcategorie || 'general'}/...`
       });
 
-      const { newPath: finalTargetPath } = relocalizeFileIfNeeded(
+      const { newPath: finalTargetPath } = await relocalizeFileIfNeeded(
         originalPath,
         metadata.categorie,
         metadata.subcategorie,

@@ -47,6 +47,29 @@ vi.mock('./classify-document.js', () => ({ classifyPDFText: classifyPDFTextMock 
 const { extractPDFContentMock } = vi.hoisted(() => ({ extractPDFContentMock: vi.fn() }));
 vi.mock('../infrastructure/pdf-extractor.js', () => ({ extractPDFContent: extractPDFContentMock }));
 
+// relocalizeFileIfNeeded() now delegates canonical-path construction to the pdf-triage-pdf2w
+// service over HTTP (computeCanonicalPathRemote). The real client needs a live service; this
+// mock reproduces the service's path.join construction from the same inputs so this suite's
+// real fs move/rename assertions stay meaningful without a network dependency.
+vi.mock('../infrastructure/canonical-path-remote.js', () => ({
+  computeCanonicalPathRemote: async (
+    originalPath: string,
+    category: string,
+    outputRootDir: string,
+    subcategory?: string,
+    dateStr?: string
+  ): Promise<string> => {
+    const year = dateStr?.match(/\b(20\d{2})\b/)?.[1] || String(new Date().getFullYear());
+    return path.join(
+      outputRootDir,
+      category.toLowerCase().trim(),
+      (subcategory || 'general').toLowerCase().trim(),
+      year,
+      path.basename(originalPath)
+    );
+  },
+}));
+
 beforeEach(() => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pdf-triage-relocalize-'));
   inputDir = path.join(tempRoot, '__raws');
@@ -106,7 +129,7 @@ describe('relocalizeFileIfNeeded', () => {
     const sourceFile = path.join(sourceDir, 'facture.pdf');
     fs.writeFileSync(sourceFile, 'dummy bytes');
 
-    const result = relocalize.relocalizeFileIfNeeded(sourceFile, 'invoices', 'sfr', '2026-01-15');
+    const result = await relocalize.relocalizeFileIfNeeded(sourceFile, 'invoices', 'sfr', '2026-01-15');
 
     const expectedTarget = path.join(outputDir, 'invoices', 'sfr', '2026', 'facture.pdf');
     expect(result).toEqual({ newPath: expectedTarget, moved: true });
@@ -121,7 +144,7 @@ describe('relocalizeFileIfNeeded', () => {
     const file = path.join(canonicalDir, 'facture.pdf');
     fs.writeFileSync(file, 'dummy bytes');
 
-    const result = relocalize.relocalizeFileIfNeeded(file, 'invoices', 'sfr', '2026-01-15');
+    const result = await relocalize.relocalizeFileIfNeeded(file, 'invoices', 'sfr', '2026-01-15');
 
     expect(result).toEqual({ newPath: file, moved: false });
     expect(fs.existsSync(file)).toBe(true);
@@ -134,7 +157,7 @@ describe('relocalizeFileIfNeeded', () => {
     const file = path.join(catDir, 'doc.pdf');
     fs.writeFileSync(file, 'dummy bytes');
 
-    relocalize.relocalizeFileIfNeeded(file, 'new_cat', 'new_sub', '2026-01-15');
+    await relocalize.relocalizeFileIfNeeded(file, 'new_cat', 'new_sub', '2026-01-15');
 
     expect(fs.existsSync(catDir)).toBe(false);
     expect(fs.existsSync(path.join(outputDir, 'old_cat'))).toBe(false);
@@ -152,7 +175,7 @@ describe('relocalizeFileIfNeeded', () => {
     const sourceFile = path.join(sourceDir, 'facture.pdf');
     fs.writeFileSync(sourceFile, 'incoming content');
 
-    const result = relocalize.relocalizeFileIfNeeded(sourceFile, 'invoices', 'sfr', '2026-01-15');
+    const result = await relocalize.relocalizeFileIfNeeded(sourceFile, 'invoices', 'sfr', '2026-01-15');
 
     expect(result.moved).toBe(true);
     expect(result.newPath).not.toBe(existingTarget);
