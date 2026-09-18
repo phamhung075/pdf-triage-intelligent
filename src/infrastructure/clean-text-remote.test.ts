@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { computeCanonicalPathRemote } from './canonical-path-remote.js';
+import { cleanExtractedTextRemote } from './clean-text-remote.js';
 import { CONFIG } from './settings.js';
 
-describe('computeCanonicalPathRemote', () => {
+describe('cleanExtractedTextRemote', () => {
   const originalUrl = CONFIG.PDF_TRIAGE_PDF2W_SERVICE_URL;
   const originalFetch = global.fetch;
 
@@ -15,32 +15,28 @@ describe('computeCanonicalPathRemote', () => {
     global.fetch = originalFetch;
   });
 
-  it('posts the parameters and returns canonicalPath from the response', async () => {
+  it('posts the text and returns the cleaned text from the response', async () => {
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ canonicalPath: 'C:\\archive\\invoices\\sfr\\2024\\facture.pdf' }),
+      json: async () => ({ text: 'HelloWorld\n\nMore text here' }),
     }) as any;
 
-    const result = await computeCanonicalPathRemote('C:\\raws\\facture.pdf', 'invoices', 'C:\\archive', 'sfr', '2024-05-12');
+    const result = await cleanExtractedTextRemote('Hello\0World\r\n\r\n\r\n\r\nMore text here');
 
-    expect(result).toBe('C:\\archive\\invoices\\sfr\\2024\\facture.pdf');
+    expect(result).toBe('HelloWorld\n\nMore text here');
     expect(global.fetch).toHaveBeenCalledWith(
-      'http://127.0.0.1:3985/canonical-path',
+      'http://127.0.0.1:3985/clean-text',
       expect.objectContaining({ method: 'POST' })
     );
   });
 
   it('throws when the service is unreachable', async () => {
     global.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED')) as any;
-    await expect(
-      computeCanonicalPathRemote('C:\\raws\\facture.pdf', 'invoices', 'C:\\archive')
-    ).rejects.toThrow('ECONNREFUSED');
+    await expect(cleanExtractedTextRemote('some text')).rejects.toThrow('ECONNREFUSED');
   });
 
   it('throws when PDF_TRIAGE_PDF2W_SERVICE_URL is not configured', async () => {
     CONFIG.PDF_TRIAGE_PDF2W_SERVICE_URL = '';
-    await expect(
-      computeCanonicalPathRemote('C:\\raws\\facture.pdf', 'invoices', 'C:\\archive')
-    ).rejects.toThrow('PDF_TRIAGE_PDF2W_SERVICE_URL is not configured');
+    await expect(cleanExtractedTextRemote('some text')).rejects.toThrow('PDF_TRIAGE_PDF2W_SERVICE_URL is not configured');
   });
 });

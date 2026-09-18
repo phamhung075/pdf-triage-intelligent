@@ -2,8 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { logger } from './logger.js';
-import { cleanExtractedText } from '../domain/pdf-text.js';
 import { extractPdf2wContent } from './pdf2w-remote.js';
+import { cleanExtractedTextRemote } from './clean-text-remote.js';
 
 export interface ExtractedPDF {
   checksum: string;
@@ -50,7 +50,7 @@ export async function extractPDFContent(filePath: string): Promise<ExtractedPDF>
     // transport must produce the SAME sha256 over the file bytes or the same physical file would
     // be registered as different documents depending on transport.
     checksum: pdf2w.checksum || crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex'),
-    raw_text: cleanExtractedText(pdf2w.raw_text),
+    raw_text: await cleanExtractedTextRemote(pdf2w.raw_text),
     numpages: pdf2w.numpages,
     info: pdf2w.info,
     pdf2w_markdown: pdf2w.pdf2w_markdown,

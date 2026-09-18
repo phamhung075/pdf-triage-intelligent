@@ -181,14 +181,17 @@ export const CONFIG = {
     return Number.isFinite(raw) && raw >= 0 ? raw : 0;
   })(),
 
-  // ---- Canonical-path service (Go, pdf-triage-pdf2w submodule) ------------------------------
-  // Required, not optional-with-fallback: relocalizeFileIfNeeded() calls this for every file
-  // organized after classification. Unreachable -> hard error (FILE_FAILED), matching the
-  // "no local OCR/no local canonical-path fallback" decision in the pdf2w extraction swap design
-  // (docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md).
-  CANONICAL_PATH_SERVICE_URL: (process.env.CANONICAL_PATH_SERVICE_URL || '').trim(),
-  CANONICAL_PATH_SERVICE_TIMEOUT_MS: (() => {
-    const raw = parseInt(process.env.CANONICAL_PATH_SERVICE_TIMEOUT_MS || '0', 10);
+  // ---- pdf-triage-pdf2w Go service (submodule at services/pdf-triage-pdf2w) ------------------
+  // A single base URL for every endpoint this growing Go service exposes (POST /canonical-path,
+  // POST /clean-text, ...) — one process, one port, so one config pair rather than one per
+  // endpoint. Required, not optional-with-fallback: each caller (relocalizeFileIfNeeded,
+  // extractPDFContent, ...) treats an unreachable service as a hard error (FILE_FAILED) for that
+  // file, matching the "no local fallback" decision in the pdf2w extraction swap design
+  // (docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md) and the project's
+  // full-backend Go/Rust migration direction (this service's scope is expected to keep growing).
+  PDF_TRIAGE_PDF2W_SERVICE_URL: (process.env.PDF_TRIAGE_PDF2W_SERVICE_URL || '').trim(),
+  PDF_TRIAGE_PDF2W_SERVICE_TIMEOUT_MS: (() => {
+    const raw = parseInt(process.env.PDF_TRIAGE_PDF2W_SERVICE_TIMEOUT_MS || '0', 10);
     return Number.isFinite(raw) && raw >= 0 ? raw : 0;
   })(),
 

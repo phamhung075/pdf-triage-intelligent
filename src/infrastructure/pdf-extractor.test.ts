@@ -4,8 +4,14 @@ import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
 
-const { extractPdf2wContentMock } = vi.hoisted(() => ({ extractPdf2wContentMock: vi.fn() }));
+const { extractPdf2wContentMock, cleanExtractedTextRemoteMock } = vi.hoisted(() => ({
+  extractPdf2wContentMock: vi.fn(),
+  // Mirrors the real Go-side cleanExtractedText (null-byte strip, CRLF normalize, blank-run
+  // collapse) closely enough for these tests, which only exercise the newline-collapse case.
+  cleanExtractedTextRemoteMock: vi.fn(async (text: string) => text.replace(/\n{3,}/g, '\n\n')),
+}));
 vi.mock('./pdf2w-remote.js', () => ({ extractPdf2wContent: extractPdf2wContentMock }));
+vi.mock('./clean-text-remote.js', () => ({ cleanExtractedTextRemote: cleanExtractedTextRemoteMock }));
 
 function tempFile(bytes: string): string {
   const filePath = path.join(os.tmpdir(), `pdf-extractor-test-${Date.now()}-${Math.random()}.pdf`);
@@ -19,6 +25,7 @@ function tempFile(bytes: string): string {
 describe('extractPDFContent', () => {
   beforeEach(() => {
     extractPdf2wContentMock.mockReset();
+    cleanExtractedTextRemoteMock.mockClear();
   });
 
   it('maps the pdf2w result onto the ExtractedPDF contract', async () => {

@@ -14,11 +14,11 @@ export async function computeCanonicalPathRemote(
   dateStr?: string,
   title?: string
 ): Promise<string> {
-  if (!CONFIG.CANONICAL_PATH_SERVICE_URL) {
-    throw new Error('CANONICAL_PATH_SERVICE_URL is not configured');
+  if (!CONFIG.PDF_TRIAGE_PDF2W_SERVICE_URL) {
+    throw new Error('PDF_TRIAGE_PDF2W_SERVICE_URL is not configured');
   }
-  const baseUrl = CONFIG.CANONICAL_PATH_SERVICE_URL.replace(/\/+$/, '');
-  const timeoutMs = CONFIG.CANONICAL_PATH_SERVICE_TIMEOUT_MS;
+  const baseUrl = CONFIG.PDF_TRIAGE_PDF2W_SERVICE_URL.replace(/\/+$/, '');
+  const timeoutMs = CONFIG.PDF_TRIAGE_PDF2W_SERVICE_TIMEOUT_MS;
 
   const res = await fetch(`${baseUrl}/canonical-path`, {
     method: 'POST',

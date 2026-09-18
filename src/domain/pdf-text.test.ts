@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  cleanExtractedText, isLikelyCorruptedText, detectMidWordCapitalizationCorruption, detectThinTextLayer,
+  isLikelyCorruptedText, detectMidWordCapitalizationCorruption, detectThinTextLayer,
   isUnitLikeToken, scoreTextQuality, chooseBestExtraction,
 } from './pdf-text.js';
 
@@ -66,20 +66,6 @@ const CLEAN_EDF_UNITS_EXCERPT =
   'Le montant total TTC de votre facture correspond à la différence entre les montants facturés ' +
   'et les prélèvements déjà effectués sur votre compte, sur la période concernée. ' +
   'Vous trouverez ci-joint votre facture de régularisation et votre bilan personnalisé.';
-
-describe('cleanExtractedText', () => {
-  it('returns empty string for text under 10 clean chars', () => {
-    expect(cleanExtractedText('short')).toBe('');
-    expect(cleanExtractedText('')).toBe('');
-  });
-
-  it('strips null bytes, normalizes newlines, and collapses excess blank lines', () => {
-    const result = cleanExtractedText('Hello\0World\r\n\r\n\r\n\r\nMore text here');
-    expect(result).not.toContain('\0');
-    expect(result).not.toContain('\r\n');
-    expect(result).not.toMatch(/\n{3,}/);
-  });
-});
 
 describe('isLikelyCorruptedText — real-data calibration', () => {
   it('flags the real garbled excerpt from doc 2545 (bad font ToUnicode CMap)', () => {
