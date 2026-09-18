@@ -1,46 +1,50 @@
 ---
 name: pdf-triage-extraction
-description: Use when changing pdf-triage's PDF text extraction — the Docling quality layer, the Dockerized extract microservice, in-process extraction and OCR, or the pre-registration quality gate — and when deciding which of the three extractors a change belongs in.
+description: Use when changing pdf-triage's PDF/photo text extraction — the pdf2w extraction client, the canonical-path client, or the pre-registration quality gate.
 ---
 
-# The extraction chain
+# The extraction chain (post pdf2w swap, 2026-09-18)
 
-A PDF becomes `ExtractedPDF` through one of three extractors, in this order. Each later one is the fallback for the one before it, and they all return the **same** values, so the checksum, the dedupe key, the text cleanup and the `< 10` character guard are identical whichever ran.
+A PDF (or a photo-derived, image-only PDF) becomes `ExtractedPDF` through exactly **one** required
+HTTP call. There is no fallback chain anymore — see
+[`pdf2w-extraction.md`](../../../docs/knowledge/pdf2w-extraction.md) for the full design record.
 
 ```
-PDF
- │  DOCLING_SERVICE_URL set + .pdf
+PDF (or photo, after orient → crop → enhance → assemble)
+ │  extractPDFContent() — pdf-extractor.ts
  ▼
-Docling ──► assessDoclingMarkdown PASS ──► raw_text + docling_markdown   (Step C skipped)
- │  FAIL / service down
- ▼  PDF_EXTRACT_SERVICE_URL set
-extract microservice ──► unreachable? WARN + fall through
+pdf2w-remote.ts  POST /convert  ──►  self-hosted markdown-extract-service (pdf2w)
+                                     native extraction + Gemini→DeepSeek vision-rescue OCR
  │
- ▼  always available
-in-process extractPDFContentLocal
+ ▼  unreachable / PDF2W_SERVICE_URL unset
+throws ──► FILE_FAILED for that document (no in-process fallback left)
 ```
 
 | Layer | Client | Implementation |
 | --- | --- | --- |
-| Docling | [`docling-remote.ts`](../../../src/infrastructure/docling-remote.ts) | separate repo, port 3984 — see [`docling-extract-layer.md`](../../../docs/knowledge/docling-extract-layer.md) |
-| Microservice | [`pdf-extract-remote.ts`](../../../src/infrastructure/pdf-extract-remote.ts) | [`src/extract-service/`](../../../src/extract-service/), `GET /health` + `POST /extract`, port 3981 |
-| In-process | — | [`pdf-extractor.ts`](../../../src/infrastructure/pdf-extractor.ts), the original chain |
+| Extraction | [`pdf2w-remote.ts`](../../../src/infrastructure/pdf2w-remote.ts) | external, self-hosted `markdown-extract-service` (own repo, `/home/daihu/__projects__/markdown-extract-service`), port 3984, `PDF2W_SERVICE_URL` |
+| Canonical path (organize-files, not extraction, but the other half of the same swap) | [`canonical-path-remote.ts`](../../../src/infrastructure/canonical-path-remote.ts) | Go service in `services/pdf-triage-pdf2w/` submodule, port 3985, `CANONICAL_PATH_SERVICE_URL` |
 
-The wrapper is `extractPDFContent()` in `pdf-extractor.ts`; the orchestration entry point is `src/index.ts`. The split is **transport-only** — do not fork the extraction logic per path, or the identical-output guarantee breaks. Background and rationale: [`pdf-extract-service.md`](../../../docs/knowledge/pdf-extract-service.md), [`docling-extract-layer.md`](../../../docs/knowledge/docling-extract-layer.md).
+The wrapper is `extractPDFContent()` in `pdf-extractor.ts`; the orchestration entry point is
+`src/index.ts`. Both `pdf2w-remote.ts` and `canonical-path-remote.ts` are **required, not
+optional-with-fallback** — do not add a `_REQUIRED` toggle or an in-process fallback branch back in;
+that architecture was deliberately removed, not merely bypassed. Background and rationale:
+[`pdf2w-extraction.md`](../../../docs/knowledge/pdf2w-extraction.md),
+[`docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md`](../../../docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md).
 
-## The Docling gate
+## What was removed — do not reintroduce
 
-Docling's Markdown is adopted only if `assessDoclingMarkdown` passes ([`docling-quality.ts`](../../../src/domain/docling-quality.ts), a pure function). It rejects the known bad shapes rather than judging style: empty or whole-page-picture output (photo-derived PDFs), non-Latin mojibake from a broken `ToUnicode` CMap, and OCR/decoration noise or ragged tables — reusing the same signals as `pdf-text.ts` and `markdown-tables.ts`.
+The Docling quality gate (`docling-quality.ts`, `docling-remote.ts`, `DOCLING_SERVICE_URL`), the
+in-repo Dockerized extract microservice (`src/extract-service/`, `pdf-extract-remote.ts`,
+`PDF_EXTRACT_SERVICE_*`), and the local OCR engines (PaddleOCR `paddleocr-client.ts`, Tesseract,
+`ocr-layout.ts`) are all deleted. There is no `ocr_degraded` signal worth checking anymore —
+pdf2w performs its own vision-rescue server-side and reports no per-page engine-degradation back;
+the field survives on `ExtractedPDF` for backward compatibility only and is never set.
 
-Pass → the Markdown rides along as `docling_markdown` and Step C's chunk-by-chunk LLM conversion is **skipped for that file** (`markdown_content` is already structured). Fail → the normal chain runs unchanged, with no partial adoption. Any new failure mode you find belongs in this gate with a threshold calibrated on the real corpus, not in a caller.
+## The pre-registration quality gate (unchanged by the swap)
 
-## OCR is not swappable
-
-PaddleOCR is the primary engine; Tesseract is the availability fallback and sets `ocr_degraded: true` on the result. The two are **not** interchangeable in quality — on a photographed ID card PaddleOCR returned clean numbered form fields where Tesseract returned line noise. A caller that already holds text for a file must check `ocr_degraded` **before** overwriting it with a re-analysis result; that is what the flag exists for. Language set is `fra`, `eng`, `vie`.
-
-## The pre-registration quality gate
-
-[`extraction-quality-gate.ts`](../../../src/domain/extraction-quality-gate.ts) runs in two layers:
+[`extraction-quality-gate.ts`](../../../src/domain/extraction-quality-gate.ts) runs in two layers,
+regardless of where the text came from:
 
 1. **During Step C**, `assessChunkMarkdown` / `describeTableRepairNote` screen each chunk. A chunk with malformed table rows or an absurd column blow-out is re-converted **once, alone**, with a corrective note — the healthy chunks are left untouched and are not re-rolled.
 2. **Before registration** (in `triage-scan`, after classification), `assessExtractionQuality` assesses the complete document and throws `ExtractionQualityGateError` — a typed, catchable error mirroring `OllamaUnavailableError`, so the web route, an MCP tool, or an agent can act on the structured `QualityGateReport` instead of parsing log lines.
@@ -51,4 +55,4 @@ The origin is doc 5009 (2026-09-03): a table came back with rows outside the GFM
 
 ## Verifying a change here
 
-`npm run typecheck` and `npm test` — `src/domain/{docling-quality,extraction-quality-gate,markdown-tables,pdf-text}.test.ts` and `src/infrastructure/{pdf-extractor,pdf-extract-remote,docling-remote}*.test.ts` hold the behaviour. Then confirm the **fallback path still works with each URL unset**: an extraction change that only passes with `DOCLING_SERVICE_URL` or `PDF_EXTRACT_SERVICE_URL` set has broken the guarantee that documents never strand. Do not run `npm run dev` to check — see [pdf-triage-verify](../pdf-triage-verify/SKILL.md).
+`npm run typecheck` and `npm test` — `src/domain/{extraction-quality-gate,markdown-tables,pdf-text}.test.ts` and `src/infrastructure/{pdf-extractor,pdf2w-remote,canonical-path-remote}*.test.ts` hold the behaviour. Confirm the change still throws (does not silently no-op) when `PDF2W_SERVICE_URL` / `CANONICAL_PATH_SERVICE_URL` is unset or the service is unreachable — that hard-failure behavior is intentional, not a gap to patch over with a fallback. Do not run `npm run dev` to check — see [pdf-triage-verify](../pdf-triage-verify/SKILL.md).

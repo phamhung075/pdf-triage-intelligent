@@ -10,7 +10,11 @@
 - With nested subcategory: `__archive/<cat>/<sub1>/<sub2>/<YYYY>/<file>.pdf`
 - Without a specific subcategory: **not allowed** for a completed doc (Golden Rule #4). Repair will move the file back to `__raws`.
 
-Implemented in `computeCanonicalPath()` (`src/domain/taxonomy.ts`).
+Implemented in `ComputeCanonicalPath()` (`services/pdf-triage-pdf2w/canonicalpath/canonicalpath.go`,
+a Go port of the former `src/domain/taxonomy.ts` function of the same name), called over HTTP via
+`computeCanonicalPathRemote()` (`src/infrastructure/canonical-path-remote.ts`,
+`CANONICAL_PATH_SERVICE_URL`). Required, no in-process fallback — see
+[pdf2w-extraction.md](./pdf2w-extraction.md).
 
 ## Year resolution
 
@@ -25,7 +29,11 @@ Implemented in `computeCanonicalPath()` (`src/domain/taxonomy.ts`).
 
 ## Move semantics — `relocalizeFileIfNeeded()`
 
-1. Compute canonical target.
+`relocalizeFileIfNeeded()` is `async` — every caller (`triage-scan.ts`'s post-classification move,
+the manual Relocalize HTTP route) awaits it.
+
+1. Compute canonical target — `await computeCanonicalPathRemote(...)`, an HTTP call to the required
+   Go service (`CANONICAL_PATH_SERVICE_URL`). Unreachable → throws, no in-process fallback.
 2. If normalized target == normalized source → no-op.
 3. Ensure target dir exists (recursive mkdir).
 4. If target exists and is not the current file → append `_${Date.now()}` before the extension (collision-safe rename).

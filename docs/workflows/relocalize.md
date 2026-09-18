@@ -45,8 +45,12 @@ call. Leaving it behind is what let a record contradict itself: `title`/`date`/`
 `markdown_content` rebuilt from new text sitting beside the old evidence, with nothing in the UI to
 show the mismatch.
 
-The `ocr_degraded` flag comes from `extractPDFContent` and is tracked **per page** — a two-page scan
-can genuinely come back half PaddleOCR and half Tesseract.
+The `ocr_degraded` flag is a legacy field on `ExtractedPDF` from the removed in-process
+PaddleOCR/Tesseract chain. `extractPDFContent` no longer sets it — all extraction and OCR now
+happen inside the external, self-hosted pdf2w service (`markdown-extract-service`), which reports
+no per-page engine-degradation signal back — so in practice it is always `false` today, and the
+first row of the table above is the one that always applies. See
+[pdf2w-extraction.md](../knowledge/pdf2w-extraction.md).
 
 ## Structured reasons from the modal
 

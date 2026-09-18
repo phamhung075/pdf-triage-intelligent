@@ -46,9 +46,8 @@
 | Ollama / Qwen 3.5 — prompt design, JSON contract, fallbacks | [docs/knowledge/ollama-qwen.md](docs/knowledge/ollama-qwen.md) |
 | On-disk canonical folder layout & naming | [docs/knowledge/canonical-paths.md](docs/knowledge/canonical-paths.md) |
 | REST + SSE + MCP API reference | [docs/knowledge/api-reference.md](docs/knowledge/api-reference.md) |
-| PDF extraction microservice (Docker split) — `docker-compose.yml`, `Dockerfile.extract-service`, `src/extract-service/` | [docs/knowledge/pdf-extract-service.md](docs/knowledge/pdf-extract-service.md) |
-| Docling structured extraction (optional quality layer) — `DOCLING_SERVICE_URL`, `src/domain/docling-quality.ts`, `src/infrastructure/docling-remote.ts` | [docs/knowledge/docling-extract-layer.md](docs/knowledge/docling-extract-layer.md) |
-| Service-split plan — Service B (Docling file→Markdown) lives in its own repo `/home/daihu/__projects__/markdown-extract-service`; Service A (raster→A4) designed + spiked only | [docs/knowledge/service-split-plan.md](docs/knowledge/service-split-plan.md) |
+| PDF/photo text extraction (pdf2w, required) and canonical-path resolution (Go submodule, required) — `PDF2W_SERVICE_URL`, `CANONICAL_PATH_SERVICE_URL`, `src/infrastructure/pdf2w-remote.ts`, `src/infrastructure/canonical-path-remote.ts`, `services/pdf-triage-pdf2w/` | [docs/knowledge/pdf2w-extraction.md](docs/knowledge/pdf2w-extraction.md) |
+| Service-split plan — **superseded**, kept as historical record; see the banner in the file for what actually shipped | [docs/knowledge/service-split-plan.md](docs/knowledge/service-split-plan.md) |
 | Taxonomy — categories, subcategories, private overlays | [docs/knowledge/taxonomy.md](docs/knowledge/taxonomy.md) |
 | Environment & config (`settings.json`, env vars) | [docs/knowledge/environment.md](docs/knowledge/environment.md) |
 | Workflows — triage, repair, relocalize, clear, SSE broadcast | [docs/workflows/](docs/workflows/) |
@@ -63,7 +62,7 @@
 
 Local-first **PDF Triage & Agentic Registry** — TypeScript + Node.js + Express + SQLite (+FTS5) + Ollama Qwen 3.5. Watches `__raws`, extracts text, classifies each document, writes SQLite + JSON registry mirrors, moves the file to a canonical `__archive/<category>/<subcategory>/<YYYY>/` folder, and pushes SSE updates to a web dashboard. Also exposes MCP tools for external agents.
 
-Incoming **photos** (`.jpg/.png/.webp/.bmp/.tiff`) are not archived as images: they run through the vision pipeline (orient → crop → enhance → OCR) and are filed as A4 PDFs — see `src/application/convert-image-document.ts`. A **folder** in `__raws` holding only photos (2+) is bundled into ONE multi-page PDF named after the folder, pages ordered numerically (`IMG_2` before `IMG_10`); a lone photo, or a folder mixing photos with anything else, is triaged file-by-file as before. OCR is **PaddleOCR first** (local FastAPI service in `paddleocr-server/`), with Tesseract.js as an availability fallback.
+Incoming **photos** (`.jpg/.png/.webp/.bmp/.tiff`) are not archived as images: they run through the vision pipeline (orient → crop → enhance → assemble) and are filed as A4 PDFs — see `src/application/convert-image-document.ts`. A **folder** in `__raws` holding only photos (2+) is bundled into ONE multi-page PDF named after the folder, pages ordered numerically (`IMG_2` before `IMG_10`); a lone photo, or a folder mixing photos with anything else, is triaged file-by-file as before. All PDF/photo text extraction — including OCR for scanned or image-only pages — is delegated to the external, self-hosted `markdown-extract-service` (**pdf2w**, reached via `PDF2W_SERVICE_URL`); pdf-triage runs no OCR of its own. Canonical-path resolution (taxonomy → on-disk archive path) is likewise delegated to a Go microservice submodule (`services/pdf-triage-pdf2w/`, reached via `CANONICAL_PATH_SERVICE_URL`). Both are required, not optional-with-fallback — see [pdf2w-extraction.md](docs/knowledge/pdf2w-extraction.md).
 
 Full overview: [docs/overview.md](docs/overview.md).
 
@@ -153,16 +152,18 @@ pdf_triage/
 ├── pdf_triage.db               # SQLite (runtime, gitignored)
 ├── registry.json               # JSON mirror (runtime, gitignored)
 ├── package.json                # tsx dev + build scripts
-├── Dockerfile.extract-service  # multi-stage image for the standalone PDF extraction microservice (src/extract-service)
-├── docker-compose.yml          # `docker compose up -d --build` → pdf-extract service on :3981 · Docling file→Markdown service = EXTERNAL project /home/daihu/__projects__/markdown-extract-service (own git repo, own compose on :3984)
-├── .dockerignore               # keeps node_modules/personal data out of the extraction image build context
+├── docker-compose.yml          # `docker compose up -d --build` → builds services/pdf-triage-pdf2w (Go canonical-path service) on :3985 · PDF/photo extraction = EXTERNAL project /home/daihu/__projects__/markdown-extract-service (own git repo, own compose on :3984)
+├── .gitmodules                 # registers services/pdf-triage-pdf2w (and .agents/deepseek-offload)
+├── services/
+│   └── pdf-triage-pdf2w/       # git submodule → https://github.com/phamhung075/pdf-triage-pdf2w — Go canonical-path service (computeCanonicalPath ported from src/domain/taxonomy.ts), POST /canonical-path
+├── .dockerignore               # keeps node_modules/personal data out of image build contexts
 ├── docs/                      # → knowledge, workflows, agent playbooks (LAZY-LOADED — see context map above)
 │   ├── README.md
 │   ├── overview.md
 │   ├── skills.md              # UNIFIED skill index (single source of truth)
 │   ├── skills/                # junction → .claude/plugins/superpowers/skills
 │   ├── agents/{README,*.md}   # per-agent playbooks
-│   ├── knowledge/*.md         # architecture, data-model, ollama-qwen, canonical-paths, api-reference, taxonomy, environment, golden-rules, pdf-extract-service, docling-extract-layer, service-split-plan
+│   ├── knowledge/*.md         # architecture, data-model, ollama-qwen, canonical-paths, api-reference, taxonomy, environment, golden-rules, pdf2w-extraction, service-split-plan (superseded)
 │   └── workflows/*.md         # triage-pipeline, repair-registry, relocalize, clear-registry, classification-flow, sse-broadcast
 ├── .agents/                    # agent tooling — repository-owned skills, Agent Notes, DeepSeek delegation
 ├── .claude/
@@ -181,7 +182,7 @@ pdf_triage/
 │   │   ├── prompt.ts                  # Qwen prompt building (Step A/C/D)
 │   │   ├── prompt-personalization.ts  # schema + rendering for the private prompt overlay (.prompts.private.json)
 │   │   ├── classification-resolution.ts  # refine/resolve category & subcategory, entity-priority override
-│   │   ├── taxonomy.ts                # isForbiddenSubcategory, computeCanonicalPath
+│   │   ├── taxonomy.ts                # isForbiddenSubcategory, isYearString, detectFileType, isPathInsideDir, findCanonicalCategoryForSubcategory, mergeSubcategoryInTaxonomy (computeCanonicalPath moved to services/pdf-triage-pdf2w/, see canonical-path-remote.ts)
 │   │   ├── pdf-text.ts                # cleanExtractedText
 │   │   ├── pdf-page-fit.ts            # fitImageToA4 — pure page geometry for photo-to-PDF pages
 │   │   ├── image-adjust.ts            # pure auto-levels/sharpen math for the Vision Lab pipeline (ported from pdf-awesome)
@@ -191,7 +192,7 @@ pdf_triage/
 │   │   ├── triage-scan.ts             # runTriageScan — the real, live-wired scan pipeline
 │   │   ├── ai-chat-assistant.ts       # local chat assistant grounded in the document registry (via MCP prepare_dossier)
 │   │   ├── image-to-pdf.ts            # Vision Lab step functions: runOrientStep/runCropStep/runEnhanceStep/runExtractStep
-│   │   ├── convert-image-document.ts  # convertImageToPdf — photo in __raws -> archivable A4 PDF + its OCR text (used by triage-scan); source photo kept in .delete_files/img_converted
+│   │   ├── convert-image-document.ts  # convertImageToPdf — photo in __raws -> archivable A4 PDF, text via extractPDFContent() (pdf2w) after assembly, no local OCR (used by triage-scan); source photo kept in .delete_files/img_converted
 │   │   ├── repair-registry.ts
 │   │   ├── relocalize-document.ts
 │   │   ├── clear-registry.ts
@@ -207,7 +208,8 @@ pdf_triage/
 │       ├── zip-builder.ts             # pure-TS ZIP archive builder (no native deps) — PDF package export + bulk Markdown export
 │       ├── ollama-client.ts
 │       ├── vision-client.ts           # detectOrientation/detectCropBox — Ollama calls against CONFIG.OLLAMA_VISION_MODEL
-│       ├── paddleocr-client.ts        # paddleOcrRecognize/paddleOcrDetectOrientation — HTTP client for paddleocr-server/, auto-spawns it if unreachable
+│       ├── pdf2w-remote.ts            # extractPdf2wContent — HTTP client for the required, self-hosted markdown-extract-service (pdf2w), no fallback
+│       ├── canonical-path-remote.ts   # computeCanonicalPathRemote — HTTP client for the required services/pdf-triage-pdf2w Go service, no fallback
 │       ├── image-processor.ts         # @napi-rs/canvas ops: rotateImage, cropImage, applyBrightnessContrast, applySharpen
 │       ├── pdf-extractor.ts
 │       ├── pdf-scanner.ts
@@ -216,10 +218,8 @@ pdf_triage/
 │       ├── json-registry.ts
 │       ├── http/web-server.ts         # all real REST/SSE routes live here
 │       └── mcp/mcp-server.ts
-│   └── extract-service/                # standalone Dockerized text-extraction microservice — app.ts (Express) + main.ts (entry, `npm run extract:dev`)
 ├── public/                    # UI — public/ts/ (source) compiled to public/js/ (served), public/scss/ (source) compiled to public/style.css (served), public/js/vendor/ (marked.js, vendored not CDN)
 │   └── test-image-to-pdf.html # standalone Vision Lab diagnostic page (served by vision-lab-server.ts, not the main app)
-├── paddleocr-server/           # standalone Python/FastAPI OCR service (PaddleOCR) — separate process, see paddleocr-server/README.md
 ├── social/                    # gitignored — LinkedIn/marketing drafts, not project source
 └── logs/triage_debug.log
 ```
@@ -231,7 +231,6 @@ pdf_triage/
 - `npm run dev` / `npm start` — dev server (web + SSE + 10s auto-watcher). **User runs this, not the agent.**
 - `npm run scan` — one-shot triage scan.
 - `npm run mcp` — MCP stdio server.
-- `npm run extract:dev` — run the PDF extraction microservice standalone (`src/extract-service/main.ts`, port `3981`) without Docker.
 - `npm run vision:dev` — standalone Vision Lab diagnostic server (port `3179`), run independently of `npm run dev`.
 - `npm run build` — `clean:dist` + `build:css` + `tsc` (backend) + `tsc -p tsconfig.frontend.json` (frontend).
 - `npm run clean:dist` — removes `dist/`. Runs first in `build` because `tsc` never prunes output for

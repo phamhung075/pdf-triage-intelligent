@@ -1,12 +1,28 @@
-# 🔀 Service Split Plan — img→PDF packaging + file→Markdown extraction
+# 🔀 Service Split Plan — img→PDF packaging + file→Markdown extraction (SUPERSEDED)
 
-> **Status: Service B DEPLOYED as its own project (step 1), Service A DESIGNED + SPIKED only.**
-> Service B now lives in a **separate git repo**: `/home/daihu/__projects__/markdown-extract-service`
-> (code + Dockerfile + own docker-compose.yml on :3984, models baked at build). App-side PDF
-> routing is unchanged from the already-measured Docling wiring (the app only ever sent `.pdf`);
-> office-file routing is step 2 below, not yet wired. Service A was spike-proven (7/7 byte parity)
-> but is intentionally NOT wired — see decision 1. The working spikes are recorded in
-> `.spike/split-spike-report.md`.
+> **Status: SUPERSEDED (2026-09-18).** This plan's Service B (the app-side Docling wiring —
+> `DOCLING_SERVICE_URL`, `src/infrastructure/docling-remote.ts`, `src/domain/docling-quality.ts`)
+> was removed outright, not routed office files as step 2 below assumed. pdf-triage now calls
+> `markdown-extract-service` (pdf2w) directly for extraction, with **no app-side quality gate and
+> no fallback to an in-process/LLM chain** — a different, simpler integration than this document's
+> "gate + fallback" philosophy throughout. Service A (raster→A4 packaging) was never wired and
+> stays exactly as spiked below; the photo pipeline instead now reuses the same required
+> `extractPDFContent()` → pdf2w path as any other PDF (see
+> [pdf2w-extraction.md](./pdf2w-extraction.md#photo-pipeline-change--no-local-ocr)) rather than
+> gaining its own packaging microservice. Read
+> [`pdf2w-extraction.md`](./pdf2w-extraction.md) and
+> [`docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md`](../superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md)
+> for the architecture that actually shipped. Everything below this banner is kept as the
+> historical record of the plan that was **not** followed for extraction — do not treat the routing
+> tables, decisions, or roadmap below as current behavior.
+>
+> Original status note (2026-09-04, now historical): Service B DEPLOYED as its own project (step 1),
+> Service A DESIGNED + SPIKED only. Service B lived in a **separate git repo**:
+> `/home/daihu/__projects__/markdown-extract-service` (code + Dockerfile + own docker-compose.yml on
+> :3984, models baked at build). App-side PDF routing was unchanged from the already-measured
+> Docling wiring (the app only ever sent `.pdf`); office-file routing was step 2 below, never wired.
+> Service A was spike-proven (7/7 byte parity) but intentionally not wired — see decision 1. The
+> working spikes are recorded in `.spike/split-spike-report.md`.
 
 ## One-line summary
 

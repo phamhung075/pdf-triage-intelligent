@@ -28,9 +28,8 @@
 - [API Reference](./knowledge/api-reference.md) — Every REST + SSE + MCP endpoint.
 - [Category Taxonomy](./knowledge/taxonomy.md) — Categories, subcategories, aliases.
 - [Environment & Config](./knowledge/environment.md) — `settings.json`, env vars, paths.
-- [PDF Extract Microservice](./knowledge/pdf-extract-service.md) — Dockerized text-extraction split (`docker compose up`, `PDF_EXTRACT_SERVICE_URL`, fallback).
-- [Docling Extract Layer](./knowledge/docling-extract-layer.md) — optional layout-aware extraction (`DOCLING_SERVICE_URL`, quality gate, Step C skip).
-- [Service Split Plan](./knowledge/service-split-plan.md) — Service B (Docling file→Markdown) shipped as its own repo `/home/daihu/__projects__/markdown-extract-service`; Service A (img→PDF packaging) designed + spiked; roadmap, decisions, evidence.
+- [pdf2w Extraction & Canonical Paths](./knowledge/pdf2w-extraction.md) — the self-hosted `markdown-extract-service` (pdf2w, `PDF2W_SERVICE_URL`) for all PDF/photo text extraction, and the Go `pdf-triage-pdf2w` submodule (`CANONICAL_PATH_SERVICE_URL`) for canonical-path resolution. Both required, no fallback.
+- [Service Split Plan](./knowledge/service-split-plan.md) — **superseded**; the original img→PDF/file→Markdown split plan, kept as historical record (see the banner at the top of that file for what actually shipped instead).
 
 ## 👥 Agent Playbooks
 

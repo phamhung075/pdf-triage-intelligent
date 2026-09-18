@@ -21,10 +21,10 @@ for the full tables and the storage breakdown. The short version:
 
 | | |
 | --- | --- |
-| App processes (RAM) | ~1.5 GB — PaddleOCR service ~780 MB, Node dev server ~540 MB, watcher + `ollama serve` ~130 MB |
+| App processes (RAM) | Node dev server ~540 MB, watcher + `ollama serve` ~130 MB (2026-09-04 measurement, predates the pdf2w swap — no local OCR process runs in this app anymore; `markdown-extract-service` and `pdf-triage-pdf2w` run as separate external processes with their own footprint, not yet measured here) |
 | `qwen3.5:9b` | 6.6 GB resident at `num_ctx: 16384`. On GPU that is **VRAM**, so 8 GB is the floor — on an 8 GB card it loads at 100% GPU with ~580 MB to spare. Without a GPU it is system RAM instead. |
 | Disk | ~9.8 GB installed, plus **≈158 KB per archived document** in SQLite |
-| Throughput | ~2 min/document overall: 30-60s for a digital text layer (GPU-bound), 120-230s when OCR is needed (**CPU**-bound — the GPU does not accelerate PaddleOCR) |
+| Throughput | ~2 min/document overall (2026-09-04 measurement, predates the pdf2w swap): 30-60s for a digital text layer (GPU-bound, classification), 120-230s when OCR was needed via the since-removed local PaddleOCR path. OCR now happens inside the external pdf2w service — its throughput is not measured from this repo. |
 
 Two things that grow without bound and nothing prunes: `logs/triage_debug.log` and
 `__raws/.delete_files/img_converted/`.
@@ -48,18 +48,30 @@ Only `qwen3.5:9b` is supported for `OLLAMA_MODEL`. Legacy models are purged; do 
 
 Standalone diagnostic server (`src/vision-lab-server.ts`, `npm run vision:dev`), separate process and port from the main app.
 
-## PaddleOCR
+## pdf2w extraction + canonical-path services (required, no fallback)
 
-| Key                    | Source          | Default                              |
-| ---------------------- | ---------------- | ------------------------------------ |
-| `PADDLEOCR_HOST`       | env › default    | `http://127.0.0.1:8871`              |
-| `PADDLEOCR_SPAWN_CMD`  | env › default    | `python paddleocr-server/main.py`    |
+| Key                                  | Source          | Default        |
+| ------------------------------------- | --------------- | -------------- |
+| `PDF2W_SERVICE_URL`                   | env › default    | *(unset)*      |
+| `PDF2W_SERVICE_TIMEOUT_MS`            | env › default    | `0` (none)     |
+| `CANONICAL_PATH_SERVICE_URL`          | env › default    | *(unset)*      |
+| `CANONICAL_PATH_SERVICE_TIMEOUT_MS`   | env › default    | `0` (none)     |
 
-Standalone local OCR service (`paddleocr-server/`, Python/FastAPI), auto-spawned by
-`ensurePaddleOcrServer()` in `src/infrastructure/paddleocr-client.ts` if unreachable. Used as
-the primary OCR engine in `pdf-extractor.ts` and the orientation tiebreaker in
-`orientation-detector.ts`, with Tesseract kept as an availability fallback if this service
-isn't reachable. See `paddleocr-server/README.md` for one-time setup.
+Both are **required, not optional-with-fallback** — see [pdf2w-extraction.md](./pdf2w-extraction.md)
+for the full picture. `PDF2W_SERVICE_URL` points `extractPDFContent()`
+(`src/infrastructure/pdf2w-remote.ts`) at the self-hosted `markdown-extract-service` (pdf2w,
+own repo `/home/daihu/__projects__/markdown-extract-service`, own compose on `:3984`) for ALL
+PDF/photo-derived-PDF text extraction and OCR. `CANONICAL_PATH_SERVICE_URL` points
+`relocalizeFileIfNeeded()` (`src/infrastructure/canonical-path-remote.ts`) at the Go
+`pdf-triage-pdf2w` service (git submodule `services/pdf-triage-pdf2w/`, this repo's own
+`docker-compose.yml`, `:3985`) for canonical-path resolution. Either service unreachable, or its
+URL unset, is a hard error — `FILE_FAILED` for that file, no in-process fallback.
+
+This replaces `paddleocr-server/` (Python/FastAPI local OCR, `PADDLEOCR_HOST` /
+`PADDLEOCR_SPAWN_CMD`), the Docling sidecar (`DOCLING_SERVICE_URL` / `_REQUIRED` / `_TIMEOUT_MS`),
+and the in-repo `pdf-extract` Docker microservice split (`PDF_EXTRACT_SERVICE_*`,
+`PDF_EXTRACT_PORT` / `_HOST` / `_MAX_BYTES`, `OCR_MAX_PAGES`, `OCR_RENDER_SCALE`) — all removed,
+none of these variables are read by `settings.ts` anymore.
 
 ## MCP HTTP transport
 
@@ -91,32 +103,17 @@ Written by `updateConfig()`; reloaded on every scan via `reloadConfigFromDisk()`
 
 ## Environment variables
 
-`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PORT`, `PDF_TRIAGE_HOST`, `VISION_LAB_PORT`, `PADDLEOCR_HOST`, `PADDLEOCR_SPAWN_CMD`, `MCP_HTTP_PORT`, `MCP_HTTP_HOST`.
+`PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_REGISTRY_PATH`, `PDF_DB_PATH`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PORT`, `PDF_TRIAGE_HOST`, `VISION_LAB_PORT`, `PDF2W_SERVICE_URL`, `PDF2W_SERVICE_TIMEOUT_MS`, `CANONICAL_PATH_SERVICE_URL`, `CANONICAL_PATH_SERVICE_TIMEOUT_MS`, `MCP_HTTP_PORT`, `MCP_HTTP_HOST`.
 
 Loaded from `.env` via `dotenv` when the process starts.
 
-### PDF text-extraction microservice variables
+### pdf2w extraction and canonical-path service variables
 
-Split-extraction knobs (see [PDF Extract Microservice](./pdf-extract-service.md) for the full picture):
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `PDF_EXTRACT_SERVICE_URL` | *(unset)* | When set (e.g. `http://127.0.0.1:3981`), `extractPDFContent()` delegates extraction to the Dockerized service; unreachable → in-process fallback with a WARN. |
-| `PDF_EXTRACT_SERVICE_REQUIRED` | `0` | `1` turns the fallback into a hard error per file. |
-| `PDF_EXTRACT_SERVICE_TIMEOUT_MS` | `0` | Client timeout for one HTTP extraction call; `0` = none (OCR takes minutes). |
-| `PDF_EXTRACT_PORT` / `PDF_EXTRACT_HOST` | `3981` / `127.0.0.1` | Listen settings for the extraction service itself (image overrides host to `0.0.0.0`). |
-| `PDF_EXTRACT_MAX_BYTES` | `536870912` | Upload ceiling for one `POST /extract` body. |
-| `TESSERACT_LANG_PATH` | *(unset)* | Local folder with `fra/eng/vie.traineddata` so tesseract.js skips the CDN (set to `/app/tessdata` in the Docker image). |
-
-### Docling structured extraction variables
-
-Optional quality layer in front of PDF extraction (see [Docling Extract Layer](./docling-extract-layer.md) for the gate and failure modes):
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `DOCLING_SERVICE_URL` | *(unset)* | When set (e.g. `http://127.0.0.1:3984`), PDFs are first offered to Docling (layout-aware PDF → Markdown). Gate pass → text becomes `raw_text`, its Markdown rides along as `docling_markdown` and Step C's LLM conversion is skipped. Any failure (down / empty / whole-page-picture / mojibake) → normal chain, unchanged. The service is a SEPARATE project: `/home/daihu/__projects__/markdown-extract-service` (own git repo + compose on :3984). |
-| `DOCLING_SERVICE_REQUIRED` | `0` | `1` turns a Docling failure (service down OR gate-rejected output) into a hard error per file instead of a fallback. |
-| `DOCLING_SERVICE_TIMEOUT_MS` | `0` | Client timeout for one Docling HTTP call; `0` = none (Docling layout + OCR takes seconds per page). |
+See [pdf2w extraction + canonical-path services](#pdf2w-extraction--canonical-path-services-required-no-fallback)
+above and [pdf2w-extraction.md](./pdf2w-extraction.md) for the full picture. `PADDLEOCR_HOST`,
+`PADDLEOCR_SPAWN_CMD`, `DOCLING_SERVICE_URL`/`_REQUIRED`/`_TIMEOUT_MS`, `PDF_EXTRACT_SERVICE_*`,
+`PDF_EXTRACT_PORT`/`_HOST`/`_MAX_BYTES`, `TESSERACT_LANG_PATH`, `OCR_MAX_PAGES`, and
+`OCR_RENDER_SCALE` are all deleted from `settings.ts` and no longer read.
 
 ## Logs
 

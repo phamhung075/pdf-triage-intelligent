@@ -18,7 +18,7 @@ This project's own procedures live in [`.agents/skills/`](../.agents/skills/) ra
 | [pdf-triage-change](../.agents/skills/pdf-triage-change/SKILL.md) | Finishing a notable change — docs, CHANGELOG, registering a doc or skill |
 | [pdf-triage-personal-data](../.agents/skills/pdf-triage-personal-data/SKILL.md) | Touching prompts, classification rules, categories, dictionaries, fixtures |
 | [pdf-triage-dispatch](../.agents/skills/pdf-triage-dispatch/SKILL.md) | Delegating work to a background DeepSeek worker |
-| [pdf-triage-extraction](../.agents/skills/pdf-triage-extraction/SKILL.md) | Changing the extraction chain, OCR, the Docling layer or the quality gate |
+| [pdf-triage-extraction](../.agents/skills/pdf-triage-extraction/SKILL.md) | Changing extraction routing — the pdf2w extraction client or the Go canonical-path service client |
 | [pdf-triage-wsl-ops](../.agents/skills/pdf-triage-wsl-ops/SKILL.md) | Paths, ports, locks, or who runs the server |
 
 Decision records — why a change went the way it did, and what lost — live in [`.agents/notes/`](../.agents/notes/README.md).

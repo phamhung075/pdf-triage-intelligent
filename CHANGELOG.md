@@ -13,6 +13,11 @@ as the code/doc change, not reconstructed later from `git log`.
 ## Unreleased
 ### Docling structured extraction — optional quality layer in front of PDF extraction
 
+> **Removed 2026-09-18.** The Docling sidecar described below (`DOCLING_SERVICE_URL`,
+> `docling-remote.ts`, `docling-quality.ts`) was deleted outright, not kept as a fallback layer —
+> see the "2026-09-18 — pdf2w extraction swap" entry further down this file. Kept here as the
+> historical record of what shipped and why, not as current behavior.
+
 Docling (layout-aware PDF → Markdown with real tables) can now run as a second, optional extractor
 ahead of the existing chain. When `DOCLING_SERVICE_URL` is set, PDF extraction is first offered to
 Docling; if its output passes a dedicated quality gate, its text becomes `raw_text`, its
@@ -50,6 +55,11 @@ page classified as one picture, a garbage text-layer decode — falls back to th
 
 ### PDF text-extraction microservice — Dockerized split
 
+> **Removed 2026-09-18.** The `src/extract-service/` split described below was deleted outright in
+> favor of a required call to the external, self-hosted `markdown-extract-service` (pdf2w) — see
+> the "2026-09-18 — pdf2w extraction swap" entry further down this file. Kept here as the
+> historical record of what shipped and why, not as current behavior.
+
 Text extraction can now run as a separate Docker container instead of inside the main process.
 The split is a pure transport swap at one seam (`extractPDFContent`), so results are identical
 byte-for-byte whether extraction runs in-process or over HTTP.
@@ -85,8 +95,9 @@ byte-for-byte whether extraction runs in-process or over HTTP.
   round-trip, unreachable → fallback WARN, required → hard error). Full suite green apart from
   pre-existing environment-dependent failures (real `settings.json`/`.env` on this machine,
   Windows-path tests under Linux, marginal OCR fixture geometry).
-- **Docs**: [pdf-extract-service.md](docs/knowledge/pdf-extract-service.md) (full reference),
-  environment doc env-var table, `.env.example`, `AGENTS.md` context map/layout/scripts, this entry.
+- **Docs**: `docs/knowledge/pdf-extract-service.md` (full reference — deleted 2026-09-18, superseded
+  by [pdf2w-extraction.md](docs/knowledge/pdf2w-extraction.md)), environment doc env-var table,
+  `.env.example`, `AGENTS.md` context map/layout/scripts, this entry.
 
 ### Step C markdown repair — rows whose description escaped to a heading are re-folded
 
@@ -1204,7 +1215,70 @@ routing in `src/` (docs-only change + gitignored `.spike/` scratch):
   existing seam works as-is. Docs/AGENTS/env now point at the external project; local smoke of the
   relocated layout: same venv, health + docx + pdf + 415 all green.
 
-## 2026-08-24 — Markdown/classification correctness fixes
+## 2026-09-18 — pdf2w extraction swap: paddleocr-server, Docling sidecar, and the extract-service split removed
+
+Replaced `paddleocr-server/`, the Docling sidecar, and the in-repo `pdf-extract` Docker
+microservice split with (1) a required call to the self-hosted, unmodified, external
+`markdown-extract-service` (pdf2w) for ALL PDF/photo text extraction and OCR, and (2) a new Go
+microservice submodule, `services/pdf-triage-pdf2w/` (own repo:
+`https://github.com/phamhung075/pdf-triage-pdf2w`), exposing `POST /canonical-path` — the first
+slice of the user's stated Go/Rust backend-migration direction (project memory
+`project_go_rust_migration.md`), porting `computeCanonicalPath` out of `src/domain/taxonomy.ts`.
+Both new dependencies are **required, not optional-with-fallback**: an unreachable service is
+`FILE_FAILED` for that file, same posture as an unreachable Ollama today. Design record:
+[`docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md`](docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md);
+implementation plan:
+[`docs/superpowers/plans/2026-09-18-pdf2w-extraction-swap.md`](docs/superpowers/plans/2026-09-18-pdf2w-extraction-swap.md).
+Landed across 5 commits on `main`: `8b050bc` (submodule scaffold), `24f873c` (extraction routing),
+`1d257c7` (canonical-path wiring), `d0bc814` (photo pipeline), `e826ddb` (deletions).
+
+- **`services/pdf-triage-pdf2w/`** (new git submodule): Go `net/http` service —
+  `canonicalpath/canonicalpath.go` ports `computeCanonicalPath` + its private helpers
+  (`generateIntelligentFilename`, `formatEntitySlug`, `isGenericFilename`, `sanitizePathSegment`)
+  function-for-function from `src/domain/taxonomy.ts`; `cmd/server/main.go` exposes `GET /health`
+  and `POST /canonical-path`. `docker-compose.yml` builds and runs it on `:3985`.
+- **`src/infrastructure/pdf2w-remote.ts`** (new): `extractPdf2wContent()` — `POST /convert` (raw
+  bytes + `X-File-Name` header) to the self-hosted `markdown-extract-service`
+  (`/home/daihu/__projects__/markdown-extract-service`, own repo, own compose on `:3984`), returns
+  `{ checksum, raw_text, numpages, info, pdf2w_markdown }`.
+- **`src/infrastructure/canonical-path-remote.ts`** (new): `computeCanonicalPathRemote()` —
+  `POST /canonical-path` to the Go service, returns the resolved path string.
+- **`src/infrastructure/pdf-extractor.ts`**: `extractPDFContent()` now delegates every call
+  straight to `pdf2w-remote.ts` — no in-process tiers, no Docling/extract-service routing branch.
+  `ExtractedPDF.docling_markdown` renamed to `pdf2w_markdown`; `ocr_degraded` kept on the interface
+  for backward compatibility but never set anymore (pdf2w reports no per-page degradation signal).
+- **`src/application/relocalize-document.ts`**: `relocalizeFileIfNeeded()` is now `async`, awaiting
+  `computeCanonicalPathRemote()` instead of calling `computeCanonicalPath()` in-process. Every
+  caller (`triage-scan.ts`, the manual Relocalize HTTP route) now awaits it.
+- **`src/application/convert-image-document.ts`**: the photo pipeline drops local OCR entirely —
+  orient → crop → enhance → assemble the image-only A4 PDF → `extractPDFContent()` on the assembled
+  PDF, the same call every other PDF makes. `src/infrastructure/orientation-detector.ts` lost its
+  OCR-verified orientation tiebreaker as an accepted side effect (pdf2w exposes no
+  orientation-classification API); the cascade falls back to EXIF, the vision model, and flood-fill
+  crop without it.
+- **Deleted**: `paddleocr-server/`, `src/infrastructure/paddleocr-client.ts` (+ test),
+  `src/infrastructure/docling-remote.ts`, `src/domain/docling-quality.ts` (+ test),
+  `src/extract-service/` (whole dir), `Dockerfile.extract-service`,
+  `src/infrastructure/pdf-extract-remote.ts`, `src/domain/ocr-layout.ts`, and the `npm run
+  extract:dev` script. `src/domain/taxonomy.ts` loses `computeCanonicalPath`,
+  `generateIntelligentFilename`, `formatEntitySlug`, `isGenericFilename`, `sanitizePathSegment`
+  (moved to the Go submodule) — `isForbiddenSubcategory`, `isPathInsideDir`, `isYearString`,
+  `detectFileType`, `findCanonicalCategoryForSubcategory`, `mergeSubcategoryInTaxonomy` stay
+  TypeScript, unchanged.
+- **Config** (`settings.ts` + `.env.example`): added `PDF2W_SERVICE_URL` / `_TIMEOUT_MS`,
+  `CANONICAL_PATH_SERVICE_URL` / `_TIMEOUT_MS`; removed `PADDLEOCR_HOST`, `PADDLEOCR_SPAWN_CMD`,
+  `DOCLING_SERVICE_URL` / `_REQUIRED` / `_TIMEOUT_MS`, `PDF_EXTRACT_SERVICE_*`, `PDF_EXTRACT_PORT` /
+  `_HOST` / `_MAX_BYTES`, `TESSERACT_LANG_PATH`, `OCR_MAX_PAGES`, `OCR_RENDER_SCALE`.
+- **Docs**: new [`docs/knowledge/pdf2w-extraction.md`](docs/knowledge/pdf2w-extraction.md)
+  (consolidated reference, replaces the deleted `pdf-extract-service.md` and
+  `docling-extract-layer.md`); `docs/knowledge/service-split-plan.md` marked superseded (banner
+  added, content kept as historical record); `docs/knowledge/architecture.md` (extraction diagram,
+  module map, server-startup layer 3 removal, OCR-fallback section rewritten as historical),
+  `docs/knowledge/environment.md`, `docs/knowledge/canonical-paths.md`,
+  `docs/workflows/relocalize.md` (`ocr_degraded` clarification), `docs/README.md`, `docs/skills.md`,
+  and `AGENTS.md` (project description, repo layout, context map, scripts) updated to match.
+
+
 
 - **`fix(classification): accept explicit null on optional metadata string fields`**
   ([f6854d2](https://github.com/phamhung075/smart-pdf-triage-local-ai/commit/f6854d2)) — Qwen frequently returns JSON `null`
