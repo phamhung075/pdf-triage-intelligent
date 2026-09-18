@@ -41,7 +41,7 @@
   vision-rescue fallback for scanned/image-only PDFs — one dependency now covers what PaddleOCR,
   Tesseract, and the Docling sidecar covered separately before.
 - Separately, the organize-files step is being ported to a **new** Go repo
-  (`https://github.com/pdf-triage-org/pdf-triage-pdf2w`, added as a git submodule) — this is where
+  (`https://github.com/phamhung075/pdf-triage-pdf2w`, added as a git submodule) — this is where
   new code is actually written for this slice, and it is the first Go/Rust code to live inside
   pdf-triage, per the user's stated direction to move the backend to Go/Rust over time, taken one
   scoped slice at a time.
@@ -63,7 +63,7 @@ main pdf-triage app (TypeScript orchestrator: scan loop, classification/Ollama, 
    │
    └─ 2. organize-files: POST /canonical-path  (plain HTTP, new seam)
         ▼
-     services/pdf-triage-pdf2w/   ← git submodule → https://github.com/pdf-triage-org/pdf-triage-pdf2w
+     services/pdf-triage-pdf2w/   ← git submodule → https://github.com/phamhung075/pdf-triage-pdf2w
         NEW Go code: ONLY computeCanonicalPath (+ its private helpers
         generateIntelligentFilename/formatEntitySlug/isGenericFilename/sanitizePathSegment) ported
         from src/domain/taxonomy.ts. This is the one taxonomy.ts function actually in the
