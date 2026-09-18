@@ -201,7 +201,7 @@ function renderStepResult(result) {
 // the state update and landed in the catch — which re-enabled the button — and the next click
 // re-ran the SAME step forever, filling the server log with successful step-1 calls.
 async function runOneStep() {
-  if (currentStep >= 4 || inputForNextStep === null) {
+  if (currentStep >= 3 || inputForNextStep === null) {
     diag(`refused: currentStep=${currentStep}, hasInput=${inputForNextStep !== null}`);
     return false;
   }
@@ -252,7 +252,9 @@ async function runOneStep() {
       return false;
     }
 
-    statusEl.textContent = currentStep < 4 ? `Step ${stepToRun} done.` : 'Pipeline complete.';
+    statusEl.textContent = currentStep < 3
+      ? `Step ${stepToRun} done.`
+      : 'Pipeline complete (steps 1-3). Text extraction is no longer previewable here — it now happens via pdf2w after the PDF is assembled.';
     setBusy(false);
     return true;
   } catch (err) {
@@ -284,7 +286,7 @@ function setBusy(busy) {
     runAllBtn.disabled = true;
     return;
   }
-  const done = currentStep >= 4;
+  const done = currentStep >= 3;
   nextBtn.disabled = done;
   runAllBtn.disabled = done;
 }
@@ -293,7 +295,7 @@ nextBtn.addEventListener('click', () => { runOneStep(); });
 
 runAllBtn.addEventListener('click', async () => {
   diag(`run-all: starting from step ${currentStep + 1}`);
-  while (currentStep < 4) {
+  while (currentStep < 3) {
     const advanced = await runOneStep();
     if (!advanced) {
       diag('run-all: stopped early');

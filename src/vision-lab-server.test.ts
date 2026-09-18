@@ -4,17 +4,15 @@ import fs from 'fs';
 
 vi.mock('fs');
 
-const { runOrientStepMock, runCropStepMock, runEnhanceStepMock, runExtractStepMock } = vi.hoisted(() => ({
+const { runOrientStepMock, runCropStepMock, runEnhanceStepMock } = vi.hoisted(() => ({
   runOrientStepMock: vi.fn(),
   runCropStepMock: vi.fn(),
   runEnhanceStepMock: vi.fn(),
-  runExtractStepMock: vi.fn(),
 }));
 vi.mock('./application/image-to-pdf.js', () => ({
   runOrientStep: runOrientStepMock,
   runCropStep: runCropStepMock,
   runEnhanceStep: runEnhanceStepMock,
-  runExtractStep: runExtractStepMock,
 }));
 
 beforeEach(() => {
@@ -31,7 +29,7 @@ describe('POST /api/vision/diagnose-step', () => {
     expect(res.body.error).toBeTruthy();
   });
 
-  it('returns 400 when step is not 1, 2, 3, or 4', async () => {
+  it('returns 400 when step is not 1, 2, or 3', async () => {
     const { createVisionLabApp } = await import('./vision-lab-server.js');
     const app = createVisionLabApp();
     const res = await request(app).post('/api/vision/diagnose-step').send({ step: 5, inputImageBase64: 'ZmFrZQ==' });
@@ -81,16 +79,12 @@ describe('POST /api/vision/diagnose-step', () => {
     expect(runEnhanceStepMock).toHaveBeenCalledWith(Buffer.from('ZmFrZQ==', 'base64'));
   });
 
-  it('routes step 4 to runExtractStep', async () => {
-    const fakeResult = { step: 4, label: 'extracted', imageBase64: '', durationMs: 5, markdown: '# Hi' };
-    runExtractStepMock.mockResolvedValue(fakeResult);
+  it('returns 400 for the retired step 4 (extraction now happens via pdf2w after assembly)', async () => {
     const { createVisionLabApp } = await import('./vision-lab-server.js');
     const app = createVisionLabApp();
     const res = await request(app).post('/api/vision/diagnose-step').send({ step: 4, inputImageBase64: 'ZmFrZQ==' });
 
-    expect(res.status).toBe(200);
-    expect(res.body).toEqual({ result: fakeResult });
-    expect(runExtractStepMock).toHaveBeenCalledWith(Buffer.from('ZmFrZQ==', 'base64'));
+    expect(res.status).toBe(400);
   });
 
   it('returns 500 with the error message when a step function throws', async () => {

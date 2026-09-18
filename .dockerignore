@@ -37,10 +37,6 @@ __archive
 .tmp*
 social
 
-# Python OCR sidecar (not used by this image)
-.venv-paddle
-paddleocr-server
-
 # OS/editor cruft
 .DS_Store
 Thumbs.db

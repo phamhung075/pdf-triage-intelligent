@@ -1,9 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 
-// Unlike image-to-pdf.test.ts (which mocks every neighbor), this file mocks ONLY the things
-// that themselves wrap real Ollama/PaddleOCR/Tesseract calls (the two cascades, the both-engines
-// OCR function, and the markdown conversion) and lets the REAL image-processor.ts run against a
+// Unlike image-to-pdf.test.ts (which mocks every neighbor), this file mocks ONLY the two cascades
+// (which themselves wrap real Ollama calls) and lets the REAL image-processor.ts run against a
 // real synthetic PNG, to prove the step functions actually compose with real canvas operations
 // (rotate/crop/enhance), not just with mocks that happen to satisfy the interface.
 const { detectOrientationCascadeMock } = vi.hoisted(() => ({ detectOrientationCascadeMock: vi.fn() }));
@@ -11,12 +10,6 @@ vi.mock('../infrastructure/orientation-detector.js', () => ({ detectOrientationC
 
 const { detectCropBoxCascadeMock } = vi.hoisted(() => ({ detectCropBoxCascadeMock: vi.fn() }));
 vi.mock('../infrastructure/crop-detector.js', () => ({ detectCropBoxCascade: detectCropBoxCascadeMock }));
-
-const { ocrImageBufferBothEnginesMock } = vi.hoisted(() => ({ ocrImageBufferBothEnginesMock: vi.fn() }));
-vi.mock('../infrastructure/pdf-extractor.js', () => ({ ocrImageBufferBothEngines: ocrImageBufferBothEnginesMock }));
-
-const { convertRawTextToZeroLossMarkdownMock } = vi.hoisted(() => ({ convertRawTextToZeroLossMarkdownMock: vi.fn() }));
-vi.mock('./classify-document.js', () => ({ convertRawTextToZeroLossMarkdown: convertRawTextToZeroLossMarkdownMock }));
 
 async function makeTestPng(w: number, h: number): Promise<Buffer> {
   const canvas = createCanvas(w, h);
@@ -35,8 +28,6 @@ describe('vision-lab step functions (real image-processor)', () => {
       exifDegrees: null,
       modelDegrees: 90,
       modelRaw: '{"rotationDegrees":90}',
-      ocrDegrees: null,
-      ocrConfidence: null,
       source: 'exif+model-agree',
     });
     detectCropBoxCascadeMock.mockResolvedValue({
@@ -46,14 +37,8 @@ describe('vision-lab step functions (real image-processor)', () => {
       floodCropBox: null,
       source: 'model-flood-agree',
     });
-    ocrImageBufferBothEnginesMock.mockResolvedValue({
-      paddleOcr: { text: 'mock extracted text' },
-      tesseract: { text: 'mock extracted text' },
-    });
-    convertRawTextToZeroLossMarkdownMock.mockResolvedValue('# Mock Markdown');
-
     const buf = await makeTestPng(100, 80);
-    const { runOrientStep, runCropStep, runEnhanceStep, runExtractStep } = await import('./image-to-pdf.js');
+    const { runOrientStep, runCropStep, runEnhanceStep } = await import('./image-to-pdf.js');
 
     const orientResult = await runOrientStep(buf);
     expect(orientResult.error).toBeUndefined();
@@ -73,9 +58,5 @@ describe('vision-lab step functions (real image-processor)', () => {
     const enhancedImg = await loadImage(Buffer.from(enhanceResult.imageBase64, 'base64'));
     expect(enhancedImg.width).toBeGreaterThan(0);
     expect(enhancedImg.height).toBeGreaterThan(0);
-
-    const extractResult = await runExtractStep(Buffer.from(enhanceResult.imageBase64, 'base64'));
-    expect(extractResult.error).toBeUndefined();
-    expect(extractResult.markdown).toBe('# Mock Markdown');
   });
 });

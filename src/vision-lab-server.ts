@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { CONFIG, BASE_DIR } from './infrastructure/settings.js';
-import { runOrientStep, runCropStep, runEnhanceStep, runExtractStep } from './application/image-to-pdf.js';
+import { runOrientStep, runCropStep, runEnhanceStep } from './application/image-to-pdf.js';
 import { logger } from './infrastructure/logger.js';
 import { killProcessOnPort } from './infrastructure/pid-lock.js';
 
@@ -10,7 +10,9 @@ const STEP_FUNCTIONS = {
   1: runOrientStep,
   2: runCropStep,
   3: runEnhanceStep,
-  4: runExtractStep,
+  // Step 4 (extract) retired 2026-09-17: text extraction now happens exclusively via pdf2w after
+  // the PDF is assembled, not per-image here. See
+  // docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md ("Photo pipeline change").
 } as const;
 
 export function createVisionLabApp(): express.Express {
@@ -33,12 +35,12 @@ export function createVisionLabApp(): express.Express {
 
   // One stateless endpoint per pipeline step, parameterized by `step` — the client tracks
   // which buffer to send as inputImageBase64 on each call (the original upload for step 1,
-  // the previous step's chosen output for steps 2-4). No server-side session state.
+  // the previous step's chosen output for steps 2-3). No server-side session state.
   app.post('/api/vision/diagnose-step', async (req, res) => {
     const { step, inputImageBase64 } = req.body || {};
-    if (![1, 2, 3, 4].includes(step)) {
-      logger.warn('VISION_LAB', 'Rejected diagnose-step request: step must be 1, 2, 3, or 4', { step });
-      res.status(400).json({ error: 'step must be 1, 2, 3, or 4' });
+    if (![1, 2, 3].includes(step)) {
+      logger.warn('VISION_LAB', 'Rejected diagnose-step request: step must be 1, 2, or 3 (step 4 is retired)', { step });
+      res.status(400).json({ error: 'step must be 1, 2, or 3 (step 4 is retired)' });
       return;
     }
     if (!inputImageBase64 || typeof inputImageBase64 !== 'string') {
@@ -48,7 +50,7 @@ export function createVisionLabApp(): express.Express {
     }
     try {
       const buffer = Buffer.from(inputImageBase64, 'base64');
-      const stepFn = STEP_FUNCTIONS[step as 1 | 2 | 3 | 4];
+      const stepFn = STEP_FUNCTIONS[step as 1 | 2 | 3];
       const result = await stepFn(buffer);
       res.json({ result });
     } catch (err: any) {

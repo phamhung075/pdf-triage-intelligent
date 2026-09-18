@@ -10,7 +10,6 @@ import { CONFIG, BASE_DIR, DATA_DIR, updateConfig, isFirstRun, ensureDirectories
 import { openDirectory, revealInFileManager, openInChrome } from '../os-open.js';
 import { getAllDocuments, getDocumentById, updateDocumentRecord, getDb, getCategorySubcategoryStats, getBlockedFile, getAllBlockedFiles } from '../db/database.js';
 import { checkModelCanGenerate } from '../ollama-client.js';
-import { takeOverPaddleOcrServer } from '../paddleocr-client.js';
 import { getCategoriesConfig, saveCategoriesConfig, setOnCategoryCreatedCallback } from '../categories-store.js';
 import { syncJSONRegistry } from '../json-registry.js';
 import { clearRegistryAndMoveArchiveToRaws } from '../../application/clear-registry.js';
@@ -1559,18 +1558,6 @@ function acquireSingleInstanceLock(): void {
 
 export async function startWebServer(port: number = CONFIG.PORT): Promise<void> {
   acquireSingleInstanceLock();
-
-  // Same contract as the HTTP port takeover below, applied to the PaddleOCR sidecar: a restart must
-  // mean current code. The service is a separate Python process that outlives this one and answers
-  // /health even when it is running stale code, so without this an edit under paddleocr-server/
-  // never loads until the user hunts down the PID themselves.
-  //
-  // Awaited rather than fire-and-forget: the 10s auto-watcher can start a scan shortly after boot,
-  // and a kill landing after that would take out a server the first OCR call had just spawned.
-  const restarted = await takeOverPaddleOcrServer();
-  if (restarted) {
-    console.log('Restarted the PaddleOCR service so it picks up the current paddleocr-server/ code.');
-  }
 
   attemptListen(port, true);
 }

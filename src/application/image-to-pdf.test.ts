@@ -30,16 +30,6 @@ vi.mock('../infrastructure/image-processor.js', () => ({
   applySharpen: applySharpenMock,
 }));
 
-const { ocrImageBufferBothEnginesMock } = vi.hoisted(() => ({ ocrImageBufferBothEnginesMock: vi.fn() }));
-vi.mock('../infrastructure/pdf-extractor.js', () => ({
-  ocrImageBufferBothEngines: ocrImageBufferBothEnginesMock,
-}));
-
-const { convertRawTextToZeroLossMarkdownMock } = vi.hoisted(() => ({ convertRawTextToZeroLossMarkdownMock: vi.fn() }));
-vi.mock('./classify-document.js', () => ({
-  convertRawTextToZeroLossMarkdown: convertRawTextToZeroLossMarkdownMock,
-}));
-
 beforeEach(() => {
   vi.resetAllMocks();
   normalizeOrientationMock.mockResolvedValue(normalizedBuf);
@@ -61,9 +51,7 @@ describe('runOrientStep', () => {
       exifDegrees: 90,
       modelDegrees: 0,
       modelRaw: '{"rotationDegrees":0}',
-      ocrDegrees: 90,
-      ocrConfidence: 5.2,
-      source: 'ocr-tiebreaker',
+      source: 'model-only',
     });
     rotateImageMock.mockImplementation(async (_buf, degrees) =>
       degrees === 90 ? orientedBuf : Buffer.from(`rotated-${degrees}`)
@@ -76,26 +64,22 @@ describe('runOrientStep', () => {
     expect(result.label).toBe('oriented');
     expect(result.imageBase64).toBe(orientedBuf.toString('base64'));
     expect(result.modelRaw).toBe('{"rotationDegrees":0}');
-    expect(result.meta).toEqual({ rotationDegrees: 90, exifDegrees: 90, modelDegrees: 0, ocrDegrees: 90, ocrConfidence: 5.2, source: 'ocr-tiebreaker' });
+    expect(result.meta).toEqual({ rotationDegrees: 90, exifDegrees: 90, modelDegrees: 0, source: 'model-only' });
 
-    expect(result.candidates).toHaveLength(3);
+    expect(result.candidates).toHaveLength(2);
     const exif = result.candidates!.find(c => c.label === 'exif');
     const model = result.candidates!.find(c => c.label === 'model');
-    const ocr = result.candidates!.find(c => c.label === 'ocr');
     expect(exif).toEqual({ label: 'exif', chosen: true, imageBase64: orientedBuf.toString('base64'), meta: { rotationDegrees: 90 } });
-    expect(ocr).toEqual({ label: 'ocr', chosen: true, imageBase64: orientedBuf.toString('base64'), meta: { rotationDegrees: 90 } });
     expect(model).toEqual({ label: 'model', chosen: false, imageBase64: Buffer.from('rotated-0').toString('base64'), meta: { rotationDegrees: 0 } });
   });
 
-  it('omits the EXIF and OCR candidates when their degrees are null', async () => {
+  it('omits the EXIF candidate when its degrees are null', async () => {
     detectOrientationCascadeMock.mockResolvedValue({
       rotationDegrees: 0,
       exifDegrees: null,
       modelDegrees: 0,
       modelRaw: '{"rotationDegrees":0}',
-      ocrDegrees: null,
-      ocrConfidence: null,
-      source: 'exif+model-agree',
+      source: 'model-only',
     });
     rotateImageMock.mockResolvedValue(orientedBuf);
 
@@ -123,9 +107,7 @@ describe('runOrientStep', () => {
       exifDegrees: 90,
       modelDegrees: 0,
       modelRaw: '{"rotationDegrees":0}',
-      ocrDegrees: null,
-      ocrConfidence: null,
-      source: 'exif+model-agree',
+      source: 'model-only',
     });
     rotateImageMock.mockImplementation(async (_buf, degrees) => {
       if (degrees === 90) return orientedBuf;
@@ -154,9 +136,7 @@ describe('runOrientStep', () => {
       exifDegrees: null,
       modelDegrees: 0,
       modelRaw: '{"rotationDegrees":0}',
-      ocrDegrees: 90,
-      ocrConfidence: 0.9,
-      source: 'ocr-tiebreaker',
+      source: 'model-only',
     });
     rotateImageMock.mockResolvedValue(orientedBuf);
 
@@ -276,79 +256,5 @@ describe('runEnhanceStep', () => {
     const result = await runEnhanceStep(croppedBuf);
 
     expect(result.error).toBe('canvas encode failed');
-  });
-});
-
-describe('runExtractStep', () => {
-  it('prefers PaddleOCR text and returns all 3 candidates with markdown chosen by default', async () => {
-    ocrImageBufferBothEnginesMock.mockResolvedValue({
-      paddleOcr: { text: 'paddle raw text' },
-      tesseract: { text: 'tesseract raw text' },
-    });
-    convertRawTextToZeroLossMarkdownMock.mockResolvedValue('# Extracted\n\npaddle raw text');
-
-    const { runExtractStep } = await import('./image-to-pdf.js');
-    const result = await runExtractStep(finalBuf);
-
-    expect(result.step).toBe(4);
-    expect(result.label).toBe('extracted');
-    expect(result.imageBase64).toBe('');
-    expect(result.markdown).toBe('# Extracted\n\npaddle raw text');
-    expect(result.meta).toEqual({ rawTextLength: 'paddle raw text'.length });
-    expect(convertRawTextToZeroLossMarkdownMock).toHaveBeenCalledWith('paddle raw text', 'vision-lab-diagnostic');
-
-    expect(result.candidates).toEqual([
-      { label: 'markdown', chosen: true, text: '# Extracted\n\npaddle raw text' },
-      { label: 'paddleocr', chosen: false, text: 'paddle raw text', error: undefined },
-      { label: 'tesseract', chosen: false, text: 'tesseract raw text', error: undefined },
-    ]);
-  });
-
-  it('falls back to Tesseract text for markdown when PaddleOCR failed, and surfaces its error as a candidate', async () => {
-    ocrImageBufferBothEnginesMock.mockResolvedValue({
-      paddleOcr: { error: 'PaddleOCR server is unavailable' },
-      tesseract: { text: 'tesseract raw text' },
-    });
-    convertRawTextToZeroLossMarkdownMock.mockResolvedValue('# Extracted\n\ntesseract raw text');
-
-    const { runExtractStep } = await import('./image-to-pdf.js');
-    const result = await runExtractStep(finalBuf);
-
-    expect(convertRawTextToZeroLossMarkdownMock).toHaveBeenCalledWith('tesseract raw text', 'vision-lab-diagnostic');
-    expect(result.candidates).toEqual([
-      { label: 'markdown', chosen: true, text: '# Extracted\n\ntesseract raw text' },
-      { label: 'paddleocr', chosen: false, text: undefined, error: 'PaddleOCR server is unavailable' },
-      { label: 'tesseract', chosen: false, text: 'tesseract raw text', error: undefined },
-    ]);
-  });
-
-  it('records no step-level error when both engines fail — the failures surface on the candidates instead', async () => {
-    ocrImageBufferBothEnginesMock.mockResolvedValue({
-      paddleOcr: { error: 'PaddleOCR server is unavailable' },
-      tesseract: { error: 'Tesseract worker crashed' },
-    });
-    convertRawTextToZeroLossMarkdownMock.mockResolvedValue('');
-
-    const { runExtractStep } = await import('./image-to-pdf.js');
-    const result = await runExtractStep(finalBuf);
-
-    expect(result.error).toBeUndefined();
-    expect(result.meta).toEqual({ rawTextLength: 0 });
-    expect(result.candidates?.find(c => c.label === 'paddleocr')?.error).toBe('PaddleOCR server is unavailable');
-    expect(result.candidates?.find(c => c.label === 'tesseract')?.error).toBe('Tesseract worker crashed');
-  });
-
-  it('records a step-level error when the markdown conversion itself throws', async () => {
-    ocrImageBufferBothEnginesMock.mockResolvedValue({
-      paddleOcr: { text: 'paddle raw text' },
-      tesseract: { text: 'tesseract raw text' },
-    });
-    convertRawTextToZeroLossMarkdownMock.mockRejectedValue(new Error('ollama unreachable'));
-
-    const { runExtractStep } = await import('./image-to-pdf.js');
-    const result = await runExtractStep(finalBuf);
-
-    expect(result.error).toBe('ollama unreachable');
-    expect(result.candidates).toBeUndefined();
   });
 });
