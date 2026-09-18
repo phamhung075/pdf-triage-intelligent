@@ -9,9 +9,7 @@ import { logger } from './logger.js';
 import { CONFIG } from './settings.js';
 import { cleanExtractedText, detectMidWordCapitalizationCorruption, detectThinTextLayer, chooseBestExtraction, type CorruptionSignal } from '../domain/pdf-text.js';
 import { paddleOcrRecognize } from './paddleocr-client.js';
-import { extractPDFContentRemote } from './pdf-extract-remote.js';
-import { isDoclingExtractionConfigured, isDoclingExtractionRequired, extractDoclingContent } from './docling-remote.js';
-import { assessDoclingMarkdown } from '../domain/docling-quality.js';
+import { extractPdf2wContent } from './pdf2w-remote.js';
 
 export interface ExtractedPDF {
   checksum: string;
@@ -25,11 +23,10 @@ export interface ExtractedPDF {
   // for this file (re-analysis) needs to know the new extraction is the degraded one BEFORE it
   // overwrites anything with it. Undefined/false means no OCR ran, or PaddleOCR handled it.
   ocr_degraded?: boolean;
-  // Present only when the Docling structured extractor (DOCLING_SERVICE_URL) ran and its output
-  // passed the quality gate: the layout-aware Markdown with real tables. A caller that converts
-  // raw text to Markdown (the Step C pass in classify-document) can use this directly instead of
-  // asking the LLM to rebuild structure it already has. Undefined = normal extraction, unchanged.
-  docling_markdown?: string;
+  // Present when the pdf2w extraction service (markdown-extract-service) returned its structured
+  // Markdown. A caller that converts raw text to Markdown (the Step C pass in classify-document)
+  // can use this directly instead of asking the LLM to rebuild structure it already has.
+  pdf2w_markdown?: string;
 }
 
 export interface CanvasOcrResult {
@@ -413,12 +410,12 @@ function extractXlsxTextBuffer(buf: Buffer): string {
 /**
  * In-process document extraction: PDF text layer → pdfjs-dist recovery → full-page Canvas render
  * + OCR (PaddleOCR first, Tesseract availability fallback), plus image OCR and DOCX/XLSX/TXT
- * reading. This is the historical extractPDFContent body, kept exported so the Dockerized
- * extraction service (src/extract-service) and any direct caller can invoke it explicitly.
+ * reading. This is the historical extractPDFContent body, kept exported because the Dockerized
+ * extraction service (src/extract-service) still calls it directly.
  *
  * Production callers (triage-scan, relocalize-document, repair-registry) import extractPDFContent
- * — the wrapper below — which delegates here over HTTP when PDF_EXTRACT_SERVICE_URL is set and
- * falls back to this implementation when the service is unreachable.
+ * below, which now delegates every file to the required pdf2w service (see pdf2w-remote.ts) — this
+ * local implementation is no longer on the production path and is scheduled for removal.
  */
 export async function extractPDFContentLocal(filePath: string): Promise<ExtractedPDF> {
   logger.debug('PDF_PARSER', `Reading file & parsing text content`, { filePath });
@@ -667,136 +664,26 @@ export async function extractPDFContentLocal(filePath: string): Promise<Extracte
   };
 }
 
-// ---- Remote-extraction routing --------------------------------------------------------------
+// ---- pdf2w extraction -------------------------------------------------------------------------
 //
-// extractPDFContent() is the seam triage-scan, relocalize-document and repair-registry import, so
-// the microservice split lands here and nowhere else:
-//
-//   - DOCLING_SERVICE_URL set      → PDFs are first offered to the optional Docling structured
-//     extractor (layout-aware Markdown, see src/domain/docling-quality.ts for the gate). When
-//     Docling answers AND its output passes the gate, its text becomes raw_text and its Markdown
-//     rides along as `docling_markdown` (a caller that converts text to Markdown can use it
-//     directly instead of re-running the LLM Step C pass). When Docling is unreachable, errors,
-//     or its output fails the gate (empty/whole-page-picture/garbage), extraction falls through
-//     to the normal chain below — unchanged. DOCLING_SERVICE_REQUIRED=1 turns a Docling
-//     failure into a hard error instead of a fallback.
-//   - PDF_EXTRACT_SERVICE_URL unset  → in-process extraction (unchanged behavior; desktop .exe and
-//     the test suite never notice the split).
-//   - PDF_EXTRACT_SERVICE_URL set    → the whole extraction is delegated over HTTP to the
-//     Dockerized service. If the service is unreachable or errors, the app falls back to
-//     extractPDFContentLocal() with a WARN (throttled to once per 30s — a dead Docker daemon would
-//     otherwise spam one identical warning per file) so documents never strand just because Docker
-//     is down. PDF_EXTRACT_SERVICE_REQUIRED=1 turns that fallback into a hard error instead.
-//
-// The HTTP result is the SAME ExtractedPDF contract, produced by the same code on the other side
-// of the wire, so checksums, dedupe keys, cleaning and ocr_degraded semantics are identical.
-let lastRemoteFallbackWarnAt = 0;
-const REMOTE_FALLBACK_WARN_INTERVAL_MS = 30_000;
-let lastDoclingFallbackWarnAt = 0;
-
-export function isRemoteExtractionConfigured(): boolean {
-  return CONFIG.PDF_EXTRACT_SERVICE_URL.length > 0;
-}
-
-const DOCLING_PDF_EXTENSIONS = new Set(['.pdf']);
-
-/**
- * Tries the optional Docling structured extractor for a PDF. Returns an ExtractedPDF when Docling
- * answered and its output passed the quality gate; null when Docling is not configured, the file
- * is not a PDF, the service is unreachable, or the gate rejected the output — the caller then
- * falls back to the normal chain, byte-for-byte as before.
- */
-async function tryDoclingExtraction(filePath: string): Promise<ExtractedPDF | null> {
-  const ext = path.extname(filePath).toLowerCase();
-  if (!isDoclingExtractionConfigured() || !DOCLING_PDF_EXTENSIONS.has(ext)) return null;
-
-  const filename = path.basename(filePath);
-  let docling;
-  try {
-    docling = await extractDoclingContent(filePath);
-  } catch (err: any) {
-    if (CONFIG.DOCLING_SERVICE_REQUIRED) {
-      throw new Error(`Docling service unreachable (DOCLING_SERVICE_REQUIRED=1) for '${filename}': ${err.message}`);
-    }
-    const now = Date.now();
-    if (now - lastDoclingFallbackWarnAt > REMOTE_FALLBACK_WARN_INTERVAL_MS) {
-      lastDoclingFallbackWarnAt = now;
-      logger.warn(
-        'PDF_PARSER',
-        `Docling service (${CONFIG.DOCLING_SERVICE_URL}) unreachable — falling back to the normal extraction chain: ${err.message}`,
-        { filename }
-      );
-    }
-    return null;
-  }
-
-  const report = assessDoclingMarkdown(docling.markdown);
-  if (!report.pass) {
-    const reasons = report.failures.map(f => f.id).join(', ');
-    if (CONFIG.DOCLING_SERVICE_REQUIRED) {
-      throw new Error(
-        `Docling output rejected by the quality gate (DOCLING_SERVICE_REQUIRED=1) for '${filename}': ${reasons}`
-      );
-    }
-    const now = Date.now();
-    if (now - lastDoclingFallbackWarnAt > REMOTE_FALLBACK_WARN_INTERVAL_MS) {
-      lastDoclingFallbackWarnAt = now;
-      logger.warn(
-        'PDF_PARSER',
-        `Docling output rejected by the quality gate for '${filename}' (${reasons}) — falling back to the normal extraction chain.`,
-        { filename, failures: report.failures.map(f => ({ id: f.id, message: f.message })) }
-      );
-    }
-    return null;
-  }
-
-  logger.info('PDF_PARSER', `Docling structured extraction adopted for '${filename}' (${docling.raw_text.length} chars text, ${docling.markdown.length} chars Markdown)`, {
-    filename,
-    textChars: docling.raw_text.length,
-    markdownChars: docling.markdown.length,
-    numpages: docling.numpages,
-  });
-  return {
-    // Checksum computed locally, not trusted from the service: it is the dedupe key, and local /
-    // remote / docling extraction must all produce the SAME sha256 over the file bytes or the
-    // same physical file would be registered as different documents depending on transport.
-    checksum: crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex'),
-    raw_text: docling.raw_text,
-    numpages: docling.numpages,
-    info: docling.info || {},
-    ocr_degraded: docling.ocr_degraded,
-    docling_markdown: docling.markdown,
-  };
-}
-
+// extractPDFContent() is the seam triage-scan, relocalize-document and repair-registry import.
+// Every file — PDF, photo-derived PDF, office document — is delegated over HTTP to the required
+// self-hosted markdown-extract-service (pdf2w) via pdf2w-remote.ts. There is no in-process
+// fallback: an unreachable service is a hard error for that file (FILE_FAILED), by design (see
+// docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md). extractPDFContentLocal()
+// below is retained only for the legacy extract-service and is no longer on the production path.
 export async function extractPDFContent(filePath: string): Promise<ExtractedPDF> {
-  // Optional Docling layer first (PDFs only). On pass its structured output replaces the normal
-  // extraction; on any failure the chain below runs exactly as if Docling were not configured.
-  const doclingResult = await tryDoclingExtraction(filePath);
-  if (doclingResult) return doclingResult;
-
-  if (!isRemoteExtractionConfigured()) {
-    return extractPDFContentLocal(filePath);
-  }
-
   const filename = path.basename(filePath);
-  try {
-    const remote = await extractPDFContentRemote(filePath);
-    logger.info('PDF_PARSER', `Extraction delegated to ${CONFIG.PDF_EXTRACT_SERVICE_URL} (${remote.raw_text.length} chars)`, { filename });
-    return remote;
-  } catch (err: any) {
-    if (CONFIG.PDF_EXTRACT_SERVICE_REQUIRED) {
-      throw new Error(`PDF extract service unreachable (PDF_EXTRACT_SERVICE_REQUIRED=1) for '${filename}': ${err.message}`);
-    }
-    const now = Date.now();
-    if (now - lastRemoteFallbackWarnAt > REMOTE_FALLBACK_WARN_INTERVAL_MS) {
-      lastRemoteFallbackWarnAt = now;
-      logger.warn(
-        'PDF_PARSER',
-        `PDF extract service (${CONFIG.PDF_EXTRACT_SERVICE_URL}) unreachable — falling back to in-process extraction: ${err.message}`,
-        { filename }
-      );
-    }
-    return extractPDFContentLocal(filePath);
-  }
+  const pdf2w = await extractPdf2wContent(filePath);
+  logger.info('PDF_PARSER', `Extraction delegated to pdf2w (${pdf2w.raw_text.length} chars)`, { filename });
+  return {
+    // Checksum computed locally, not trusted from the service: it is the dedupe key, and every
+    // transport must produce the SAME sha256 over the file bytes or the same physical file would
+    // be registered as different documents depending on transport.
+    checksum: pdf2w.checksum || crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex'),
+    raw_text: cleanExtractedText(pdf2w.raw_text),
+    numpages: pdf2w.numpages,
+    info: pdf2w.info,
+    pdf2w_markdown: pdf2w.pdf2w_markdown,
+  };
 }

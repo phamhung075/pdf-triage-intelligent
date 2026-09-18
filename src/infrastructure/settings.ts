@@ -237,6 +237,28 @@ export const CONFIG = {
     return Number.isFinite(raw) && raw >= 0 ? raw : 0;
   })(),
 
+  // ---- pdf2w extraction service (self-hosted markdown-extract-service) ----------------------
+  // Required, not optional-with-fallback: extractPDFContent() delegates ALL PDF/photo-derived-PDF
+  // extraction here. Unreachable -> hard error (FILE_FAILED). Point this at your own self-hosted
+  // markdown-extract-service instance (see docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md)
+  // — pdf-triage never calls app.pdf2w.com and never writes extraction code of its own.
+  PDF2W_SERVICE_URL: (process.env.PDF2W_SERVICE_URL || '').trim(),
+  PDF2W_SERVICE_TIMEOUT_MS: (() => {
+    const raw = parseInt(process.env.PDF2W_SERVICE_TIMEOUT_MS || '0', 10);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  })(),
+
+  // ---- Canonical-path service (Go, pdf-triage-pdf2w submodule) ------------------------------
+  // Required, not optional-with-fallback: relocalizeFileIfNeeded() calls this for every file
+  // organized after classification. Unreachable -> hard error (FILE_FAILED), matching the
+  // "no local OCR/no local canonical-path fallback" decision in the pdf2w extraction swap design
+  // (docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md).
+  CANONICAL_PATH_SERVICE_URL: (process.env.CANONICAL_PATH_SERVICE_URL || '').trim(),
+  CANONICAL_PATH_SERVICE_TIMEOUT_MS: (() => {
+    const raw = parseInt(process.env.CANONICAL_PATH_SERVICE_TIMEOUT_MS || '0', 10);
+    return Number.isFinite(raw) && raw >= 0 ? raw : 0;
+  })(),
+
   // MCP Streamable HTTP transport (npm run mcp) — lets non-stdio agents (OpenAI Agents SDK,
   // other machines on the LAN) call the same tools stdio-based clients (Claude Desktop/Code)
   // use. Unlike HOST above, this one defaults to LAN-reachable (0.0.0.0) by design — mitigated

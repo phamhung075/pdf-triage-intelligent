@@ -227,10 +227,10 @@ export async function reclassifyAndRelocalizeDocument(
   const extracted = await extractPDFContent(actualPath);
   const freshText = extracted.raw_text || '';
   const storedText = doc.raw_text || '';
-  // Docling structured Markdown, when the fresh extraction adopted it — only usable when the fresh
-  // text is the input actually re-analyzed (the stored text predates Docling, so its markdown must
+  // pdf2w's structured Markdown, when the fresh extraction adopted it — only usable when the fresh
+  // text is the input actually re-analyzed (the stored text predates pdf2w, so its markdown must
   // not replace a markdown built from stored text).
-  const freshDoclingMarkdown = (extracted as { docling_markdown?: string }).docling_markdown;
+  const freshDoclingMarkdown = (extracted as { pdf2w_markdown?: string }).pdf2w_markdown;
 
   // A re-analysis must never make the record WORSE than it already was.
   //

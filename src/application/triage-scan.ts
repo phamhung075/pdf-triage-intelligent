@@ -283,11 +283,11 @@ export async function runTriageScan(
       });
 
       console.log(`Classifying '${file}'...`);
-      // Docling structured Markdown (when adopted for this file) rides along so Step C's LLM
-      // chunk-by-chunk conversion is skipped — the deterministic tables/headings Docling already
+      // pdf2w's structured Markdown (when adopted for this file) rides along so Step C's LLM
+      // chunk-by-chunk conversion is skipped — the deterministic tables/headings pdf2w already
       // produced are exactly what Step C would have asked the model to rebuild. The pre-registration
       // quality gate below still audits raw_text vs markdown_content before anything is registered.
-      const doclingMarkdown = !converted ? (extracted as { docling_markdown?: string }).docling_markdown : undefined;
+      const doclingMarkdown = !converted ? (extracted as { pdf2w_markdown?: string }).pdf2w_markdown : undefined;
       const metadata = doclingMarkdown && doclingMarkdown.trim().length > 0
         ? await classifyPDFText(raw_text, file, undefined, undefined, doclingMarkdown)
         : await classifyPDFText(raw_text, file);

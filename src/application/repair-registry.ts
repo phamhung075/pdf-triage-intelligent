@@ -78,9 +78,9 @@ export async function repairRegistry(onProgress?: (event: any) => void): Promise
       });
       const extractedFile = await extractPDFContent(filePath);
       const { checksum, raw_text } = extractedFile;
-      // When the fresh extraction came from the Docling structured extractor, its deterministic
-      // Markdown rides along so Step C's LLM re-conversion is skipped for re-classified files too.
-      const doclingMarkdown = (extractedFile as { docling_markdown?: string }).docling_markdown;
+      // When the fresh extraction came from pdf2w, its deterministic Markdown rides along so
+      // Step C's LLM re-conversion is skipped for re-classified files too.
+      const doclingMarkdown = (extractedFile as { pdf2w_markdown?: string }).pdf2w_markdown;
 
       const isMissingContent = !raw_text || raw_text.trim().length === 0 || raw_text.includes('[No raw text extracted]');
 
