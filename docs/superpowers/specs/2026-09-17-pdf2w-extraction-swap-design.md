@@ -61,15 +61,30 @@ main pdf-triage app (TypeScript orchestrator: scan loop, classification/Ollama, 
    │     PDF text/table extraction and vision-rescue OCR (Gemini → DeepSeek) for scanned pages
    │     and image-only PDFs. pdf-triage only ever points a URL at it.
    │
-   └─ 2. organize-files: POST /organize  (plain HTTP, new seam)
+   └─ 2. organize-files: POST /canonical-path  (plain HTTP, new seam)
         ▼
      services/pdf-triage-pdf2w/   ← git submodule → https://github.com/pdf-triage-org/pdf-triage-pdf2w
-        NEW Go code, written for pdf-triage specifically: taxonomy resolution (category/
-        subcategory), canonical path computation, pre-move category auto-creation, physical move
-        to __archive/<cat>/<sub>/<year>/. Ported from src/domain/taxonomy.ts + the move step in
-        triage-scan.ts, adapted to take (extracted text/markdown, classification result) as input
-        rather than doing extraction itself.
+        NEW Go code: ONLY computeCanonicalPath (+ its private helpers
+        generateIntelligentFilename/formatEntitySlug/isGenericFilename/sanitizePathSegment) ported
+        from src/domain/taxonomy.ts. This is the one taxonomy.ts function actually in the
+        organize-a-just-classified-file path (called from relocalize-document.ts's
+        relocalizeFileIfNeeded, itself used by both triage-scan's post-classification move and the
+        manual Relocalize UI flow) — a single call per file, tolerant of network latency the same
+        way Golden Rule 9's per-file yield already is.
 ```
+
+**Scoping note — why not port all of `taxonomy.ts`:** the module is imported synchronously in 10
+files, several of them hot paths: `categories-store.ts` runs every subcategory through
+`isForbiddenSubcategory` on every config read, `pdf-scanner.ts` calls `isPathInsideDir` while
+walking directories, `database.ts` calls `detectFileType` per row. Turning those into HTTP round
+trips would be a real performance/complexity regression for no benefit. `isForbiddenSubcategory`,
+`isPathInsideDir`, `isYearString`, `detectFileType`, `findCanonicalCategoryForSubcategory`, and
+`mergeSubcategoryInTaxonomy` **all stay TypeScript, unchanged, in this slice** — a future slice can
+revisit them individually if a concrete reason to move one appears. The pre-move category
+auto-creation (`ensureCategoryAndSubcategoryExist` in `relocalize-document.ts`,
+`saveCategoriesConfig` writes in `classify-document.ts`) also stays TypeScript — it does I/O
+against `.categories.private.json`, which is not pure logic and was never actually proposed to
+move; the earlier draft of this spec listed it under the Go service's job by mistake.
 
 - pdf2w (extraction) is **required, not optional-with-fallback**. Unreachable → `FILE_FAILED` for
   that file, it stays in `__raws`, same posture as an unreachable Ollama today. There is no local
@@ -118,8 +133,8 @@ are unchanged by this design.
 | `services/pdf-triage-pdf2w/` | Git submodule → NEW `pdf-triage-pdf2w` repo; the organize-files Go service (taxonomy resolution, canonical path, archive move) — no extraction code |
 | `.gitmodules` entry | Registers the submodule |
 | `src/infrastructure/pdf2w-remote.ts` | New TS HTTP client to the **self-hosted, unmodified** `markdown-extract-service`: `POST /convert`, raw bytes + filename header, returns `{ markdown, text, numpages, checksum, engine }` — replaces every call site that used `pdf-extract-remote.ts` or `docling-remote.ts` |
-| `src/infrastructure/organize-files-remote.ts` | New TS HTTP client to the new Go service: `POST /organize` with `{ extractedText, classification, filename }` → `{ category, subcategory, canonicalPath }`; the caller (`triage-scan.ts`) then performs the actual `fs.rename`/move using the returned path (the Go service computes and creates folders; whether it or TS performs the final move is an implementation-time detail, not fixed here) |
-| New config in `settings.ts` / `.env.example` | `PDF2W_SERVICE_URL` / `PDF2W_SERVICE_TIMEOUT_MS` for extraction; `ORGANIZE_SERVICE_URL` / `ORGANIZE_SERVICE_TIMEOUT_MS` for the new Go service. Neither has a `_REQUIRED` toggle — both are always required, no optional/fallback mode. |
+| `src/infrastructure/canonical-path-remote.ts` | New TS HTTP client to the new Go service: `POST /canonical-path` with `{ originalPath, category, outputRootDir, subcategory?, dateStr?, title? }` (the exact `computeCanonicalPath` parameter list) → `{ canonicalPath: string }`. Pure request/response, no filesystem access on the Go side. |
+| New config in `settings.ts` / `.env.example` | `PDF2W_SERVICE_URL` / `PDF2W_SERVICE_TIMEOUT_MS` for extraction; `CANONICAL_PATH_SERVICE_URL` / `CANONICAL_PATH_SERVICE_TIMEOUT_MS` for the new Go service. Neither has a `_REQUIRED` toggle — both are always required, no optional/fallback mode. |
 
 Nothing is added to pdf-triage's own `docker-compose.yml` for extraction: `markdown-extract-service`
 runs from its own repo's own compose file, exactly as the current (never-fully-wired) Docling
@@ -133,10 +148,19 @@ shape.
   in-process/remote extract-service chain. New shape: a single call to `pdf2w-remote.ts` for every
   PDF and every photo-derived PDF; no fallback branch, no `tryDoclingExtraction`-style optional
   layer. Unreachable service is a hard error surfaced as `FILE_FAILED`.
-- `triage-scan.ts`: after classification, the current in-process call into
-  `taxonomy.ts`'s `computeCanonicalPath` (+ the pre-move category auto-create + the actual file
-  move) is replaced by a call to `organize-files-remote.ts`. Unreachable service is likewise a
-  hard error surfaced as `FILE_FAILED` — no in-process TypeScript fallback is kept once this ships.
+- `relocalize-document.ts`: `relocalizeFileIfNeeded()` currently imports `computeCanonicalPath`
+  directly from `domain/taxonomy.ts`. It becomes `async` and calls `canonical-path-remote.ts`
+  instead — its only change is where the target path comes from; the atomic-rename logic
+  (`renameAtomicNoOverwrite`), logging, and its two callers (`triage-scan.ts`'s
+  post-classification move, the manual Relocalize HTTP route) are otherwise unchanged, except that
+  callers now need to `await` it. Unreachable service is a hard error — no in-process TypeScript
+  fallback (and no local copy of `computeCanonicalPath` kept "just in case") once this ships.
+- `domain/taxonomy.ts`: `computeCanonicalPath`, `generateIntelligentFilename`, `formatEntitySlug`,
+  `isGenericFilename`, and the private `sanitizePathSegment` are deleted from this file (moved to
+  the Go submodule) once `canonical-path-remote.ts` is wired in and its test parity is confirmed.
+  Every other export in the file (`isForbiddenSubcategory`, `isPathInsideDir`, `isYearString`,
+  `detectFileType`, `findCanonicalCategoryForSubcategory`, `mergeSubcategoryInTaxonomy`) is
+  untouched.
 
 ## Testing
 
@@ -144,10 +168,11 @@ shape.
   `pdf-extractor-routing.test.ts` (extract-service specific), `src/extract-service/app.test.ts`.
 - Add: `pdf2w-remote.test.ts` — success path (adopt markdown/text), unreachable → hard error
   (`FILE_FAILED`, no silent fallback branch to test since none exists).
-- Add: `organize-files-remote.test.ts` — success path (adopt category/subcategory/path),
-  unreachable → hard error. The Go submodule owns its own test suite for the ported taxonomy/path
-  logic (`taxonomy.test.ts`'s existing TS cases are the acceptance reference during the port —
-  same inputs, same outputs, ported not redesigned).
+- Add: `canonical-path-remote.test.ts` — success path (adopt `canonicalPath`), unreachable → hard
+  error. The Go submodule owns its own test suite for the ported `computeCanonicalPath` logic;
+  the existing TS cases for it in `taxonomy.test.ts` are the acceptance reference during the port
+  (same inputs, same outputs, ported not redesigned) and are deleted from `taxonomy.test.ts` only
+  once the Go tests reproduce them and `relocalize-document.ts` is wired to the remote call.
 - Update: `convert-image-document.test.ts`, `image-to-pdf.test.ts`, `image-to-pdf.integration.test.ts`
   for the no-local-OCR photo path (assert OCR is no longer called before assembly, and that the
   assembled PDF is handed to the same `extractPDFContent()` path as any other PDF).
@@ -169,7 +194,14 @@ shape.
 - **New submodule maintenance burden**: pdf-triage now owns a new repo's release/versioning
   (pinned submodule commit for `pdf-triage-pdf2w`), on top of depending on the already-separate
   `markdown-extract-service` project's own deployment.
-- **Porting risk on the organize-files logic**: `computeCanonicalPath` and category auto-creation
-  are security/correctness-sensitive (Golden Rules 4, 5, 7, 8) — a Go port must reproduce their
-  behavior exactly, not just approximately. The existing TS test suite is the acceptance bar (see
-  Testing above); this is real re-implementation risk, not a mechanical transliteration.
+- **Porting risk on `computeCanonicalPath`**: it is security/correctness-sensitive (Golden Rules
+  4, 7, 8 — the path-sanitization comment in `taxonomy.ts` documents a real prior incident where an
+  unsanitized category escaped `OUTPUT_ROOT_DIR`). A Go port must reproduce its behavior exactly,
+  not just approximately. The existing TS test suite (`taxonomy.test.ts`) is the acceptance bar;
+  this is real re-implementation risk, not a mechanical transliteration.
+- **Narrow scope, by design**: only `computeCanonicalPath` (+ private helpers) moves to Go in this
+  slice. `isForbiddenSubcategory`, `isPathInsideDir`, `isYearString`, `detectFileType`,
+  `findCanonicalCategoryForSubcategory`, `mergeSubcategoryInTaxonomy`, and all category
+  auto-creation/persistence stay TypeScript — they are either hot-path (called per file during a
+  directory walk or per DB row) or do I/O against `.categories.private.json`, neither of which
+  benefits from a network hop. A future slice can revisit any of them individually.
