@@ -1,3 +1,6 @@
 [submodule ".agents/deepseek-offload"]
 	path = .agents/deepseek-offload
 	url = https://github.com/phamhung075/deepseek-offload.git
+[submodule "services/pdf-triage-pdf2w"]
+	path = services/pdf-triage-pdf2w
+	url = https://github.com/phamhung075/pdf-triage-pdf2w.git

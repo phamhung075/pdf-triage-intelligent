@@ -50,3 +50,23 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+  # Go canonical-path service (services/pdf-triage-pdf2w submodule) — see
+  # docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md. Required by the main app
+  # (CANONICAL_PATH_SERVICE_URL), no optional fallback.
+  pdf-triage-pdf2w:
+    build:
+      context: ./services/pdf-triage-pdf2w
+    image: pdf-triage/pdf-triage-pdf2w:latest
+    container_name: pdf-triage-pdf2w
+    restart: unless-stopped
+    ports:
+      - "3985:3985"
+    environment:
+      PORT: "3985"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3985/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
