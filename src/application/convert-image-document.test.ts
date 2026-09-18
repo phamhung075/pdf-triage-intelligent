@@ -18,6 +18,11 @@ vi.mock('./image-to-pdf.js', () => ({
   runExtractStep: runExtractStepMock,
 }));
 
+// The photo pipeline gets its text from the same required pdf2w extraction path as every other
+// PDF, after the image-only PDF is assembled — never from local OCR.
+const { extractPDFContentMock } = vi.hoisted(() => ({ extractPDFContentMock: vi.fn() }));
+vi.mock('../infrastructure/pdf-extractor.js', () => ({ extractPDFContent: extractPDFContentMock }));
+
 // The real encoder needs a decodable image; the converter only cares that it returns JPEG bytes,
 // and pdf-lib needs a real JPEG to embed, so a fixed minimal JPEG is substituted.
 const { encodeJpegMock } = vi.hoisted(() => ({ encodeJpegMock: vi.fn() }));
@@ -52,7 +57,7 @@ beforeEach(() => {
   runOrientStepMock.mockImplementation(async (b: Buffer) => step('oriented', b));
   runCropStepMock.mockImplementation(async (b: Buffer) => step('cropped', b));
   runEnhanceStepMock.mockImplementation(async (b: Buffer) => step('enhanced', b));
-  runExtractStepMock.mockResolvedValue({ step: 4, label: 'extracted', imageBase64: '', durationMs: 1, markdown: '# Invoice\n\ntotal 42', candidates: [] });
+  extractPDFContentMock.mockResolvedValue({ checksum: 'pdf-checksum', raw_text: '# Invoice\n\ntotal 42', numpages: 1, info: {} });
 });
 
 afterEach(() => {
@@ -172,10 +177,15 @@ describe('convertImageToPdf', () => {
     expect(fs.readFileSync(path.join(tmpDir, 'photo_1.pdf'), 'utf-8')).toBe('second');
   });
 
-  it('returns the OCR text so the caller never has to OCR the document a second time', async () => {
+  it('gets the text from extractPDFContent on the assembled PDF, not from local OCR', async () => {
     const { convertImageToPdf } = await import('./convert-image-document.js');
+    extractPDFContentMock.mockResolvedValue({ checksum: 'x', raw_text: 'pdf2w extracted text', numpages: 1, info: {} });
+
     const result = await convertImageToPdf(writePhoto());
-    expect(result.rawText).toBe('# Invoice\n\ntotal 42');
+
+    expect(result.rawText).toBe('pdf2w extracted text');
+    expect(extractPDFContentMock).toHaveBeenCalledWith(result.pdfPath);
+    expect(runExtractStepMock).not.toHaveBeenCalled();
   });
 
   it('checksums the PDF, not the discarded photo', async () => {
@@ -186,19 +196,18 @@ describe('convertImageToPdf', () => {
     expect(result.checksum).toBe(pdfHash);
   });
 
-  it('archives the CROPPED page but reads the ENHANCED one', async () => {
+  it('archives the CROPPED page and extracts text from the assembled PDF, never from OCR', async () => {
     const { convertImageToPdf } = await import('./convert-image-document.js');
     const croppedBuf = Buffer.from('cropped-page');
-    const enhancedBuf = Buffer.from('enhanced-for-ocr');
     runCropStepMock.mockResolvedValue(step('cropped', croppedBuf));
-    runEnhanceStepMock.mockResolvedValue(step('enhanced', enhancedBuf));
 
-    await convertImageToPdf(writePhoto());
+    const result = await convertImageToPdf(writePhoto());
 
     // The page that gets encoded for the PDF is the cropped one...
     expect(encodeJpegMock).toHaveBeenCalledWith(croppedBuf, expect.any(Number));
-    // ...while OCR reads the enhanced one.
-    expect(runExtractStepMock).toHaveBeenCalledWith(enhancedBuf);
+    // ...and the text is extracted from that assembled PDF, not from a local OCR pass.
+    expect(extractPDFContentMock).toHaveBeenCalledWith(result.pdfPath);
+    expect(runExtractStepMock).not.toHaveBeenCalled();
   });
 
   it('still produces a PDF when the crop step fails, using the oriented page', async () => {
@@ -225,27 +234,16 @@ describe('convertImageToPdf', () => {
     expect(encodeJpegMock).toHaveBeenCalledWith(TINY_JPEG, expect.any(Number));
   });
 
-  it('archives the PDF even when OCR fails, rather than losing the document', async () => {
+  it('propagates an extraction failure before moving the source, so the photo is not stranded', async () => {
     const { convertImageToPdf } = await import('./convert-image-document.js');
-    runExtractStepMock.mockResolvedValue({ step: 4, label: 'extracted', imageBase64: '', durationMs: 1, error: 'ocr down' });
+    extractPDFContentMock.mockRejectedValue(new Error('PDF2W_SERVICE_URL is not configured'));
+    const photo = writePhoto();
 
-    const result = await convertImageToPdf(writePhoto());
+    await expect(convertImageToPdf(photo)).rejects.toThrow('PDF2W_SERVICE_URL is not configured');
 
-    expect(fs.existsSync(result.pdfPath)).toBe(true);
-    expect(result.rawText).toBe('');
-  });
-
-  it('falls back to raw engine text when markdown conversion produced nothing', async () => {
-    const { convertImageToPdf } = await import('./convert-image-document.js');
-    runExtractStepMock.mockResolvedValue({
-      step: 4, label: 'extracted', imageBase64: '', durationMs: 1, markdown: '',
-      candidates: [
-        { label: 'paddleocr', chosen: false, text: 'paddle raw text' },
-        { label: 'tesseract', chosen: false, text: 'tesseract raw text' },
-      ],
-    });
-    const result = await convertImageToPdf(writePhoto());
-    expect(result.rawText).toBe('paddle raw text');
+    // The PDF was already written, but the source is still in __raws for the next scan to retry.
+    expect(fs.existsSync(path.join(tmpDir, 'photo.pdf'))).toBe(true);
+    expect(fs.existsSync(photo)).toBe(true);
   });
 
   it('NEVER deletes the photo when the PDF cannot be written', async () => {
@@ -337,18 +335,15 @@ describe('convertImageFolderToPdf', () => {
     expect(fs.readFileSync(result.pdfPath).subarray(0, 5).toString()).toBe('%PDF-');
   });
 
-  it('concatenates every page\'s OCR text so the classifier reads the whole document', async () => {
+  it('gets the whole bundle text from extractPDFContent on the assembled PDF', async () => {
     const { convertImageFolderToPdf } = await import('./convert-image-document.js');
-    let page = 0;
-    runExtractStepMock.mockImplementation(async () => {
-      page++;
-      return { step: 4, label: 'extracted', imageBase64: '', durationMs: 1, markdown: `page ${page} text`, candidates: [] };
-    });
+    extractPDFContentMock.mockResolvedValue({ checksum: 'bundle-checksum', raw_text: 'page 1 text\n\n---\n\npage 2 text', numpages: 2, info: {} });
 
     const result = await convertImageFolderToPdf(bundle('facture', ['a.jpg', 'b.jpg']));
 
-    expect(result.rawText).toContain('page 1 text');
-    expect(result.rawText).toContain('page 2 text');
+    expect(result.rawText).toBe('page 1 text\n\n---\n\npage 2 text');
+    expect(extractPDFContentMock).toHaveBeenCalledWith(result.pdfPath);
+    expect(runExtractStepMock).not.toHaveBeenCalled();
   });
 
   it('keeps the source pages together under .delete_files/img_converted/<folder>/', async () => {

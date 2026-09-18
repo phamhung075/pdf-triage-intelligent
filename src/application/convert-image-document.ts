@@ -2,7 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { PDFDocument } from 'pdf-lib';
-import { runOrientStep, runCropStep, runEnhanceStep, runExtractStep } from './image-to-pdf.js';
+import { runOrientStep, runCropStep, runEnhanceStep } from './image-to-pdf.js';
+import { extractPDFContent } from '../infrastructure/pdf-extractor.js';
 import { encodeJpeg } from '../infrastructure/image-processor.js';
 import { fitImageToA4 } from '../domain/pdf-page-fit.js';
 import { logger } from '../infrastructure/logger.js';
@@ -51,26 +52,27 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-// Turns one photographed document into the PDF that gets archived in its place, and returns the OCR
-// text alongside it.
+// Turns one photographed document into the PDF that gets archived in its place, and returns the
+// extracted text alongside it.
 //
-// WHY THE TEXT COMES BACK FROM HERE. The pipeline already reads the page to produce that text, on
-// the enhanced image, which is the best version to read. If this returned only a path, the caller
-// would hand the fresh PDF to extractPDFContent, find no text layer in it, render the page back to
-// a bitmap and OCR the very same document a second time — 15-30s of duplicated work per file. So
-// the text is carried out in memory and the caller skips extraction entirely.
+// TEXT COMES FROM pdf2w AFTER ASSEMBLY. The pipeline is orient -> crop -> enhance -> assemble the
+// image-only A4 PDF, then that fresh PDF is handed to extractPDFContent(), the same required pdf2w
+// path every other PDF takes. There is no local OCR any more: pdf2w finds no text layer in the
+// assembled image-only PDF and runs its own vision-rescue. This costs one extra HTTP round-trip per
+// photo (accepted by docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md) and means
+// photos and scanned PDFs get their text from exactly one place.
 //
 // WHICH IMAGE GOES ON THE PAGE. The CROPPED one, not the enhanced one. Enhancement exists to make
-// glyphs separable for OCR (it pushes contrast hard and sharpens), and that treatment can crush
-// faint stamps and signatures — fine for a machine that is about to throw the pixels away, wrong
-// for the copy of a document being kept for years. OCR still reads the enhanced version; only the
-// archived page is the natural-toned one.
+// glyphs separable for a reader (it pushes contrast hard and sharpens), and that treatment can
+// crush faint stamps and signatures — fine for a machine that is about to throw the pixels away,
+// wrong for the copy of a document being kept for years. Only the archived page is the
+// natural-toned one.
 //
 // FAILURE IS NEVER DESTRUCTIVE. Each stage degrades to the best buffer produced so far, so a failed
 // crop still yields an upright PDF and a failed orientation still yields the original photo as a
 // PDF. If the PDF cannot be written at all this throws and the original file is left exactly where
-// it was, for the caller to fall back on. The source image is deleted only after the PDF is
-// confirmed on disk.
+// it was, for the caller to fall back on. The source image is moved to the trash only after the
+// PDF is confirmed on disk AND its text has been extracted.
 /**
  * Moves a converted source photograph into __raws/.delete_files/img_converted/.
  *
@@ -111,17 +113,19 @@ function moveConvertedSourceToTrash(imagePath: string, groupName?: string): stri
 }
 
 /**
- * Runs one photograph through the full vision pipeline and returns the page image plus its text.
+ * Runs one photograph through the orientation, crop and enhancement stages and returns the page
+ * image. Text is no longer produced here — the caller hands the assembled PDF to
+ * extractPDFContent() once it is on disk.
  *
  * Every stage degrades gracefully: orientation, crop and enhancement each either improve the
  * buffer or leave it untouched, so there is always something publishable no matter how far the
- * pipeline gets. `pageJpeg` is what gets archived (the CROPPED page, natural tones); the enhanced
- * page only ever feeds OCR and is never archived.
+ * pipeline gets. The returned JPEG is what gets archived (the CROPPED page, natural tones); the
+ * enhanced buffer is never archived.
  */
 async function renderPageFromImage(
   imagePath: string,
   docLog: ReturnType<typeof logger.forDocument>
-): Promise<{ pageJpeg: Buffer; rawText: string }> {
+): Promise<Buffer> {
   const filename = path.basename(imagePath);
   const imageBuffer = fs.readFileSync(imagePath);
 
@@ -141,28 +145,15 @@ async function renderPageFromImage(
     pageBuffer = Buffer.from(cropped.imageBase64, 'base64');
   }
 
-  let readBuffer = pageBuffer;
+  // Enhancement remains a pipeline stage (Golden Rule 17 governs the geometry stages), but its
+  // output is no longer read by anything: pdf2w does its own vision-rescue against the assembled,
+  // natural-toned page. Keep reporting its failures so a broken canvas path stays visible.
   const enhanced = await runEnhanceStep(pageBuffer);
   if (enhanced.error || !enhanced.imageBase64) {
-    docLog.warn('IMG2PDF', `Enhancement failed, running OCR on the unenhanced page: ${enhanced.error}`, { filename });
-  } else {
-    readBuffer = Buffer.from(enhanced.imageBase64, 'base64');
+    docLog.warn('IMG2PDF', `Enhancement failed: ${enhanced.error}`, { filename });
   }
 
-  let rawText = '';
-  const extracted = await runExtractStep(readBuffer);
-  if (extracted.error) {
-    docLog.warn('IMG2PDF', `OCR failed; the page will be archived without text: ${extracted.error}`, { filename });
-  } else {
-    // runExtractStep prefers PaddleOCR's text and falls back to Tesseract, then converts to
-    // markdown. Prefer the markdown, since that is what the classifier and the registry consume.
-    const paddleOrTesseract = extracted.candidates?.find((c) => c.label === 'paddleocr' && c.text)?.text
-      ?? extracted.candidates?.find((c) => c.label === 'tesseract' && c.text)?.text
-      ?? '';
-    rawText = (extracted.markdown || paddleOrTesseract || '').trim();
-  }
-
-  return { pageJpeg: await encodeJpeg(pageBuffer, ARCHIVE_JPEG_QUALITY), rawText };
+  return encodeJpeg(pageBuffer, ARCHIVE_JPEG_QUALITY);
 }
 
 /** Assembles rendered pages into one PDF, each fitted to A4. */
@@ -274,7 +265,7 @@ export async function convertImageToPdf(imagePath: string): Promise<ConvertedIma
   const filename = path.basename(imagePath);
   const docLog = logger.forDocument(filename);
 
-  const { pageJpeg, rawText } = await renderPageFromImage(imagePath, docLog);
+  const pageJpeg = await renderPageFromImage(imagePath, docLog);
   const pdfBytes = await buildPdfFromPages([pageJpeg]);
 
   // The PDF is written BEFORE the source is touched — the reverse order would lose the document
@@ -285,6 +276,11 @@ export async function convertImageToPdf(imagePath: string): Promise<ConvertedIma
     pdfBytes,
     imagePath
   );
+
+  // The text comes from the required pdf2w service, on the assembled image-only PDF — the same
+  // path every other PDF takes. A failure here is a hard error (no local OCR fallback) and is
+  // raised before the source is moved, so the photo is still in place for the next scan to retry.
+  const { raw_text: rawText } = await extractPDFContent(pdfPath);
 
   let sourceImagePath = '';
   try {
@@ -317,8 +313,8 @@ export async function convertImageToPdf(imagePath: string): Promise<ConvertedIma
  * A folder is how a phone photo batch of a multi-page document actually arrives, so
  * `__raws/contrat-bail/` holding three photos becomes a single three-page document rather than
  * three unrelated one-page ones. Pages follow sortImagePagesNaturally() (numeric-aware), the
- * folder name becomes the PDF name, and each page's OCR text is concatenated so the classifier
- * reads the whole document at once.
+ * folder name becomes the PDF name, and the assembled bundle PDF is handed to extractPDFContent()
+ * (pdf2w) so the classifier reads the whole document at once.
  *
  * Ordering matches the single-photo path: the PDF is written first, and only then are the sources
  * moved to .delete_files/img_converted/<folder>/ — keeping the pages grouped there too, so a bad
@@ -334,15 +330,15 @@ export async function convertImageFolderToPdf(folderPath: string): Promise<Conve
   }
 
   const pages: Buffer[] = [];
-  const pageTexts: string[] = [];
   for (const imagePath of imagePaths) {
-    const { pageJpeg, rawText } = await renderPageFromImage(imagePath, docLog);
-    pages.push(pageJpeg);
-    if (rawText) pageTexts.push(rawText);
+    pages.push(await renderPageFromImage(imagePath, docLog));
   }
 
   const pdfBytes = await buildPdfFromPages(pages);
   const pdfPath = writePdfWithoutOverwriting(path.dirname(folderPath), folderName, pdfBytes, folderPath);
+
+  // Same as the single-photo path: the assembled bundle PDF is handed to pdf2w for its text.
+  const { raw_text: rawText } = await extractPDFContent(pdfPath);
 
   // For a bundle the whole folder is the source, so record the directory rather than one page.
   let sourceImagePath = '';
@@ -369,9 +365,6 @@ export async function convertImageFolderToPdf(folderPath: string): Promise<Conve
   }
 
   const checksum = crypto.createHash('sha256').update(pdfBytes).digest('hex');
-  // A horizontal rule between pages: valid Markdown, and it stops the last line of one page from
-  // being glued onto the first line of the next when the classifier reads the text.
-  const rawText = pageTexts.join('\n\n---\n\n');
 
   docLog.info('IMG2PDF', `Bundled ${pages.length} photos into one archivable PDF`, {
     folderPath,
