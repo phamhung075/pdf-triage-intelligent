@@ -10,6 +10,13 @@ One kind of design doc lives here. An **Agent Note** records a decision that aff
 
 An Agent Note is a design discussion record, not a status report. If nothing was given up and no alternative was plausible, the decision does not need one.
 
+## Index
+
+| Note | Status | Covers |
+| --- | --- | --- |
+| [retire the TypeScript backend for one Go binary](implemented/architecture/2026-09-19-go-backend-cutover.md) | implemented | The Go cutover: what changed, what was given up, the TypeScript→Go package map, operating rules. |
+| [adopt repository-owned agent skills and Agent Notes](implemented/process/2026-09-16-adopt-agent-skills-and-notes.md) | implemented | The `.agents/skills` and `.agents/notes` system itself. |
+
 ## Layout and naming
 
 Every Agent Note encodes two axes in its **path**: `{lifecycle}/{class}/yyyy-mm-dd-topic-title.md`.

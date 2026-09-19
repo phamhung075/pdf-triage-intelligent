@@ -39,7 +39,9 @@ Bank-specific statement filename codes and account-product names are personal, s
 
 → `category = bank`, `subcategory = <bank_slug>` (`credit_mutuel`, `societe_generale`, …).
 
-`bank` is what both code paths actually produce: `DOMAIN_CATEGORY_MAP.banks` in [`src/domain/classification.ts`](../../src/domain/classification.ts) maps the dictionary's `banks` domain to `bank`, and the archive on disk is filed as `bank/bnp_paribas`, `bank/credit_mutuel`. This step previously documented `administrative`, which no path has ever emitted.
+`bank` is what both code paths actually produce: `DOMAIN_CATEGORY_MAP.banks` in the `classification` package
+(`services/pdf-triage-pdf2w/classification`) maps the dictionary's `banks` domain to
+`bank`, and the archive on disk is filed as `bank/bnp_paribas`, `bank/credit_mutuel`. This step previously documented `administrative`, which no path has ever emitted.
 
 ⚠️ **Ignore vendor names inside transaction rows** (SFR, PayPal, Amazon, Lidl). Header wins.
 

@@ -12,23 +12,29 @@ Only Qwen 3.5 is supported. Legacy models (`qwen2.5:7b`, `deepseek-r1:8b`) were 
 
 ## Ensuring the model is present
 
-`ensureOllamaModel()` in `src/infrastructure/ollama-client.ts`:
+`ensureOllamaModel()` in the `infra/ollama` package (`services/pdf-triage-pdf2w/infra/ollama`):
 
-1. `ollama.list()` — check if a model whose name starts with or includes `qwen3.5:9b` is loaded.
-2. If not, `ollama.pull()` it.
-3. If the whole call fails, auto-spawn `ollama serve` via `child_process.exec` (Windows), wait 2 s, retry list.
+1. List models — check if a model whose name starts with or includes `qwen3.5:9b` is loaded.
+2. If not, pull it.
+3. If the whole call fails, auto-spawn `ollama serve`, wait 2 s, retry list.
 
 ## Classify call parameters
 
 ```ts
-await ollama.generate({
+// the classification request the Go client posts, exactly:
+{
   model: CONFIG.OLLAMA_MODEL,
   system: systemPrompt,   // massive taxonomy + 13-step flow
   prompt: userPrompt,     // filename + text snippet + optional previousError
   format: 'json',
-  options: { temperature: 0.1 }
-});
+  think: false,
+  options: { temperature: 0.1, num_ctx: 16384, num_predict: 4096 },
+  stream: false
+}
 ```
+
+The truncation check is preserved: a response with `done_reason == "length"` is treated as
+truncated. Text chat (Step C) uses the same shape with `temperature: 0.2` and no `format`.
 
 Text is truncated to 4000 chars before sending (`textSnippet`).
 
@@ -43,8 +49,8 @@ model's unparseable JSON, not for an unreachable one.
   extraction, no OCR, no classification, no move). If it fails, it emits an `OLLAMA_DOWN` SSE event
   (broadcast to the UI, cooldown 60 s so the 10 s watcher cannot spam toasts) and returns an empty
   result with `ollamaDown: true`.
-- `classifyPDFText()` throws `OllamaUnavailableError` (`src/infrastructure/ollama-client.ts`) when
-  the capability check fails or a completion call hits a connection-level error; the catch block
+- `classifyPDFText()` surfaces `OllamaUnavailableError` (typed in the `infra/ollama` package) when
+  the capability check fails or a completion call hits a connection-level error; the caller
   rethrows it instead of falling back. Triage and Repair catch it per file and block the file in
   `__raws` with the reminder; Relocalize surfaces it as a 500 with the same message.
 - The UI shows the reminder in the scan-progress modal header and as a toast, and refreshes the
@@ -53,7 +59,7 @@ model's unparseable JSON, not for an unreachable one.
 ## Step C — chunked Markdown conversion
 
 `markdown_content` is **not** produced by the classification call. `convertRawTextToZeroLossMarkdown()`
-(`src/application/classify-document.ts`) runs its own pass before Step D:
+(`app/classify`) runs its own pass before Step D:
 
 1. `chunkText(rawText, 1400)` splits the raw text on line boundaries into ~1400-char chunks.
 2. Each chunk goes to `requestTextChatCompletion` — **not** `requestClassificationCompletion`.
@@ -78,7 +84,7 @@ archived documents carry at least one malformed table block (ragged rows, a tabl
 mid-block, or an orphan) — dense grid layouts like payslips are the worst affected.
 
 One more failure shape is repaired deterministically at the assembled level (see
-`reattachHeadingSplitTableRows` in `src/domain/markdown-tables.ts`): when prose — usually a footnote
+`reattachHeadingSplitTableRows` in the `markdowntables` package): when prose — usually a footnote
 caption — sits between a table's rows across a chunk boundary, the model may promote each
 continuation row's first cell to a Markdown heading (`## Base - 03kVA - du 01/02/26 au 16/05/26`
 above a lone `| 9,16 | 31,62 | 20,0% |`), leaving the row one cell short of its header. Doc 5009's
@@ -113,7 +119,7 @@ chunks were lost, not merely unconverted — grep `[STEP C]` for that document.
 - Slice from first `{` to last `}`.
 - Remove trailing commas.
 - `JSON.parse`.
-- Validate with `DocumentMetadataSchema.parse` (Zod).
+- Validate with the `documentschema` package's `DocumentMetadata` parser.
 
 If any of these fail → fall back to `ruleBasedClassify()` and construct a `DocumentMetadata` from its output.
 
@@ -122,20 +128,20 @@ If any of these fail → fall back to `ruleBasedClassify()` and construct a `Doc
 After parse, the code corrects:
 - If `categorie` is `personal`/`other` or `subcategorie` is `general`, re-run the rule-based classifier and merge in.
 - If AI returned `correspondence` but the filename smells like tax, prefer the rule-based `administrative`.
-- Defense-in-depth date guard: if `date` is in the future relative to today and looks like an OCR two-digit-year misread that contradicts the year stated in `titre` (e.g. "30/11/26" misread from "30/11/25"), `reconcileDocumentDate()` (`src/domain/classification.ts`) corrects `date` back to the titre's year and logs a warning. This backstops the prompt-level guard below — the future-dated value would otherwise sort a document as newer than it is anywhere `date` drives ordering (e.g. `ai-chat-assistant.ts`'s "N last pay slips" queries).
+- Defense-in-depth date guard: if `date` is in the future relative to today and looks like an OCR two-digit-year misread that contradicts the year stated in `titre` (e.g. "30/11/26" misread from "30/11/25"), `reconcileDocumentDate()` (`classification` package) corrects `date` back to the titre's year and logs a warning. This backstops the prompt-level guard below — the future-dated value would otherwise sort a document as newer than it is anywhere `date` drives ordering (e.g. the chat assistant's "N last pay slips" queries).
 
 ## Dynamic taxonomy update
 
 Before returning `validated`:
 1. Normalize the category slug (`normalizeSlug`).
-2. If the category is not in the merged taxonomy (id or alias), append a new entry with sensible name/description, `saveCategoriesConfig()` (which triggers `CATEGORIES_UPDATED` SSE). The merged taxonomy is `categories.json` + `.categories.private.json`; the write lands in the **private** file only (Golden Rule #5).
+2. If the category is not in the merged taxonomy (id or alias), append a new entry with sensible name/description and save it through the `store/categories` package (which triggers `CATEGORIES_UPDATED` SSE). The merged taxonomy is `categories.json` + `.categories.private.json`; the write lands in the **private** file only (Golden Rule #5).
 3. Do the same for the subcategory. Strip trailing 4–8 digit chunks that leak dates. If the slug is a year (`/^\d{4}$/`), coerce to `general` (this then trips the strict fail guard elsewhere).
 
 ## The system prompt
 
 Encodes the entire [classification-flow](../workflows/classification-flow.md). Any change to the priority order must be mirrored there and in `ruleBasedClassify()` — the two must stay logically aligned.
 
-`buildClassificationPrompt()` (`src/domain/prompt.ts`) also takes a `now: Date` (default `new Date()`) and injects `{{CURRENT_DATE}}` — formatted by `formatLocalDate()` using local calendar fields, not `toISOString()`, to avoid a UTC-shift date-off-by-one for timezones ahead of UTC — into `prompts/formatting_rules.md`. This grounds the model in today's date so it can reject an ambiguous two-digit-year date that would land in the future or contradict the document's stated period, and reminds it not to conflate the document's own issuance date (`date`) with a validity/expiration date (`expiry_date`).
+`buildClassificationPrompt()` (`prompt` package) also takes a `now` time and injects `{{CURRENT_DATE}}` — formatted from local calendar fields, not UTC, to avoid a date-off-by-one for timezones ahead of UTC — into `prompts/formatting_rules.md`. This grounds the model in today's date so it can reject an ambiguous two-digit-year date that would land in the future or contradict the document's stated period, and reminds it not to conflate the document's own issuance date (`date`) with a validity/expiration date (`expiry_date`).
 
 ## Personal prompt overlay
 
@@ -165,7 +171,7 @@ This is the feedback-teaches-AI loop (Golden Rule #18).
 
 ## Embeddings
 
-`generateEmbedding(text)` calls `ollama.embeddings({ model: nomic-embed-text, prompt: text.substring(0, 1000) })`. On any error → `[]`. Stored as JSON in `documents.embedding`. Currently not used for search (search is FTS5 keyword-only), but reserved for future hybrid mode.
+`generateEmbedding(text)` (in `infra/ollama`) calls the Ollama embeddings endpoint with `nomic-embed-text` and the first 1000 characters. On any error → empty vector. Stored as JSON in `documents.embedding`. Currently not used for search (search is FTS5 keyword-only), but reserved for future hybrid mode.
 
 ## Health endpoints
 

@@ -14,7 +14,7 @@ Scan **ONLY** inside `CONFIG.INPUT_DIR` (`__raws`). Never walk parents, siblings
 
 ## 2. Server control
 
-**NEVER** run `npm run dev` yourself. Always instruct the user to run/restart it in their own terminal. If a stale process (e.g. from a different worktree) still holds the port, the dev server now auto-kills it and retries once — see [Server startup and port takeover](./architecture.md#server-startup-and-port-takeover) — this doesn't change who runs the command.
+**NEVER** start the `pdf-triage` server binary (`./dist/pdf-triage serve`) or `make dev` / `air`, or any other long-running process, yourself — and never run a built binary bare (`./dist/pdf-triage` defaults to `serve`). Always instruct the user to run/restart it in their own terminal. If a stale process (e.g. from a different worktree) still holds the port, the Go server auto-kills it and retries once — see [Server startup and port takeover](./architecture.md#server-startup-and-port-takeover) — this doesn't change who runs the command. Run `go test` instead of starting anything.
 
 ## 3. No-text guard
 
@@ -28,7 +28,7 @@ If AI resolves to an empty / `general` / `other` / `divers` / year-string subcat
 
 BEFORE moving a file, the missing category or subcategory MUST be registered in the taxonomy (idempotent). Never construct folders for a slug the taxonomy doesn't know yet.
 
-The write target is **`.categories.private.json`, never the committed `categories.json`** — see `saveCategoriesConfig` in [`src/infrastructure/categories-store.ts`](../../src/infrastructure/categories-store.ts), which diffs the merged config against the public file and persists only the difference to the private overlay. `categories.json` stays a generic, shareable starter taxonomy; `.categories.private.json` is gitignored and accumulates the real subcategories derived from your own documents. Reads always see the two merged, so "is this slug in the taxonomy?" means the merged view, not the committed file alone.
+The write target is **`.categories.private.json`, never the committed `categories.json`** — see the `store/categories` package (`services/pdf-triage-pdf2w/store/categories`), whose save path diffs the merged config against the public file and persists only the difference to the private overlay. `categories.json` stays a generic, shareable starter taxonomy; `.categories.private.json` is gitignored and accumulates the real subcategories derived from your own documents. Reads always see the two merged, so "is this slug in the taxonomy?" means the merged view, not the committed file alone.
 
 ## 6. Deep semantic reading over keywords
 
@@ -46,7 +46,7 @@ Subcategory may be multi-level (`<school_slug>/bachelor`).
 
 ## 9. Sequential non-blocking scan
 
-Files are processed **one by one**. Yield to the event loop between files: `await new Promise(r => setTimeout(r, 50))`. Never `Promise.all` the pipeline.
+Files are processed **one by one**. Yield between files (the Go scan loop pauses ~50 ms per file so SSE and HTTP stay responsive). Never run the pipeline concurrently.
 
 ## 10. Live SSE on every mutation
 
@@ -86,7 +86,7 @@ When a user relocalizes via the modal with an explicit reason (`Why Category Wro
 
 ## 19. Never invent field names
 
-Zod schemas in `src/domain/document.schema.ts` are the contract. All AI JSON output MUST validate via `DocumentMetadataSchema`. Both `categorie` (French) and `subcategorie` are the canonical keys in the AI payload; DB columns are `category`/`subcategory` (English).
+The `documentschema` package (`services/pdf-triage-pdf2w/documentschema`) is the contract. All AI JSON output MUST validate via its `DocumentMetadata` parser. Both `categorie` (French) and `subcategorie` are the canonical keys in the AI payload; DB columns are `category`/`subcategory` (English).
 
 ## 20. Determinism where it counts
 
@@ -98,8 +98,8 @@ Zod schemas in `src/domain/document.schema.ts` are the contract. All AI JSON out
 
 A POSIX `/mnt/...` path must **never** be handed to a Windows program (Windows Explorer, Google Chrome) — it cannot resolve it and silently falls back to `C:\Users\<user>\Documents` (this happened: "Open Incoming / Open Archive" opened Documents). The reverse also happened: a Windows-form path in `settings.json` made Node create literal `\mnt\C:\...` folders on Linux.
 
-- Paths the app's own fs reads/writes on WSL are `/mnt/<drive>/...` form; config paths are normalized at load via `windowsToWslPath` (`src/domain/path-conversion.ts`).
+- Paths the app's own fs reads/writes on WSL are `/mnt/<drive>/...` form; config paths are normalized at load via `windowsToWslPath` (`pathconv` package, `services/pdf-triage-pdf2w/pathconv`).
 - Paths handed to Windows programs are `X:\...` form, converted via `wslToWindowsPath`.
-- ALL OS launching (file manager, Chrome) lives in `src/infrastructure/os-open.ts` — never spawn `explorer.exe` / `chrome.exe` / the Linux file opener anywhere else.
-- `os-open.hygiene.test.ts` fails the build if a launcher-executable literal appears outside `os-open.ts`.
+- ALL OS launching (file manager, Chrome) lives in the `infra/osopen` package (`services/pdf-triage-pdf2w/infra/osopen`) — never spawn `explorer.exe` / `chrome.exe` / the Linux file opener anywhere else.
+- `infra/osopen/osopen_hygiene_test.go` fails the build if a launcher-executable literal appears outside `infra/osopen`.
 

@@ -1,7 +1,7 @@
 # 🔀 Service Split Plan — img→PDF packaging + file→Markdown extraction (SUPERSEDED)
 
 > **Status: SUPERSEDED (2026-09-18).** This plan's Service B (the app-side Docling wiring —
-> `DOCLING_SERVICE_URL`, `src/infrastructure/docling-remote.ts`, `src/domain/docling-quality.ts`)
+> `DOCLING_SERVICE_URL` plus its TypeScript client and quality-gate modules)
 > was removed outright, not routed office files as step 2 below assumed. pdf-triage now calls
 > `markdown-extract-service` (pdf2w) directly for extraction, with **no app-side quality gate and
 > no fallback to an in-process/LLM chain** — a different, simpler integration than this document's
@@ -17,10 +17,10 @@
 > tables, decisions, or roadmap below as current behavior.
 >
 > Original status note (2026-09-04, now historical): Service B DEPLOYED as its own project (step 1),
-> Service A DESIGNED + SPIKED only. Service B lived in a **separate git repo**:
-> `/home/daihu/__projects__/markdown-extract-service` (code + Dockerfile + own docker-compose.yml on
-> :3984, models baked at build). App-side PDF routing was unchanged from the already-measured
-> Docling wiring (the app only ever sent `.pdf`); office-file routing was step 2 below, never wired.
+> Service A DESIGNED + SPIKED only. Service B lived in a **separate git repo** (code + Dockerfile +
+> own docker-compose.yml on :3984, models baked at build). App-side PDF routing was unchanged from
+> the already-measured Docling wiring (the app only ever sent `.pdf`); office-file routing was step
+> 2 below, never wired.
 > Service A was spike-proven (7/7 byte parity) but intentionally not wired — see decision 1. The
 > working spikes are recorded in `.spike/split-spike-report.md`.
 
@@ -212,7 +212,7 @@ Readings:
 | Service | Port | Env (app side) | Image | Status |
 | --- | --- | --- | --- | --- |
 | pdf-extract (existing) | 3981 | `PDF_EXTRACT_SERVICE_URL` | `pdf-triage/pdf-extract` (Dockerfile.extract-service) | live (in-repo compose) |
-| markdown-extract (B) | 3984 | `DOCLING_SERVICE_URL` (existing seam) | `markdown-extract-service:latest` | shipped — separate repo `/home/daihu/__projects__/markdown-extract-service`, own compose there |
+| markdown-extract (B) | 3984 | `DOCLING_SERVICE_URL` (existing seam) | `markdown-extract-service:latest` | shipped — separate repo, own compose there |
 | raster-pdf (A) | 3983 | `IMAGE_PDF_SERVICE_URL` (name fixed by decision 3) | `Dockerfile.raster-pdf` (not written) | deferred to roadmap step 3/4 |
 
 Service B reuses the already-shipped `DOCLING_SERVICE_URL`/`DOCLING_SERVICE_REQUIRED`/`_TIMEOUT_MS`
@@ -238,8 +238,8 @@ Service B as its own Python image; revisit the extract-service image separately.
 ## Roadmap
 
 1. **Ship B as-is — DONE (2026-09-04), since extracted to its own repo (2026-09-04).** The service
-   started as `docling-markdown-server/` in this repo, then moved to the standalone project
-   `/home/daihu/__projects__/markdown-extract-service` for independent development. It answers
+   started as `docling-markdown-server/` in this repo, then moved to its own standalone project
+   for independent development. It answers
    `POST /extract` (what `docling-remote.ts` calls) and `POST /to-markdown`; extension-routed:
    `.pdf` → layout + table + RapidOCR pipeline, `.docx/.xlsx/.pptx/.html/.md/.txt/.asciidoc` →
    Docling native readers, anything else → `415`. Its Dockerfile bakes the models at build; its own

@@ -4,7 +4,7 @@ Three storage surfaces, one truth (SQLite), two mirrors (JSON registry, categori
 
 ## `documents` table
 
-Primary record. Created in `src/infrastructure/db/database.ts` `initSchema()`.
+Primary record. Created by `initSchema()` in the `store/database` package (`services/pdf-triage-pdf2w/store/database`) — the only package that runs raw SQL.
 
 | Column              | Type     | Notes                                             |
 | ------------------- | -------- | ------------------------------------------------- |
@@ -33,7 +33,7 @@ Primary record. Created in `src/infrastructure/db/database.ts` `initSchema()`.
 
 ## `documents_fts` (FTS5, optional)
 
-Created with a `try/catch` — some SQLite builds lack FTS5.
+Created with a guarded attempt — some SQLite builds lack FTS5.
 
 Columns (all TEXT except `doc_id UNINDEXED`):
 `doc_id, title, original_filename, original_path, new_path, registre, summary, category, subcategory, tags, raw_text`
@@ -75,13 +75,13 @@ Skip-cache for permanently unprocessable files in `__raws`, so `runTriageScan` d
 | `size`           | INTEGER  | File size in bytes — cache key, paired with `mtime_ms`    |
 | `blocked_at`     | DATETIME | ISO, set on insert and refreshed on every re-upsert        |
 
-Four helpers in `src/infrastructure/db/database.ts`: `getBlockedFile(originalPath)`, `upsertBlockedFile(entry)` (upsert keyed on `original_path`), `deleteBlockedFile(originalPath)`, `pruneBlockedFiles(existingPaths)` (deletes rows whose path is no longer in `__raws`).
+Four helpers in `store/database`: `getBlockedFile(originalPath)`, `upsertBlockedFile(entry)` (upsert keyed on `original_path`), `deleteBlockedFile(originalPath)`, `pruneBlockedFiles(existingPaths)` (deletes rows whose path is no longer in `__raws`).
 
 Used by `runTriageScan` — see [Triage Pipeline](../workflows/triage-pipeline.md) for the full skip/retry flow: matching `mtime_ms`+`size` skips re-processing entirely and replays the stored `message`; a mismatch deletes the row and retries fresh; `pruneBlockedFiles` runs once per scan before the per-file loop.
 
 ## `categories.json` schema
 
-Validated by `CategoriesConfigSchema` (Zod). Structure:
+Validated by the `store/categories` parser. Structure:
 
 ```jsonc
 {
@@ -122,7 +122,7 @@ Purpose: external consumers, backups, human diff-friendly view. Never used by th
 
 ## AI JSON contract (`DocumentMetadata`)
 
-Emitted by `classifyPDFText()`; validated by `DocumentMetadataSchema` (Zod). Uses French keys `categorie`/`subcategorie`:
+Emitted by `classifyPDFText()`; validated by the `documentschema` package (`services/pdf-triage-pdf2w/documentschema`). Uses French keys `categorie`/`subcategorie`:
 
 ```jsonc
 {
@@ -140,7 +140,7 @@ Emitted by `classifyPDFText()`; validated by `DocumentMetadataSchema` (Zod). Use
 
 ## `settings.json`
 
-Runtime-mutable subset of `CONFIG`, written via `updateConfig()`:
+Runtime-mutable subset of `CONFIG`, written via the `infra/settings` update path:
 
 ```jsonc
 {
@@ -151,4 +151,4 @@ Runtime-mutable subset of `CONFIG`, written via `updateConfig()`:
 }
 ```
 
-Reloaded on every scan via `reloadConfigFromDisk()`.
+Reloaded from disk on every scan.

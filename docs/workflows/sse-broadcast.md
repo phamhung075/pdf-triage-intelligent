@@ -68,7 +68,7 @@ Emitted when `categories.json` changed (auto-create, PUT, rename).
 
 ## Sender
 
-`broadcastTriageEvent(event)` inside `createWebServer()` — serializes to JSON and writes to every client in `triageSseClients[]`. Set up when the response closes: splice out.
+`broadcastTriageEvent(event)` in the `httpapi` package — serializes to JSON and writes to every connected client through the mutex-protected SSE hub. Clients are added when the stream opens and removed when it closes.
 
 ## Guarantees
 
@@ -78,7 +78,7 @@ Emitted when `categories.json` changed (auto-create, PUT, rename).
 
 ## Client side
 
-`public/app.js` opens an `EventSource('/api/triage/events')` on load. On each event:
+`public/ts/TriageEventsManager.ts` (compiled to `public/js/TriageEventsManager.js`) opens an `EventSource('/api/triage/events')` on load. On each event:
 
 - `SCAN_STARTED` → progress panel, spinner on files.
 - `FILE_PROGRESS` → per-file stage indicator.
@@ -91,7 +91,9 @@ Reconnects automatically on server restart (EventSource default).
 
 ## Livereload stream
 
-Only meaningful in dev. `fs.watch(publicDir, { recursive: true })` triggers `data: reload\n\n`. Client handler in `public/app.js` calls `location.reload()`.
+Only meaningful in dev. A polling mtime/size watcher over `public/` (the Go replacement for
+`fs.watch(publicDir, { recursive: true })`) triggers `data: reload\n\n`; the wire format is
+unchanged. Client handler in `public/ts/TriageEventsManager.ts` calls `location.reload()`.
 
 ## Owner
 

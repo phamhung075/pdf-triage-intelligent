@@ -4,7 +4,7 @@ Source of truth: `categories.json` at project root. Rules for classification: [c
 
 ## Baseline categories
 
-Defined as defaults in `getCategoriesConfig()` (`src/infrastructure/categories-store.ts`) when `categories.json` is missing or invalid.
+Defined as defaults in `getCategoriesConfig()` (the `store/categories` package) when `categories.json` is missing or invalid.
 
 | Slug              | Name                | Purpose                                    |
 | ----------------- | ------------------- | ------------------------------------------ |
@@ -63,12 +63,13 @@ When Qwen returns a category or subcategory that isn't in `categories.json`:
 `entity_dictionary.json` (project root) is a curated, hand-maintained reference
 of real-world French entities (banks, energy/telecom providers, insurers,
 gov/social agencies, health orgs) that aren't yet real subcategories in
-`categories.json`. It's loaded by `entity-dictionary-store.ts` and used two ways:
+`categories.json`. It's loaded by the `store/entitydictionary` package and used two ways:
 
 1. Injected into Qwen's system prompt as a "Known real-world entities" hint
    per category (`buildEntityHintLine` / `buildCategoriesDescriptionStr`), so
    Qwen prefers a recognized canonical slug over inventing one.
-2. Consulted inside `ruleBasedClassify` (`matchEntityDictionary`) at the same
+2. Consulted inside `ruleBasedClassify` (`matchEntityDictionary` in the
+   `classification` package) at the same
    priority points as the Qwen prompt — bank/insurance/vendor/gov/health
    branches, plus one more chance right before the last-resort filename-word
    extraction — so the deterministic Ollama-down fallback recognizes the same
@@ -96,10 +97,10 @@ live in a gitignored overlay and are injected at prompt-build time:
 | `manual_decisions.json` (+ SQLite `manual_decisions`) | **no** (gitignored) | every human move decision, which ALSO feeds the STEP 0 block |
 
 The overlay feeds **both** classification paths, which is what keeps them logically aligned
-(Golden Rule #6). `src/domain/prompt-personalization.ts` owns the shape, the rendering, and the
-matcher; `src/infrastructure/prompt-personalization-store.ts` reads the file — and on top of the
+(Golden Rule #6). The `promptpersonalization` package owns the shape, the rendering, and the
+matcher; the `store/promptpersonalization` package reads the file — and on top of the
 hand-curated rules it appends every **enabled** human move decision from the `manual_decisions`
-store (newest 25, converted by `src/domain/decision-rule.ts`), so a relocalize correction teaches
+store (newest 25, converted by the `decisionrule` package), so a relocalize correction teaches
 future runs through the same STEP 0 block. This is the feedback-teaches-AI loop (Golden Rule #18);
 manage the decisions in ⚙️ System Config → 🧠 Human Decisions.
 
@@ -113,7 +114,7 @@ manage the decisions in ⚙️ System Config → 🧠 Human Decisions.
   Step A entity extraction.
 
 **Path 2 — the deterministic fallback.** `matchPriorityRules()` runs the same rules inside
-`ruleBasedClassify()` (`src/domain/classification.ts`), as a branch sitting between the
+`ruleBasedClassify()` (the `classification` package), as a branch sitting between the
 fines override and the bank-statement override. Without it the Ollama-down fallback would keep
 classifying by signals the prompt no longer carries — a silent divergence.
 
@@ -137,7 +138,7 @@ runs — this is what the 2026-08-31 regression needed, when 'paiement' (learned
 `calendrier de paiement.PDF` → `invoices/cdiscount`) misfiled a SEPA mandate and two tax notices:
 
 1. **Filename scope.** `decisionsToPriorityRules` tags every learned rule `scope: 'filename'`
-   (`src/domain/decision-rule.ts`): the rule only fires when its keyword appears in the *filename*
+   (the `decisionrule` package): the rule only fires when its keyword appears in the *filename*
    of a future document, never in body text. `matchPriorityRules` and the rendered STEP 0 block
    honour the same scope, so the prompt and the fallback stay aligned.
 2. **Generic-word stopwords.** `deriveRuleKeywords` rejects money-movement / document-type words
@@ -153,7 +154,8 @@ Keyword matching excludes adjacent **letters**, not digits: `gan` must not fire 
 (`STMT_CHK_101`), and a digit-excluding boundary would never match those. A keyword ending in a
 separator (`stmt_`, `c/c `) needs no trailing guard at all.
 
-Overlay shape (`known_entities`, `priority_rules`, `extra_rules_text`) is Zod-validated. A
+Overlay shape (`known_entities`, `priority_rules`, `extra_rules_text`) is validated by the
+`promptpersonalization` parser. A
 missing file is the normal state for a fresh clone and both blocks render as the empty
 string; an invalid file is logged and treated as empty rather than thrown, so a typo can
 never take the triage pipeline down. Same public-base + private-overlay split as
@@ -162,13 +164,13 @@ never take the triage pipeline down. Same public-base + private-overlay split as
 Note that the overlay is often *redundant* for entity naming: `{{CATEGORIES_DESCRIPTION}}`
 already injects the real, merged subcategory list (including everything auto-created from
 your own documents), and `entity_dictionary.json` already supplies per-category entity
-hints. Reach for `.prompts.private.json` for signals neither of those can express — bank
+hints. Reach for `.prompts.private.json` for signals neither of those can capture — bank
 statement filename codes, scanner prefixes, bilingual document titles.
 
-`src/domain/prompt-hygiene.test.ts` fails the build if any name from
-`CONFIG.PERSONAL_NAME_DENYLIST` reappears in a committed `prompts/` file **or** in
-`src/domain/classification.ts`, and asserts the classifier still reads its overrides through
-`matchPriorityRules` rather than hardcoding them.
+The TypeScript `prompt-hygiene` test was retired with the TypeScript backend: it scanned the whole
+repo tree against `CONFIG.PERSONAL_NAME_DENYLIST` (which lives in the gitignored `settings.json`)
+and was red upstream. A repo-wide personal-data scan belongs in CI, not a unit test; adding one is
+an **open item**.
 
 ## One instance per subcategory
 
@@ -179,16 +181,16 @@ per-category namespacing used to let the same entity accrue under several catego
 `findCanonicalCategoryForSubcategory` declines instead of guessing when a slug has several owners.
 
 To de-duplicate, pick the canonical category (by document content — not array order), remove the slug
-from every other category (keeping its aliases on the winner), then migrate the rows and files:
-`npx tsx scripts/merge-subcategories.ts --dry-run` previews the plan, `--apply` executes it
-(SQLite update + physical relocalize + registry regen, idempotent). The 2026-08-27 pass merged 16
+from every other category (keeping its aliases on the winner), then migrate the rows and files. The
+one-off subcategory-merge maintenance script was retired with the TypeScript
+backend; the historical 2026-08-27 pass merged 16
 duplicated slugs to one instance each and removed the AI-created `france_travail` top-level category
 (gov agencies belong under `administrative` like urssaf/dgfip/inpi).
 
 ### Automatic duplicate guard (block + hint)
 
 The classifier can no longer re-create a duplicate on a fresh run. Before a new category or
-subcategory is auto-created, `src/domain/taxonomy-conflicts.ts` checks the whole taxonomy:
+subcategory is auto-created, the `taxonomyconflicts` package checks the whole taxonomy:
 
 - **Exact / alias match elsewhere** — `foncia` proposed under `invoices` while it lives under
   `housing` → BLOCKED, remapped to `housing/foncia` (one instance).
@@ -201,13 +203,13 @@ subcategory is auto-created, `src/domain/taxonomy-conflicts.ts` checks the whole
   Near-duplicate category names (`administratif` → `administrative`) are remapped the same way.
 
 Every block records a hint into the gitignored `taxonomy_hints.json`
-(`src/infrastructure/taxonomy-hints-store.ts`, capped at 50 newest, deduplicated) and that list is
+(`store/taxonomyhints` package, capped at 50 newest, deduplicated) and that list is
 re-injected into the model's `{{USER_PRIORITY_RULES}}` STEP 0 block on every future run
-(`renderTaxonomyConflictHintsBlock` in `prompt-personalization-store.ts`) — the "return the hint to
+(`renderTaxonomyConflictHintsBlock` in `store/promptpersonalization`) — the "return the hint to
 the local agent" half of the loop, so Qwen stops proposing the blocked slugs. The committed
 `prompts/classification_rules.md` carries the same rules as a static "TAXONOMY INTEGRITY" guard.
-Unit-tested in `src/domain/taxonomy-conflicts.test.ts`; the block itself lives in
-`resolveCategory`/`resolveSubcategory` (`classification-resolution.ts`).
+Unit-tested in the `taxonomyconflicts` package; the block itself lives in
+`resolveCategory`/`resolveSubcategory` (`classificationresolution`).
 
 ## Rename flow
 

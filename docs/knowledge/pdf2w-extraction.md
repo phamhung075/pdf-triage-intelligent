@@ -1,16 +1,18 @@
-# 📄 PDF/Photo Text Extraction & Canonical Paths (pdf2w + Go organize-files service)
+# 📄 PDF/Photo Text Extraction (pdf2w)
 
-> **One-line summary**: PDF/photo text extraction and OCR now happen exclusively via the external,
-> self-hosted `markdown-extract-service` (**pdf2w**), reached through `PDF2W_SERVICE_URL`.
-> Canonical-path computation (taxonomy → on-disk archive path) now happens in a separate Go
-> microservice, `services/pdf-triage-pdf2w/` (a git submodule), reached through
-> `CANONICAL_PATH_SERVICE_URL`. Both are **required, not optional-with-fallback**: an unreachable
-> service is `FILE_FAILED` for that document — there is no in-process TypeScript fallback and no
-> local OCR left. This replaces the removed `paddleocr-server/`, the Docling sidecar, and the
-> in-repo `pdf-extract` Docker microservice split.
+> **One-line summary**: PDF/photo text extraction and OCR happen exclusively via the external,
+> self-hosted `markdown-extract-service` (**pdf2w**), reached through `PDF2W_SERVICE_URL` from the
+> `infra/pdf2w` package. It is **required, not optional-with-fallback**: an unreachable service is
+> `FILE_FAILED` for that document — there is no in-process extraction tier and no local OCR left.
+> Canonical-path resolution and extracted-text cleaning are **not** services: the Go binary does
+> both in-process, through the `canonicalpath` and `cleantext` packages. This replaces the removed
+> `paddleocr-server/`, the Docling sidecar, the in-repo `pdf-extract` Docker microservice split,
+> and the former `pdf-triage-pdf2w` canonical-path helper service that the TypeScript backend
+> called over HTTP.
 
-Full design record: [`docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md`](../superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md).
-Implementation plan: [`docs/superpowers/plans/2026-09-18-pdf2w-extraction-swap.md`](../superpowers/plans/2026-09-18-pdf2w-extraction-swap.md).
+Full design record: [`docs/superpowers/specs/2026-09-18-go-backend-migration-design.md`](../superpowers/specs/2026-09-18-go-backend-migration-design.md)
+and, for the extraction swap itself,
+[`docs/superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md`](../superpowers/specs/2026-09-17-pdf2w-extraction-swap-design.md).
 
 ## Why this exists
 
@@ -18,69 +20,59 @@ Implementation plan: [`docs/superpowers/plans/2026-09-18-pdf2w-extraction-swap.m
 `pdf-extract` Docker microservice split were three separate, partially-overlapping extraction
 paths. All three are now replaced by one dependency: **pdf2w** (`markdown-extract-service`,
 run self-hosted and unmodified — pdf-triage vendors none of its extraction code and never calls
-`app.pdf2w.com`). pdf2w's Go gateway does native PDF→Markdown/text extraction plus its own
+`app.pdf2w.com`). pdf2w does native PDF→Markdown/text extraction plus its own
 Gemini→DeepSeek vision-rescue OCR fallback for scanned/image-only pages — one dependency now
 covers what PaddleOCR, Tesseract, and the Docling sidecar covered separately before.
 
-Separately, `computeCanonicalPath` (taxonomy resolution → on-disk archive path) was ported out of
-`src/domain/taxonomy.ts` into a new Go service, the first slice of the user's stated Go/Rust
-backend-migration direction (see project memory `project_go_rust_migration.md`) — chosen because
-it is pure/deterministic domain logic with no native dependencies, the natural first cut. This is
-unrelated to pdf2w's own codebase; it's a brand-new repo pdf-triage owns as a submodule.
+When the backend moved to Go, the two remaining HTTP hops around the pipeline were also removed:
+`computeCanonicalPath` (taxonomy resolution → on-disk archive path) and `cleanExtractedText`
+(normalize raw extracted text) were already ported into the `canonicalpath` and `cleantext`
+packages, and the Go binary calls them **in-process** instead of over a loopback network call.
 
 ## Architecture
 
 ```
-main pdf-triage app (TypeScript orchestrator: scan loop, classification/Ollama, SSE, SQLite —
-                      unchanged 3-layer architecture, Golden Rule 16 still governs it)
+pdf-triage (one Go binary)
    │
    ├─ 1. extraction: POST /convert  (raw file bytes + X-File-Name header)
    │     ▼
-   │  src/infrastructure/pdf2w-remote.ts ──► self-hosted markdown-extract-service (pdf2w)
-   │     EXISTING repo, run unmodified via its own docker-compose
-   │     (/home/daihu/__projects__/markdown-extract-service). Handles native PDF text/table
-   │     extraction and vision-rescue OCR (Gemini → DeepSeek) for scanned pages and
-   │     image-only/photo-derived PDFs.
+   │  infra/pdf2w ──► self-hosted markdown-extract-service (pdf2w)
+   │     EXTERNAL repo, run unmodified via its own docker-compose on :3984.
+   │     Handles native PDF text/table extraction and vision-rescue OCR
+   │     (Gemini → DeepSeek) for scanned pages and image-only/photo-derived PDFs.
    │
-   └─ 2. organize-files: POST /canonical-path  (originalPath, category, outputRootDir,
-        │  subcategory?, dateStr?, title?)
-        ▼
-     src/infrastructure/canonical-path-remote.ts ──► services/pdf-triage-pdf2w/  (git submodule
-        → https://github.com/phamhung075/pdf-triage-pdf2w) — a small Go net/http service exposing
-        ONLY `computeCanonicalPath` (+ its private helpers generateIntelligentFilename/
-        formatEntitySlug/isGenericFilename/sanitizePathSegment), ported function-for-function from
-        `src/domain/taxonomy.ts`.
+   └─ 2. canonical path + text cleaning: in-process, no network
+        canonicalpath.computeCanonicalPath(...)   ← ported from the retired TypeScript taxonomy module
+        cleantext.cleanExtractedText(...)         ← ported from the retired TypeScript pdf-text module
 ```
 
 | Piece | Location | Role |
 | --- | --- | --- |
-| Extraction client | `src/infrastructure/pdf2w-remote.ts` | `extractPdf2wContent(filePath)` — POSTs raw bytes to pdf2w's `POST /convert`, returns `{ checksum, raw_text, numpages, info, pdf2w_markdown }` |
-| Extraction routing seam | `src/infrastructure/pdf-extractor.ts` | `extractPDFContent()` — the export triage/repair/relocalize/convert-image-document already import — delegates every call straight to `pdf2w-remote.ts`, no branching |
-| Canonical-path client | `src/infrastructure/canonical-path-remote.ts` | `computeCanonicalPathRemote(originalPath, category, outputRootDir, subcategory?, dateStr?, title?)` — POSTs to the Go service's `POST /canonical-path`, returns the resolved path string |
-| Canonical-path caller | `src/application/relocalize-document.ts` | `relocalizeFileIfNeeded()` is `async` and awaits `computeCanonicalPathRemote()` instead of calling `computeCanonicalPath()` in-process |
-| Go service | `services/pdf-triage-pdf2w/` (submodule) | `canonicalpath/canonicalpath.go` (ported logic) + `cmd/server/main.go` (`GET /health`, `POST /canonical-path`) |
-| Config | `src/infrastructure/settings.ts` | `PDF2W_SERVICE_URL` / `_TIMEOUT_MS`, `CANONICAL_PATH_SERVICE_URL` / `_TIMEOUT_MS` — see [Environment & Config](./environment.md) |
-| Compose | `docker-compose.yml` | Only the `pdf-triage-pdf2w` (Go) service is defined here; `markdown-extract-service` runs from its own repo's own compose on `:3984` |
+| Extraction client | `infra/pdf2w` (`services/pdf-triage-pdf2w/infra/pdf2w`) | POSTs raw bytes to pdf2w's `POST /convert`, returns `{ checksum, raw_text, numpages, info, pdf2w_markdown }` |
+| Extraction routing seam | `infra/pdfextractor` | `extractPDFContent()` — the entry point triage/repair/relocalize/convertimage use — delegates every call to `infra/pdf2w`, no branching |
+| Canonical-path logic | `canonicalpath` package | `computeCanonicalPath` ported from the retired TypeScript taxonomy module; called in-process by `app/relocalize` |
+| Text cleaning | `cleantext` package | `CleanExtractedText` ported from the retired TypeScript pdf-text module; called in-process before text enters the pipeline |
+| Config | `infra/settings` | `PDF2W_SERVICE_URL` / `PDF2W_SERVICE_TIMEOUT_MS` — see [Environment & Config](./environment.md) |
+| Compose | `docker-compose.yml` (repo root) | Declares **no** service after the cutover: pdf2w runs from its own repo's compose on `:3984`, and the former canonical-path service is gone |
 
 ## Required, not optional — no fallback
 
-Both services are **hard dependencies**, matching the "no local OCR / no local canonical-path
-fallback" decision in the design doc:
+pdf2w is a **hard dependency**, matching the "no local extraction / no local OCR" decision in the
+design doc:
 
-- pdf2w unreachable or misconfigured `PDF2W_SERVICE_URL` → `extractPdf2wContent()` throws →
-  `extractPDFContent()` rejects → that file is `FILE_FAILED`, same posture as an unreachable Ollama
-  today. There is no in-process extraction left to fall back to.
-- The Go canonical-path service unreachable or misconfigured `CANONICAL_PATH_SERVICE_URL` →
-  `computeCanonicalPathRemote()` throws → `relocalizeFileIfNeeded()` rejects → that file is
-  `FILE_FAILED`. `domain/taxonomy.ts` no longer contains a local `computeCanonicalPath` to fall
-  back to — it was deleted, not merely bypassed.
+- pdf2w unreachable or misconfigured `PDF2W_SERVICE_URL` → the `infra/pdf2w` call throws →
+  `extractPDFContent()` surfaces the error → that file is `FILE_FAILED`, same posture as an
+  unreachable Ollama today. There is no in-process extraction left to fall back to.
 
-Both external processes (pdf2w's `markdown-extract-service` and this repo's
-`pdf-triage-pdf2w`) must be up, on top of Ollama, for a scan to complete a file.
+Canonical-path resolution and text cleaning are **local function calls**, not network calls: there
+is no `_SERVICE_URL` for either and nothing to be unreachable. If they fail it is an ordinary code
+error, not a transport failure.
+
+pdf2w's `markdown-extract-service` must be up, on top of Ollama, for a scan to complete a file.
 
 ## Photo pipeline change — no local OCR
 
-`convert-image-document.ts`'s `convertImageToPdf()` used to run OCR (PaddleOCR/Tesseract) between
+`convertImageToPdf()` (`app/convertimage`) used to run OCR (PaddleOCR/Tesseract) between
 enhance and PDF assembly, carrying the OCR'd text out in memory. It no longer does:
 
 ```
@@ -90,34 +82,35 @@ orient → crop → enhance → assemble the image-only A4 PDF (pure geometry, n
 
 pdf2w's native extraction finds no text layer on an image-only PDF, triggers its own
 vision-rescue, and returns the text — so photos and scanned PDFs now get their text from the exact
-same place. `src/infrastructure/orientation-detector.ts` lost its OCR-verified orientation
+same place. The orientation detector lost its OCR-verified orientation
 tiebreaker (previously PaddleOCR, with Tesseract OSD as its availability fallback) as an accepted
 side effect — pdf2w exposes no orientation-classification API — the cascade now falls back to EXIF,
 the vision model, and flood-fill crop without it.
 
 **Photo-pipeline invariants that still apply** (see the one-line anchors in `AGENTS.md` and the
-headers of `flood-crop.ts` / `convert-image-document.ts`): never re-apply EXIF orientation, never
+package docs of `floodcrop` / `app/convertimage`): never re-apply EXIF orientation, never
 reintroduce the inverted crop-detector texture gate, never delete a source image. These govern the
 geometry stages, which are unchanged by this swap.
 
 ## What was removed
 
-- `paddleocr-server/` (Python/FastAPI OCR sidecar) and `src/infrastructure/paddleocr-client.ts`.
-- The Docling sidecar client (`src/infrastructure/docling-remote.ts`) and its quality gate
-  (`src/domain/docling-quality.ts`) — pdf2w has its own quality gate server-side.
-- The in-repo `pdf-extract` Docker microservice split: `src/extract-service/`,
-  `Dockerfile.extract-service`, `src/infrastructure/pdf-extract-remote.ts`.
+- `paddleocr-server/` (Python/FastAPI OCR sidecar) and the TypeScript PaddleOCR client.
+- The Docling sidecar client and its TypeScript quality gate — pdf2w has its own quality gate
+  server-side.
+- The in-repo `pdf-extract` Docker microservice split.
+- The TypeScript canonical-path and clean-text HTTP clients, and the loopback
+  `pdf-triage-pdf2w` helper service that served `POST /canonical-path` and `POST /clean-text` on
+  `:3985`. Both calls are in-process Go now; `docker-compose.yml` declares no service.
 - Config: `PADDLEOCR_HOST`, `PADDLEOCR_SPAWN_CMD`, `DOCLING_SERVICE_URL`, `DOCLING_SERVICE_REQUIRED`,
   `DOCLING_SERVICE_TIMEOUT_MS`, `PDF_EXTRACT_SERVICE_*`, `PDF_EXTRACT_PORT`, `PDF_EXTRACT_HOST`,
-  `PDF_EXTRACT_MAX_BYTES`, `OCR_MAX_PAGES`, `OCR_RENDER_SCALE`.
-- `src/domain/ocr-layout.ts` (OCR reading-order reconstruction — no local OCR left to reorder).
-- The `npm run extract:dev` script.
+  `PDF_EXTRACT_MAX_BYTES`, `OCR_MAX_PAGES`, `OCR_RENDER_SCALE`, `CANONICAL_PATH_SERVICE_URL`,
+  `CANONICAL_PATH_SERVICE_TIMEOUT_MS`.
+- The local OCR reading-order reconstruction and the `npm run extract:dev` script.
 
-`ocr_degraded` remains on the `ExtractedPDF` interface (`src/infrastructure/pdf-extractor.ts`) as
-a legacy field — `relocalize-document.ts` still reads it — but `extractPDFContent()` never sets it
-anymore: pdf2w performs its own vision-rescue server-side and reports no per-page
-engine-degradation signal back. Treat it as always `false` going forward; see
-[relocalize.md](../workflows/relocalize.md#which-text-a-re-analysis-uses).
+`ocr_degraded` remains on the extracted result as a legacy field — `app/relocalize` still reads it —
+but `extractPDFContent()` never sets it anymore: pdf2w performs its own vision-rescue server-side
+and reports no per-page engine-degradation signal back. Treat it as always `false` going forward;
+see [relocalize.md](../workflows/relocalize.md#which-text-a-re-analysis-uses).
 
 ## Running it
 
@@ -125,7 +118,7 @@ pdf2w (`markdown-extract-service`) is a **separate project** with its own repo a
 run it there, then point pdf-triage's `.env` at it:
 
 ```bash
-cd /home/daihu/__projects__/markdown-extract-service
+# in the markdown-extract-service repository
 docker compose up -d --build          # listens on 127.0.0.1:3984
 curl http://127.0.0.1:3984/health
 ```
@@ -133,27 +126,18 @@ curl http://127.0.0.1:3984/health
 ```dotenv
 # pdf-triage's .env
 PDF2W_SERVICE_URL=http://127.0.0.1:3984
-CANONICAL_PATH_SERVICE_URL=http://127.0.0.1:3985
 ```
 
-The Go canonical-path service builds from this repo's own `docker-compose.yml`:
-
-```bash
-docker compose up -d --build          # builds services/pdf-triage-pdf2w, listens on :3985
-curl http://127.0.0.1:3985/health
-```
-
-Neither has a `_REQUIRED` toggle — both are always required. See
-[Environment & Config](./environment.md) for the full variable table.
+There is no canonical-path service to start and no `_REQUIRED` toggle — pdf2w is always required.
+See [Environment & Config](./environment.md) for the full variable table.
 
 ## Verification
 
-- `src/infrastructure/pdf2w-remote.test.ts` — success path (adopts `markdown`/`text`), unreachable
-  → hard error (no fallback branch to test since none exists), unconfigured → clear config error.
-- `src/infrastructure/canonical-path-remote.test.ts` — same shape, against
-  `computeCanonicalPathRemote()`.
-- `services/pdf-triage-pdf2w/canonicalpath/canonicalpath_test.go` — the Go port's own test suite;
-  ported case-for-case from the deleted `computeCanonicalPath` describe block in
-  `src/domain/taxonomy.test.ts` (same inputs, same expected outputs — the acceptance bar for the
-  port, per the design doc's Testing section).
-- `cmd/server/main_test.go` (Go) — HTTP contract test for `POST /canonical-path` / `GET /health`.
+- `infra/pdf2w/pdf2w_test.go` — extraction client: success path (adopts `markdown`/`text`),
+  unreachable → hard error (no fallback branch to test since none exists), unconfigured → clear
+  config error.
+- `canonicalpath/canonicalpath_test.go` — the Go port's own test suite, ported case-for-case from
+  the deleted `computeCanonicalPath` block in the former TypeScript test suite (same inputs, same
+  expected outputs — the acceptance bar for the port, per the design doc's Testing section).
+- `app/relocalize` tests cover the in-process call site; `infra/pdfextractor` tests cover the
+  extraction seam.

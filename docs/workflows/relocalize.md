@@ -1,6 +1,7 @@
 # 📍 Relocalize & Re-classify
 
-Entry: `reclassifyAndRelocalizeDocument(id, explicitCategory?, explicitSubcategory?, userFeedbackReason?)` in `src/application/relocalize-document.ts`. HTTP: `POST /api/documents/:id/relocalize`.
+Entry: `reclassifyAndRelocalizeDocument(id, explicitCategory?, explicitSubcategory?, userFeedbackReason?)` in the `app/relocalize` package
+(`services/pdf-triage-pdf2w/app/relocalize`). HTTP: `POST /api/documents/:id/relocalize`.
 
 ## Two modes
 
@@ -85,13 +86,13 @@ Every move that records a `manual_decisions` entry (see below) is ALSO injected 
 **STEP 0 private priority block** on future classifications, so a correction is not wasted on the
 one document being moved:
 
-1. `recordManualDecision()` (`src/infrastructure/manual-decisions-store.ts`) auto-derives conservative
+1. `recordManualDecision()` (the `store/manualdecisions` package) auto-derives conservative
    match keywords from the moved document's original filename + title via `deriveRuleKeywords()`
-   (`src/domain/decision-rule.ts`): filename codes / scanner prefixes first, then title tokens, with a
+   (the `decisionrule` package): filename codes / scanner prefixes first, then title tokens, with a
    stopword list that filters generic document-type words (`releve`, `facture`, months, years…). A
    decision with no distinctive token is still registered and visible in the tab, but stays inactive
    until the user edits in keywords.
-2. `getPromptPersonalization()` (`src/infrastructure/prompt-personalization-store.ts`) merges every
+2. `getPromptPersonalization()` (`store/promptpersonalization`) merges every
    **enabled** decision (newest 25) into the `priority_rules` it returns — after the hand-curated
    `.prompts.private.json` rules, so deliberate curation outranks an auto-derived rule. Both the
    Qwen prompt (`{{USER_PRIORITY_RULES}}`) and the deterministic `ruleBasedClassify()` fallback

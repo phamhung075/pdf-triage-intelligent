@@ -1,6 +1,13 @@
 # 🔌 API Reference
 
-Source: `src/infrastructure/http/web-server.ts`. Default port `3000`.
+Source: the `httpapi` package (`services/pdf-triage-pdf2w/httpapi`) — a Go `net/http` server that
+replaces the retired TypeScript web-server module. Default port `3971`.
+
+The Go server registers the **same 46 REST routes** as the retired TypeScript server. The tables
+below are the operator-facing contract; the full per-route table, with the Go handler file for each
+route and the test that covers it, is
+[`docs/superpowers/specs/2026-09-18-http-parity-audit.md`](../superpowers/specs/2026-09-18-http-parity-audit.md)
+(§1). The SSE/MCP contracts are frozen the same way.
 
 ## System
 
@@ -8,7 +15,7 @@ Source: `src/infrastructure/http/web-server.ts`. Default port `3000`.
 | ------ | ------------------------- | ------------------------------------------------------ |
 | GET    | `/api/dev/livereload`     | SSE stream. Emits `reload` on any `public/` change     |
 | POST   | `/api/open-location`      | Body `{ targetPath }` → opens Windows Explorer         |
-| POST   | `/api/server/restart`     | Exits the process (nodemon / tsx watch restarts it)    |
+| POST   | `/api/server/restart`     | Exits the process (the operator's dev runner restarts it) |
 
 ## Ollama
 
@@ -22,14 +29,14 @@ Source: `src/infrastructure/http/web-server.ts`. Default port `3000`.
 | Method | Route         | Description                                            |
 | ------ | ------------- | ------------------------------------------------------ |
 | GET    | `/api/config` | Returns current `input_dir`, `output_root_dir`, `ollama_model`, `ollama_host` |
-| PUT    | `/api/config` | Body validated by `SystemSettingsSchema`; persists to `settings.json` |
+| PUT    | `/api/config` | Body validated by the settings parser; persists to `settings.json` |
 
 ## Categories
 
 | Method | Route                          | Description                                       |
 | ------ | ------------------------------ | ------------------------------------------------- |
 | GET    | `/api/categories`              | Returns categories with live doc counts from DB (dynamically appends DB-only subcategories missing from `categories.json`) |
-| PUT    | `/api/categories`              | Body validated by `CategoriesConfigSchema`; broadcasts `CATEGORIES_UPDATED` |
+| PUT    | `/api/categories`              | Body validated by the categories parser; broadcasts `CATEGORIES_UPDATED` |
 | POST   | `/api/subcategories/rename`    | `{ category, oldSubcategory, newSubcategory }` — renames slug + relocalizes every matching file on disk |
 
 ## Documents
@@ -38,7 +45,7 @@ Source: `src/infrastructure/http/web-server.ts`. Default port `3000`.
 | ------ | ---------------------------------- | --------------------------------------------------- |
 | GET    | `/api/documents?q=&category=&subcategory=` | Filtered list                                |
 | GET    | `/api/documents/:id`               | Single doc with full `raw_text`                     |
-| PUT    | `/api/documents/:id`               | Update metadata (validated by `UpdateDocumentSchema`); auto-relocalizes on category/subcategory change |
+| PUT    | `/api/documents/:id`               | Update metadata (validated by the document schema parser); auto-relocalizes on category/subcategory change |
 | POST   | `/api/documents/:id/relocalize`    | Body `{ category?, subcategory?, reason? }` — re-classify (with feedback) and move |
 | DELETE | `/api/documents`                   | **Clear Registry**: move `__archive` → `__raws`, purge DB (see [clear-registry](../workflows/clear-registry.md)) |
 
@@ -68,20 +75,20 @@ pipeline instead; see [triage-pipeline](../workflows/triage-pipeline.md)).
 
 **Every caller-supplied path is resolved through `resolveManagedPath()`** and must land inside
 `CONFIG.INPUT_DIR` or `CONFIG.OUTPUT_ROOT_DIR`; anything else is `403`. Without that guard these
-routes read any file the Node process can — an SSH key, another app's `.env` — and then write a
+routes read any file the process can — an SSH key, another app's `.env` — and then write a
 derivative of it into `__raws`, where the auto-watcher classifies and archives it into the
 searchable registry. `GET /api/documents/file-by-path` uses the same helper.
 
 ## Auto-watcher
 
-Not a route — a `setInterval(…, 10000)` in `createWebServer()`. When `__raws` has PDFs and no scan is running, runs `runTriageScan(broadcast)`.
+Not a route — a 10 s ticker started by `serve`. When `__raws` has PDFs and no scan is running, runs `runTriageScan(broadcast)`.
 
-## MCP tools (`src/infrastructure/mcp/mcp-server.ts`)
+## MCP tools (`mcpserver`)
 
-`npm run mcp` starts **two transports on the same tool set, in one process**:
+`pdf-triage mcp` starts **two transports on the same tool set, in one process**:
 
-- **stdio** — for clients that spawn the process locally (Claude Desktop/Code config). No auth (the process spawn itself is the access boundary). One long-lived `Server` instance for the process lifetime.
-- **Streamable HTTP** — `POST http://<host>:<CONFIG.MCP_HTTP_PORT>/mcp` (default port `3972`) — for any MCP-capable agent that can't spawn a local process (OpenAI Agents SDK, another machine on the LAN, etc.). Stateless: every request gets a fresh `Server` + `StreamableHTTPServerTransport` pair, torn down when the response completes. Requires `Authorization: Bearer <token>`; the token is auto-generated into the gitignored `.mcp-api-token` file on first start and printed to the console. `CONFIG.MCP_HTTP_HOST` defaults to `0.0.0.0` (LAN-reachable by design, guarded by the token — not by binding); set `MCP_HTTP_HOST=127.0.0.1` to restrict to this machine only.
+- **stdio** — for clients that spawn the process locally (Claude Desktop/Code config). No auth (the process spawn itself is the access boundary). One long-lived server instance for the process lifetime.
+- **Streamable HTTP** — `POST http://<host>:<CONFIG.MCP_HTTP_PORT>/mcp` (default port `3972`) — for any MCP-capable agent that can't spawn a local process (OpenAI Agents SDK, another machine on the LAN, etc.). Stateless: every request gets a fresh server + transport pair, torn down when the response completes. Requires `Authorization: Bearer <token>`; the token is auto-generated into the gitignored `.mcp-api-token` file on first start and printed to the console. `CONFIG.MCP_HTTP_HOST` defaults to `0.0.0.0` (LAN-reachable by design, guarded by the token — not by binding); set `MCP_HTTP_HOST=127.0.0.1` to restrict to this machine only.
 
 Same DB as the web server; do not run both in dev without confirming that's what you want.
 
@@ -99,18 +106,24 @@ Same DB as the web server; do not run both in dev without confirming that's what
 
 ## Vision Lab (standalone server, separate port)
 
-Source: `src/vision-lab-server.ts`. Not part of the main app — its own Express process, own port (`CONFIG.VISION_LAB_PORT`, default `3179`), started independently via `npm run vision:dev`. Serves the diagnostic page `public/test-image-to-pdf.html` and this one route.
+Source: the `visionlab` package (`services/pdf-triage-pdf2w/visionlab`) — the Go port of the retired
+TypeScript Vision Lab server. Not part of the main app — its own process, own port
+(`CONFIG.VISION_LAB_PORT`, default `3179`), started independently via `pdf-triage vision-lab`.
+Serves the diagnostic page `public/test-image-to-pdf.html` and this one route.
 
 | Method | Route                        | Description                                                        |
 | ------ | ---------------------------- | -------------------------------------------------------------------|
-| POST   | `/api/vision/diagnose-image` | Body `{ imageBase64: string }` → `{ steps: PipelineStep[] }` or `{ error: string }` |
+| POST   | `/api/vision/diagnose-step`  | Body `{ step: 1 \| 2 \| 3, inputImageBase64: string }` → one pipeline-step result, or `{ error: string }`. Step 4 was retired: any other step returns 400 `step must be 1, 2, or 3 (step 4 is retired)` |
 
-Runs the 4-step diagnostic pipeline (`src/application/image-to-pdf.ts`, `runVisionPipeline`) against the local `minicpm-v4.6` Ollama vision model: `original` (input as-is) → `oriented` (rotation detected + applied) → `cropped` (document bounds detected + applied) → `enhanced` (auto brightness/contrast + sharpen). A step that throws records an `error` and the pipeline stops there.
+Runs the diagnostic step against the local `minicpm-v4.6` Ollama vision model: step 1 =
+`orient` (rotation detected + applied), step 2 = `crop` (document bounds detected + applied),
+step 3 = `enhance` (auto brightness/contrast + sharpen). A step that fails returns a 200 carrying
+its `error`.
 
 ## CORS
 
-**No route sets `Access-Control-Allow-Origin`.** The frontend is served from this same Express
-instance (same-origin), so it never needs it, and this server has no authentication layer — a
+**No route sets `Access-Control-Allow-Origin`.** The frontend is served from this same Go server
+(same-origin), so it never needs it, and this server has no authentication layer — a
 wildcard would let any page open in another browser tab read the entire API cross-origin
 (documents, summaries, raw text) via `fetch()`.
 
@@ -121,4 +134,24 @@ route, copy `/api/triage/events`, which sets no CORS header and works fine.
 
 ## Error contract
 
-All routes return JSON. Errors: `4xx` with `{ error: string }`. Zod validation failures surface as 400 with the Zod message.
+All routes return JSON. Errors: `4xx` with `{ error: string }`.
+
+## Documented deviations from the TypeScript server
+
+The Go server is at parity behind the frozen contract, but it deliberately differs in a few
+observable ways. Full evidence is in the
+[HTTP parity audit](../superpowers/specs/2026-09-18-http-parity-audit.md) §3a/§3b.
+
+- **`405` + `Allow`, not `404`, for a known path with an unknown method.** Go 1.22 `ServeMux`
+  answers `405` where Express answered `404`. Considered a more informative response and kept.
+- **Live-reload is a polling mtime/size watcher.** The change source behind
+  `/api/dev/livereload` is a poll of the `public/` tree rather than `fs.watch(recursive: true)`;
+  the wire format is unchanged (`data: reload`).
+- **Body-error shape.** The request body is not parsed by a schema middleware; malformed input is
+  answered as plain `{ error: <string> }` instead of the retired schema library's pretty-printed
+  issue array (the `400`
+  status is kept). `PUT /api/manual-decisions/:id` is a known case where a malformed JSON body
+  proceeds instead of returning `400` (parity gap G3 — see the audit).
+
+The audit also records **real gaps** (`G1`–`G7`) and **deliberate deviations** (`D3`–`D7`) that are
+not re-listed here.

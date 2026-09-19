@@ -1,6 +1,7 @@
 # 🔧 Repair Registry
 
-Entry: `repairRegistry()` in `src/application/repair-registry.ts`. Trigger: `POST /api/registry/repair`.
+Entry: `repairRegistry()` in the `app/repair` package
+(`services/pdf-triage-pdf2w/app/repair`). Trigger: `POST /api/registry/repair`.
 
 ## Purpose
 
@@ -8,11 +9,11 @@ Reconcile SQLite ↔ disk. Fix generic subcategories. Move irrecoverable files b
 
 ## Steps
 
-1. `reloadConfigFromDisk()` + `ensureDirectoriesExist()`.
+1. Reload config from disk (`infra/settings`) + ensure the input/output directories exist.
 2. **Ghost purge pass** over every DB record:
    - Coerce bare-year subcategory to `general`.
    - Locate the physical file via `findActualFileOnDisk(doc)`. If missing → DELETE from `documents` and `documents_fts`. Log `REPAIR`.
-3. **Archive walk**: `getAllFilesRecursively(OUTPUT_ROOT_DIR)`.
+3. **Archive walk**: `getAllFilesRecursively(OUTPUT_ROOT_DIR)` (`infra/pdfscanner`).
 4. For each file:
    - Re-extract text (`extractPDFContent`).
    - If empty / no readable text → `moveBackToRaws(filePath, checksum)`. `movedToRawsCount++`. Continue.

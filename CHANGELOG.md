@@ -11,6 +11,20 @@ future change of any real size gets an entry here, written at the same time
 as the code/doc change, not reconstructed later from `git log`.
 
 ## Unreleased
+
+### Go backend cutover — docs synced to the single Go binary
+
+The TypeScript backend is retired. `docs/` (knowledge, workflows, overview, index), `CHANGELOG.md`
+and `AGENTS.md` now describe the shipped end state: one static, CGO-free Go binary `pdf-triage`
+(`serve | scan | mcp | vision-lab`, built by `make build` into `dist/pdf-triage`); TypeScript only
+for the browser dashboard (`public/ts` → `public/js`, SCSS → `public/style.css`); extraction is the
+external self-hosted pdf2w service (`PDF2W_SERVICE_URL`); canonical-path and text cleaning are
+in-process Go; SQLite stays the pure-Go `modernc.org/sqlite` over the same `pdf_triage.db` schema.
+Decision record: [`.agents/notes/implemented/architecture/2026-09-19-go-backend-cutover.md`](.agents/notes/implemented/architecture/2026-09-19-go-backend-cutover.md).
+
+- **Provider selection (cloud LLM providers) is in progress on the operator's branch** and is not
+  described in these docs; only the committed Ollama/Qwen behaviour is documented.
+
 ### Docling structured extraction — optional quality layer in front of PDF extraction
 
 > **Removed 2026-09-18.** The Docling sidecar described below (`DOCLING_SERVICE_URL`,
