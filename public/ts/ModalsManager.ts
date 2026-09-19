@@ -4,6 +4,7 @@
 class ModalsManager {
   app: any;
   debounceLoadSessionLogs: any;
+  settingsModalRequestToken = 0;
 
   constructor(app: any) {
     this.app = app;
@@ -78,6 +79,33 @@ class ModalsManager {
         inputElem.style.display = 'none';
         inputElem.value = e.target.value;
       }
+    });
+
+    document.querySelectorAll('.cloud-tab-btn').forEach(btn => {
+      btn.addEventListener('click', (e: any) => {
+        const target = (e.target as HTMLElement).closest('.cloud-tab-btn') as HTMLElement | null;
+        const provider = target?.getAttribute('data-cloud');
+        if (provider) this.switchCloudProviderTab(provider);
+      });
+    });
+
+    document.querySelectorAll('.btn-toggle-pwd').forEach(btn => {
+      btn.addEventListener('click', (e: any) => {
+        const target = (e.target as HTMLElement).closest('.btn-toggle-pwd') as HTMLElement | null;
+        const targetId = target?.getAttribute('data-target');
+        if (targetId) {
+          const input = document.getElementById(targetId) as HTMLInputElement | null;
+          if (input) {
+            if (input.type === 'password') {
+              input.type = 'text';
+              if (target) target.textContent = '🙈';
+            } else {
+              input.type = 'password';
+              if (target) target.textContent = '👁️';
+            }
+          }
+        }
+      });
     });
 
     document.addEventListener('keydown', e => {
@@ -808,6 +836,12 @@ class ModalsManager {
       return;
     }
 
+    const btnRel = document.getElementById('btnConfirmRelocalize') as HTMLButtonElement | null;
+    if (btnRel) {
+      btnRel.disabled = true;
+      btnRel.innerHTML = '<span class="spinner-small spinner-white" style="width: 13px; height: 13px; margin-right: 0.35rem;"></span> Relocalizing...';
+    }
+
     try {
       const res = await fetch(`/api/documents/${docId}/relocalize`, {
         method: 'POST',
@@ -841,6 +875,11 @@ class ModalsManager {
       }
     } catch (err: any) {
       this.app.toast.error('Failed to relocalize: ' + err.message);
+    } finally {
+      if (btnRel) {
+        btnRel.disabled = false;
+        btnRel.innerHTML = '📍 Confirm Relocalization';
+      }
     }
   }
 
@@ -848,6 +887,12 @@ class ModalsManager {
     const docId = (document.getElementById('relocalizeDocId') as HTMLInputElement).value;
     const reason = (document.getElementById('relocalizeReason') as HTMLTextAreaElement).value.trim();
     const state = this.app.state;
+
+    const btnAi = document.getElementById('btnAiReanalyze') as HTMLButtonElement | null;
+    if (btnAi) {
+      btnAi.disabled = true;
+      btnAi.innerHTML = '<span class="spinner-small spinner-white" style="width: 13px; height: 13px; margin-right: 0.35rem;"></span> AI Re-analyzing...';
+    }
 
     try {
       this.app.toast.info('🤖 Re-analyzing document with Qwen 3.5 AI & user feedback...', 4000);
@@ -880,6 +925,11 @@ class ModalsManager {
       }
     } catch (err: any) {
       this.app.toast.error('AI Re-Analysis error: ' + err.message);
+    } finally {
+      if (btnAi) {
+        btnAi.disabled = false;
+        btnAi.innerHTML = '🤖 AI Re-Analyze & Auto-Route';
+      }
     }
   }
 
@@ -997,6 +1047,7 @@ class ModalsManager {
   /* --- SETTINGS MODAL --- */
   async openSettingsModal(): Promise<void> {
     const state = this.app.state;
+    const requestToken = ++this.settingsModalRequestToken;
     try {
       const res = await fetch('/api/config');
       const cfg = await res.json();
@@ -1006,43 +1057,93 @@ class ModalsManager {
       state.setVal('cfgInputDir', cfg.input_dir || '');
       state.setVal('cfgOutputDir', cfg.output_root_dir || '');
       state.setVal('cfgOllamaHost', cfg.ollama_host || 'http://127.0.0.1:11434');
-      await this.loadOllamaModels(cfg.ollama_model);
 
-      try {
-        const statsRes = await fetch('/api/system/stats');
-        if (statsRes.ok) {
-          const stats = await statsRes.json();
-          state.setElemText('statRawsSize', stats.raws?.sizeFormatted || '0 B');
-          state.setElemText('statRawsCount', `${stats.raws?.count || 0} files`);
-          state.setElemText('statArchiveSize', stats.archive?.sizeFormatted || '0 B');
-          state.setElemText('statArchiveCount', `${stats.archive?.count || 0} files`);
-          state.setElemText('statDbSize', stats.database?.sizeFormatted || '0 B');
-          state.setElemText('statTotalSize', stats.total?.sizeFormatted || '0 B');
-          state.setElemText('statTotalCount', `${stats.total?.count || 0} total files`);
+      // AI Provider & Cloud Configuration
+      const aiProvider = cfg.ai_provider || 'local';
+      this.switchAIProviderMode(aiProvider === 'cloud' ? 'cloud' : 'local');
 
-          if (stats.formatBreakdown) {
-            state.setElemText('fmtPdfStats', `${stats.formatBreakdown.pdf?.count || 0} files (${stats.formatBreakdown.pdf?.sizeFormatted || '0 B'})`);
-            state.setElemText('fmtImgStats', `${stats.formatBreakdown.image?.count || 0} files (${stats.formatBreakdown.image?.sizeFormatted || '0 B'})`);
-            state.setElemText('fmtTxtStats', `${stats.formatBreakdown.text?.count || 0} files (${stats.formatBreakdown.text?.sizeFormatted || '0 B'})`);
-            state.setElemText('fmtWordStats', `${stats.formatBreakdown.word?.count || 0} files (${stats.formatBreakdown.word?.sizeFormatted || '0 B'})`);
-            state.setElemText('fmtExcelStats', `${stats.formatBreakdown.excel?.count || 0} files (${stats.formatBreakdown.excel?.sizeFormatted || '0 B'})`);
-          }
-        }
-      } catch (err) {}
+      const cloudProvider = cfg.cloud_provider || 'google';
+      this.switchCloudProviderTab(cloudProvider);
+
+      state.setVal('cfgGoogleApiKey', cfg.google_api_key || '');
+      if (cfg.google_model) state.setVal('cfgGoogleModel', cfg.google_model);
+      state.setVal('cfgGoogleBaseUrl', cfg.google_base_url || '');
+
+      state.setVal('cfgAnthropicApiKey', cfg.anthropic_api_key || '');
+      if (cfg.anthropic_model) state.setVal('cfgAnthropicModel', cfg.anthropic_model);
+      state.setVal('cfgAnthropicBaseUrl', cfg.anthropic_base_url || '');
+
+      state.setVal('cfgDeepSeekApiKey', cfg.deepseek_api_key || '');
+      if (cfg.deepseek_model) state.setVal('cfgDeepSeekModel', cfg.deepseek_model);
+      state.setVal('cfgDeepSeekBaseUrl', cfg.deepseek_base_url || '');
+
+      state.setVal('cfgOpenAIApiKey', cfg.openai_api_key || '');
+      if (cfg.openai_model) state.setVal('cfgOpenAIModel', cfg.openai_model);
+      state.setVal('cfgOpenAIBaseUrl', cfg.openai_base_url || '');
+
+      const testStatus = document.getElementById('testAIStatusMsg');
+      if (testStatus) testStatus.innerHTML = '';
 
       this.renderCategoriesManager();
 
       const modal = document.getElementById('settingsModal');
       if (modal) modal.classList.add('open');
+
+      // The modal is now visible; load the slow/peripheral data after the fact.
+      // Each request catches its own failure so neither can break the other or
+      // the outer try/catch.
+      this.setStatsPlaceholders();
+      this.loadOllamaModels(cfg.ollama_model).catch(() => {});
+      this.loadSystemStats(requestToken).catch(() => {});
     } catch (err: any) {
       this.app.toast.error('Error loading configuration: ' + err.message);
     }
   }
 
+  setStatsPlaceholders(): void {
+    const state = this.app.state;
+    [
+      'statRawsSize', 'statRawsCount', 'statArchiveSize', 'statArchiveCount',
+      'statDbSize', 'statTotalSize', 'statTotalCount', 'fmtPdfStats', 'fmtImgStats',
+      'fmtTxtStats', 'fmtWordStats', 'fmtExcelStats'
+    ].forEach(id => state.setElemText(id, '…'));
+  }
+
+  async loadSystemStats(requestToken: number): Promise<void> {
+    const state = this.app.state;
+    try {
+      const statsRes = await fetch('/api/system/stats');
+      if (!statsRes.ok) return;
+      const stats = await statsRes.json();
+      if (requestToken !== this.settingsModalRequestToken) return;
+      state.setElemText('statRawsSize', stats.raws?.sizeFormatted || '0 B');
+      state.setElemText('statRawsCount', `${stats.raws?.count || 0} files`);
+      state.setElemText('statArchiveSize', stats.archive?.sizeFormatted || '0 B');
+      state.setElemText('statArchiveCount', `${stats.archive?.count || 0} files`);
+      state.setElemText('statDbSize', stats.database?.sizeFormatted || '0 B');
+      state.setElemText('statTotalSize', stats.total?.sizeFormatted || '0 B');
+      state.setElemText('statTotalCount', `${stats.total?.count || 0} total files`);
+
+      if (stats.formatBreakdown) {
+        state.setElemText('fmtPdfStats', `${stats.formatBreakdown.pdf?.count || 0} files (${stats.formatBreakdown.pdf?.sizeFormatted || '0 B'})`);
+        state.setElemText('fmtImgStats', `${stats.formatBreakdown.image?.count || 0} files (${stats.formatBreakdown.image?.sizeFormatted || '0 B'})`);
+        state.setElemText('fmtTxtStats', `${stats.formatBreakdown.text?.count || 0} files (${stats.formatBreakdown.text?.sizeFormatted || '0 B'})`);
+        state.setElemText('fmtWordStats', `${stats.formatBreakdown.word?.count || 0} files (${stats.formatBreakdown.word?.sizeFormatted || '0 B'})`);
+        state.setElemText('fmtExcelStats', `${stats.formatBreakdown.excel?.count || 0} files (${stats.formatBreakdown.excel?.sizeFormatted || '0 B'})`);
+      }
+    } catch (err) {}
+  }
+
   async loadOllamaModels(activeModel?: string): Promise<void> {
     const selectElem = document.getElementById('cfgOllamaModelSelect') as HTMLSelectElement | null;
     const inputElem = document.getElementById('cfgOllamaModel') as HTMLInputElement | null;
+    const btnRefresh = document.getElementById('btnRefreshOllamaModels') as HTMLButtonElement | null;
     if (!selectElem || !inputElem) return;
+
+    if (btnRefresh) {
+      btnRefresh.disabled = true;
+      btnRefresh.innerHTML = '<span class="spinner-small spinner-white" style="width: 11px; height: 11px; margin-right: 0.3rem;"></span> Fetching...';
+    }
 
     const currentModel = activeModel || inputElem.value || 'qwen3.5:9b';
 
@@ -1067,12 +1168,166 @@ class ModalsManager {
       }
     } catch (err) {
       console.warn('Failed to load Ollama models list', err);
+    } finally {
+      if (btnRefresh) {
+        btnRefresh.disabled = false;
+        btnRefresh.innerHTML = '🔄 Fetch Models';
+      }
     }
   }
 
   closeSettingsModal(): void {
     const modal = document.getElementById('settingsModal');
     if (modal) modal.classList.remove('open');
+  }
+
+  switchAIProviderMode(mode: 'local' | 'cloud'): void {
+    const btnLocal = document.getElementById('btnModeLocal');
+    const btnCloud = document.getElementById('btnModeCloud');
+    const localSection = document.getElementById('localAISection');
+    const cloudSection = document.getElementById('cloudAISection');
+    const hiddenProvider = document.getElementById('cfgAIProvider') as HTMLInputElement | null;
+
+    if (hiddenProvider) hiddenProvider.value = mode;
+
+    if (mode === 'local') {
+      if (btnLocal) {
+        btnLocal.classList.add('active');
+        btnLocal.style.background = 'var(--accent-blue)';
+        btnLocal.style.color = '#fff';
+      }
+      if (btnCloud) {
+        btnCloud.classList.remove('active');
+        btnCloud.style.background = 'transparent';
+        btnCloud.style.color = '#94a3b8';
+      }
+      if (localSection) localSection.style.display = 'block';
+      if (cloudSection) cloudSection.style.display = 'none';
+    } else {
+      if (btnCloud) {
+        btnCloud.classList.add('active');
+        btnCloud.style.background = 'var(--accent-blue)';
+        btnCloud.style.color = '#fff';
+      }
+      if (btnLocal) {
+        btnLocal.classList.remove('active');
+        btnLocal.style.background = 'transparent';
+        btnLocal.style.color = '#94a3b8';
+      }
+      if (localSection) localSection.style.display = 'none';
+      if (cloudSection) cloudSection.style.display = 'block';
+    }
+  }
+
+  switchCloudProviderTab(provider: string): void {
+    const hiddenCloud = document.getElementById('cfgCloudProvider') as HTMLInputElement | null;
+    if (hiddenCloud) hiddenCloud.value = provider;
+
+    const tabs = document.querySelectorAll('.cloud-tab-btn');
+    tabs.forEach(tab => {
+      const p = tab.getAttribute('data-cloud');
+      const tabEl = tab as HTMLElement;
+      if (p === provider) {
+        tabEl.classList.add('active');
+        tabEl.style.border = '1px solid var(--accent-blue)';
+        tabEl.style.background = 'rgba(59, 130, 246, 0.2)';
+        tabEl.style.color = '#60a5fa';
+      } else {
+        tabEl.classList.remove('active');
+        tabEl.style.border = '1px solid var(--border-color)';
+        tabEl.style.background = 'rgba(255, 255, 255, 0.04)';
+        tabEl.style.color = '#cbd5e1';
+      }
+    });
+
+    ['google', 'claude', 'deepseek', 'openai'].forEach(p => {
+      const panel = document.getElementById(`cloudPanel_${p}`);
+      if (panel) {
+        panel.style.display = p === provider ? 'block' : 'none';
+      }
+    });
+
+    const testStatus = document.getElementById('testAIStatusMsg');
+    if (testStatus) testStatus.innerHTML = '';
+  }
+
+  async handleTestAIConnection(): Promise<void> {
+    const cloudProvider = (document.getElementById('cfgCloudProvider') as HTMLInputElement | null)?.value || 'google';
+    let apiKey = '';
+    let model = '';
+    let baseUrl = '';
+
+    if (cloudProvider === 'google') {
+      apiKey = (document.getElementById('cfgGoogleApiKey') as HTMLInputElement | null)?.value.trim() || '';
+      model = (document.getElementById('cfgGoogleModel') as HTMLSelectElement | null)?.value || 'gemini-2.5-flash';
+      baseUrl = (document.getElementById('cfgGoogleBaseUrl') as HTMLInputElement | null)?.value.trim() || '';
+    } else if (cloudProvider === 'claude') {
+      apiKey = (document.getElementById('cfgAnthropicApiKey') as HTMLInputElement | null)?.value.trim() || '';
+      model = (document.getElementById('cfgAnthropicModel') as HTMLSelectElement | null)?.value || 'claude-3-7-sonnet-20250219';
+      baseUrl = (document.getElementById('cfgAnthropicBaseUrl') as HTMLInputElement | null)?.value.trim() || '';
+    } else if (cloudProvider === 'deepseek') {
+      apiKey = (document.getElementById('cfgDeepSeekApiKey') as HTMLInputElement | null)?.value.trim() || '';
+      model = (document.getElementById('cfgDeepSeekModel') as HTMLSelectElement | null)?.value || 'deepseek-chat';
+      baseUrl = (document.getElementById('cfgDeepSeekBaseUrl') as HTMLInputElement | null)?.value.trim() || '';
+    } else if (cloudProvider === 'openai') {
+      apiKey = (document.getElementById('cfgOpenAIApiKey') as HTMLInputElement | null)?.value.trim() || '';
+      model = (document.getElementById('cfgOpenAIModel') as HTMLSelectElement | null)?.value || 'gpt-4o-mini';
+      baseUrl = (document.getElementById('cfgOpenAIBaseUrl') as HTMLInputElement | null)?.value.trim() || '';
+    }
+
+    const testStatus = document.getElementById('testAIStatusMsg');
+    const btn = document.getElementById('btnTestAIConnection') as HTMLButtonElement | null;
+
+    if (!apiKey) {
+      if (testStatus) testStatus.innerHTML = '<span style="color: #f87171;">⚠️ API Key required</span>';
+      this.app.toast.error(`Please enter an API Key for ${cloudProvider.toUpperCase()}`);
+      return;
+    }
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-small spinner-white" style="width: 13px; height: 13px; margin-right: 0.4rem;"></span> Testing...';
+    }
+    if (testStatus) {
+      testStatus.innerHTML = `<span style="color: #38bdf8; display: inline-flex; align-items: center; gap: 0.45rem;"><span class="spinner-small spinner-accent" style="width: 13px; height: 13px;"></span> Connecting to ${cloudProvider}...</span>`;
+    }
+
+    try {
+      const res = await fetch('/api/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: cloudProvider,
+          api_key: apiKey,
+          model: model,
+          base_url: baseUrl
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (testStatus) {
+          testStatus.innerHTML = `<span style="color: #34d399; display: inline-flex; align-items: center; gap: 0.35rem;">✅ Connected (${data.latency_ms}ms)</span>`;
+        }
+        this.app.toast.success(`Success! Connected to ${cloudProvider} (${data.latency_ms}ms)`);
+      } else {
+        const errMsg = data.error || 'Connection failed';
+        if (testStatus) {
+          testStatus.innerHTML = `<span style="color: #f87171; display: inline-flex; align-items: center; gap: 0.35rem;" title="${errMsg}">❌ ${errMsg.length > 35 ? errMsg.substring(0, 32) + '...' : errMsg}</span>`;
+        }
+        this.app.toast.error(`Connection failed: ${errMsg}`);
+      }
+    } catch (err: any) {
+      if (testStatus) {
+        testStatus.innerHTML = `<span style="color: #f87171;">❌ Network error</span>`;
+      }
+      this.app.toast.error('Test request failed: ' + err.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '🧪 Test Connection';
+      }
+    }
   }
 
   switchSettingsTab(tabName: string): void {
@@ -1320,13 +1575,36 @@ class ModalsManager {
     e.preventDefault();
     const state = this.app.state;
 
-    const payload = {
+    const aiProvider = (document.getElementById('cfgAIProvider') as HTMLInputElement | null)?.value || 'local';
+    const cloudProvider = (document.getElementById('cfgCloudProvider') as HTMLInputElement | null)?.value || 'google';
+
+    const payload: any = {
       language: state.getVal('cfgLanguage') || 'FR',
       input_dir: state.getVal('cfgInputDir').trim(),
       output_root_dir: state.getVal('cfgOutputDir').trim(),
       ollama_model: state.getVal('cfgOllamaModel').trim(),
-      ollama_host: state.getVal('cfgOllamaHost').trim()
+      ollama_host: state.getVal('cfgOllamaHost').trim(),
+      ai_provider: aiProvider,
+      cloud_provider: cloudProvider,
+      google_api_key: (document.getElementById('cfgGoogleApiKey') as HTMLInputElement | null)?.value.trim() || '',
+      google_model: (document.getElementById('cfgGoogleModel') as HTMLSelectElement | null)?.value || 'gemini-2.5-flash',
+      google_base_url: (document.getElementById('cfgGoogleBaseUrl') as HTMLInputElement | null)?.value.trim() || '',
+      anthropic_api_key: (document.getElementById('cfgAnthropicApiKey') as HTMLInputElement | null)?.value.trim() || '',
+      anthropic_model: (document.getElementById('cfgAnthropicModel') as HTMLSelectElement | null)?.value || 'claude-3-7-sonnet-20250219',
+      anthropic_base_url: (document.getElementById('cfgAnthropicBaseUrl') as HTMLInputElement | null)?.value.trim() || '',
+      deepseek_api_key: (document.getElementById('cfgDeepSeekApiKey') as HTMLInputElement | null)?.value.trim() || '',
+      deepseek_model: (document.getElementById('cfgDeepSeekModel') as HTMLSelectElement | null)?.value || 'deepseek-chat',
+      deepseek_base_url: (document.getElementById('cfgDeepSeekBaseUrl') as HTMLInputElement | null)?.value.trim() || '',
+      openai_api_key: (document.getElementById('cfgOpenAIApiKey') as HTMLInputElement | null)?.value.trim() || '',
+      openai_model: (document.getElementById('cfgOpenAIModel') as HTMLSelectElement | null)?.value || 'gpt-4o-mini',
+      openai_base_url: (document.getElementById('cfgOpenAIBaseUrl') as HTMLInputElement | null)?.value.trim() || ''
     };
+
+    const btnSave = document.getElementById('btnSaveSettings') as HTMLButtonElement | null;
+    if (btnSave) {
+      btnSave.disabled = true;
+      btnSave.innerHTML = '<span class="spinner-small spinner-white" style="width: 14px; height: 14px; margin-right: 0.45rem;"></span> Saving Settings...';
+    }
 
     try {
       const res = await fetch('/api/config', {
@@ -1348,6 +1626,11 @@ class ModalsManager {
       }
     } catch (err: any) {
       this.app.toast.error('Failed to save settings: ' + err.message);
+    } finally {
+      if (btnSave) {
+        btnSave.disabled = false;
+        btnSave.innerHTML = '💾 Save System Settings';
+      }
     }
   }
 

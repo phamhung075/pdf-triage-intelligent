@@ -38,10 +38,54 @@ class DocumentGridManager {
     grid.innerHTML = '';
 
     if (docs.length === 0) {
+      const searchEl = document.getElementById('searchInput') as HTMLInputElement | null;
+      const query = searchEl ? searchEl.value.trim() : '';
+
+      if (query) {
+        grid.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: #94a3b8;">
+            <div style="font-size: 2.5rem; margin-bottom: 0.8rem;">🔍</div>
+            <h3 style="color: #f8fafc; font-size: 1.15rem; margin-bottom: 0.4rem;">No matching documents</h3>
+            <p>No documents match the search <code>"${state.escapeHtml(query)}"</code>.</p>
+            <button type="button" class="btn-secondary" style="margin-top: 1rem;" onclick="document.getElementById('btnClearSearch')?.click()">Clear Search</button>
+          </div>
+        `;
+        return;
+      }
+
+      if (state.activeCategory) {
+        grid.innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: #94a3b8;">
+            <div style="font-size: 2.5rem; margin-bottom: 0.8rem;">📁</div>
+            <h3 style="color: #f8fafc; font-size: 1.15rem; margin-bottom: 0.4rem;">No documents in this category</h3>
+            <p>No documents found in <b>${state.escapeHtml(state.activeCategory)}</b>${state.activeSubcategory ? ` / <b>${state.escapeHtml(state.activeSubcategory)}</b>` : ''}.</p>
+          </div>
+        `;
+        return;
+      }
+
       grid.innerHTML = `
-        <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1rem; color: #94a3b8;">
-          <h3>No documents found in registry</h3>
-          <p>Drop files into <code>your incoming folder</code> folder and click 'Scan & Triage Files'.</p>
+        <div style="grid-column: 1 / -1; text-align: center; padding: 4rem 1.5rem; color: #94a3b8; max-width: 650px; margin: 0 auto;">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">📂</div>
+          <h3 style="color: #f8fafc; font-size: 1.3rem; margin-bottom: 0.6rem;">No documents found in registry</h3>
+          <p style="font-size: 0.95rem; line-height: 1.6; color: #94a3b8; margin-bottom: 1.5rem;">
+            Drop files into your incoming folder and click <b>Scan & Triage Files</b>.<br>
+            If you already have sorted documents in your archive folder, click <b>Repair & Sync Archive</b> to index them.
+          </p>
+          <div style="display: flex; gap: 0.8rem; justify-content: center; flex-wrap: wrap;">
+            <button type="button" class="btn-primary" onclick="document.getElementById('btnScan')?.click()">
+              ⚡ Scan & Triage Files
+            </button>
+            <button type="button" class="btn-secondary" onclick="document.getElementById('btnRepair')?.click()">
+              🔧 Repair & Sync Archive
+            </button>
+            <button type="button" class="btn-secondary" onclick="document.getElementById('btnOpenRaws')?.click()">
+              📥 Open Incoming Folder
+            </button>
+            <button type="button" class="btn-secondary" onclick="document.getElementById('btnImportImages')?.click()">
+              🖼️ Import Image(s)
+            </button>
+          </div>
         </div>
       `;
       return;

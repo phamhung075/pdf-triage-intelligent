@@ -38,7 +38,7 @@
         <button id="btnOpenRaws" class="btn-secondary" title="Open your incoming documents folder">📥 Open Incoming</button>
         <button id="btnOpenArchive" class="btn-secondary" title="Open your sorted documents folder">📂 Open Archive</button>
         <button id="btnLogs" class="btn-secondary" title="View real-time backend terminal logs">📋 Terminal Logs</button>
-        <button id="btnOpenChatAssistant" class="btn-primary" style="background: linear-gradient(135deg, #a855f7, #7e22ce); border: none;" title="Ask questions or prepare administrative document dossiers with Local AI">💬 AI Assistant</button>
+        <button id="btnOpenChatAssistant" class="btn-primary" style="background: linear-gradient(135deg, #a855f7, #7e22ce); border: none;" title="Ask questions or prepare administrative document dossiers with your AI archivist">💬 AI Assistant</button>
         <button id="btnSettings" class="btn-secondary">⚙️ System Config</button>
       </div>
     </header>
@@ -416,33 +416,190 @@
           </div>
         </div>
 
-        <!-- Local AI (Ollama) Engine Config -->
-        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.2rem; margin-bottom: 1.5rem;">
-          <h3 style="font-size: 1rem; color: var(--accent-blue); margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem;">
-            <span>🤖 Local AI (Ollama) Service & Model Setup</span>
-          </h3>
+        <!-- AI Engine & Model Configuration (Local vs Cloud) -->
+        <div class="ai-config-card" style="background: rgba(15, 23, 42, 0.65); border: 1px solid var(--border-color); border-radius: 10px; padding: 1.4rem; margin-bottom: 1.5rem; backdrop-filter: blur(8px);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; flex-wrap: wrap; gap: 0.8rem;">
+            <h3 style="font-size: 1.05rem; color: var(--accent-blue); display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+              <span>🧠 AI Engine & Intelligence Provider</span>
+            </h3>
+            <!-- Mode Switcher: Local vs Cloud -->
+            <div class="provider-mode-selector" style="display: inline-flex; background: rgba(0, 0, 0, 0.4); border-radius: 8px; padding: 3px; border: 1px solid var(--border-color);">
+              <button type="button" id="btnModeLocal" class="mode-btn active" style="padding: 0.4rem 0.9rem; border-radius: 6px; border: none; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; background: var(--accent-blue); color: #fff;">
+                🏠 Local AI (Ollama)
+              </button>
+              <button type="button" id="btnModeCloud" class="mode-btn" style="padding: 0.4rem 0.9rem; border-radius: 6px; border: none; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; background: transparent; color: #94a3b8;">
+                ☁️ Cloud AI Services
+              </button>
+            </div>
+            <input type="hidden" id="cfgAIProvider" value="local">
+          </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;">
-            <div class="form-group">
-              <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🌐 Ollama Host URL</label>
-              <input type="text" id="cfgOllamaHost" required placeholder="http://127.0.0.1:11434" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+          <!-- SUBPANEL 1: Local AI (Ollama) -->
+          <div id="localAISection" style="display: block;">
+            <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 1rem;">
+              Local processing runs directly on your machine via Ollama. Completely private, free, and offline.
+            </p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;">
+              <div class="form-group">
+                <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🌐 Ollama Host URL</label>
+                <input type="text" id="cfgOllamaHost" placeholder="http://127.0.0.1:11434" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+              </div>
+
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">🧠 Ollama AI Model</label>
+                  <button type="button" id="btnRefreshOllamaModels" class="btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" title="Fetch installed models from local Ollama API">🔄 Fetch Models</button>
+                </div>
+                <select id="cfgOllamaModelSelect" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fbbf24; border: 1px solid var(--border-color); font-size: 0.95rem; font-weight: 600;">
+                  <option value="qwen3.5:9b">⚡ qwen3.5:9b (Default)</option>
+                </select>
+                <input type="text" id="cfgOllamaModel" placeholder="qwen3.5:9b" style="display: none; width: 100%; margin-top: 0.4rem; padding: 0.5rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fbbf24; border: 1px solid var(--border-color); font-size: 0.9rem;">
+              </div>
+            </div>
+          </div>
+
+          <!-- SUBPANEL 2: Cloud AI Services -->
+          <div id="cloudAISection" style="display: none;">
+            <p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 1rem;">
+              High-performance reasoning and document classification via cloud AI providers. Select your preferred service below:
+            </p>
+
+            <!-- Cloud Provider Tabs -->
+            <div class="cloud-provider-tabs" style="display: flex; gap: 0.5rem; margin-bottom: 1.2rem; flex-wrap: wrap;">
+              <button type="button" class="cloud-tab-btn active" data-cloud="google" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--accent-blue); background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                <span>🔷 Google Gemini</span>
+              </button>
+              <button type="button" class="cloud-tab-btn" data-cloud="claude" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.04); color: #cbd5e1; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                <span>🟧 Anthropic Claude</span>
+              </button>
+              <button type="button" class="cloud-tab-btn" data-cloud="deepseek" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.04); color: #cbd5e1; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                <span>🐋 DeepSeek</span>
+              </button>
+              <button type="button" class="cloud-tab-btn" data-cloud="openai" style="padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255, 255, 255, 0.04); color: #cbd5e1; font-size: 0.85rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.4rem;">
+                <span>🟢 OpenAI</span>
+              </button>
+            </div>
+            <input type="hidden" id="cfgCloudProvider" value="google">
+
+            <!-- Provider 1: Google Gemini -->
+            <div id="cloudPanel_google" class="cloud-provider-panel">
+              <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 1.2rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🔑 Google AI Studio API Key</label>
+                  <div style="display: flex; gap: 0.4rem;">
+                    <input type="password" id="cfgGoogleApiKey" placeholder="AIzaSy..." style="flex: 1; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+                    <button type="button" class="btn-secondary btn-toggle-pwd" data-target="cfgGoogleApiKey" style="padding: 0 0.8rem;" title="Show/Hide Key">👁️</button>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🧠 Model</label>
+                  <select id="cfgGoogleModel" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #60a5fa; border: 1px solid var(--border-color); font-size: 0.95rem; font-weight: 600;">
+                    <option value="gemini-2.5-flash">⚡ gemini-2.5-flash (Fast & Accurate - Recommended)</option>
+                    <option value="gemini-2.5-pro">💎 gemini-2.5-pro (Deep Reasoning)</option>
+                    <option value="gemini-1.5-flash">🚀 gemini-1.5-flash</option>
+                    <option value="gemini-1.5-pro">🧠 gemini-1.5-pro</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="font-size: 0.8rem; color: #64748b; font-weight: 500; display: block; margin-bottom: 0.3rem;">🌐 Custom Endpoint URL (Optional, defaults to official Google AI Studio)</label>
+                <input type="text" id="cfgGoogleBaseUrl" placeholder="https://generativelanguage.googleapis.com" style="width: 100%; padding: 0.5rem 0.8rem; border-radius: 6px; background: #0f172a; color: #94a3b8; border: 1px solid var(--border-color); font-size: 0.85rem;">
+              </div>
             </div>
 
-            <div class="form-group">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
-                <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600;">🧠 Ollama AI Model</label>
-                <button type="button" id="btnRefreshOllamaModels" class="btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" title="Fetch installed models from local Ollama API">🔄 Fetch Models</button>
+            <!-- Provider 2: Claude (Anthropic) -->
+            <div id="cloudPanel_claude" class="cloud-provider-panel" style="display: none;">
+              <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 1.2rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🔑 Anthropic Claude API Key</label>
+                  <div style="display: flex; gap: 0.4rem;">
+                    <input type="password" id="cfgAnthropicApiKey" placeholder="sk-ant-api03-..." style="flex: 1; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+                    <button type="button" class="btn-secondary btn-toggle-pwd" data-target="cfgAnthropicApiKey" style="padding: 0 0.8rem;" title="Show/Hide Key">👁️</button>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🧠 Model</label>
+                  <select id="cfgAnthropicModel" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fb923c; border: 1px solid var(--border-color); font-size: 0.95rem; font-weight: 600;">
+                    <option value="claude-3-7-sonnet-20250219">⚡ claude-3-7-sonnet (Latest Hybrid Reasoning - Recommended)</option>
+                    <option value="claude-3-5-sonnet-20241022">🧠 claude-3-5-sonnet</option>
+                    <option value="claude-3-5-haiku-20241022">🚀 claude-3-5-haiku (Fast & Lightweight)</option>
+                  </select>
+                </div>
               </div>
-              <select id="cfgOllamaModelSelect" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fbbf24; border: 1px solid var(--border-color); font-size: 0.95rem; font-weight: 600;">
-                <option value="qwen3.5:9b">⚡ qwen3.5:9b (Default)</option>
-              </select>
-              <input type="text" id="cfgOllamaModel" required placeholder="qwen3.5:9b" style="display: none; width: 100%; margin-top: 0.4rem; padding: 0.5rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fbbf24; border: 1px solid var(--border-color); font-size: 0.9rem;">
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="font-size: 0.8rem; color: #64748b; font-weight: 500; display: block; margin-bottom: 0.3rem;">🌐 Custom Endpoint URL (Optional, defaults to https://api.anthropic.com)</label>
+                <input type="text" id="cfgAnthropicBaseUrl" placeholder="https://api.anthropic.com" style="width: 100%; padding: 0.5rem 0.8rem; border-radius: 6px; background: #0f172a; color: #94a3b8; border: 1px solid var(--border-color); font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <!-- Provider 3: DeepSeek -->
+            <div id="cloudPanel_deepseek" class="cloud-provider-panel" style="display: none;">
+              <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 1.2rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🔑 DeepSeek Platform API Key</label>
+                  <div style="display: flex; gap: 0.4rem;">
+                    <input type="password" id="cfgDeepSeekApiKey" placeholder="sk-..." style="flex: 1; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+                    <button type="button" class="btn-secondary btn-toggle-pwd" data-target="cfgDeepSeekApiKey" style="padding: 0 0.8rem;" title="Show/Hide Key">👁️</button>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🧠 Model</label>
+                  <select id="cfgDeepSeekModel" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #38bdf8; border: 1px solid var(--border-color); font-size: 0.95rem; font-weight: 600;">
+                    <option value="deepseek-chat">⚡ deepseek-chat (DeepSeek-V3 - Recommended)</option>
+                    <option value="deepseek-reasoner">🧠 deepseek-reasoner (DeepSeek-R1 Full CoT Reasoning)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="font-size: 0.8rem; color: #64748b; font-weight: 500; display: block; margin-bottom: 0.3rem;">🌐 Custom Endpoint URL (Optional, defaults to https://api.deepseek.com)</label>
+                <input type="text" id="cfgDeepSeekBaseUrl" placeholder="https://api.deepseek.com" style="width: 100%; padding: 0.5rem 0.8rem; border-radius: 6px; background: #0f172a; color: #94a3b8; border: 1px solid var(--border-color); font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <!-- Provider 4: OpenAI -->
+            <div id="cloudPanel_openai" class="cloud-provider-panel" style="display: none;">
+              <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 1.2rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🔑 OpenAI API Key</label>
+                  <div style="display: flex; gap: 0.4rem;">
+                    <input type="password" id="cfgOpenAIApiKey" placeholder="sk-proj-..." style="flex: 1; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+                    <button type="button" class="btn-secondary btn-toggle-pwd" data-target="cfgOpenAIApiKey" style="padding: 0 0.8rem;" title="Show/Hide Key">👁️</button>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🧠 Model</label>
+                  <select id="cfgOpenAIModel" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #34d399; border: 1px solid var(--border-color); font-size: 0.95rem; font-weight: 600;">
+                    <option value="gpt-4o-mini">⚡ gpt-4o-mini (Fast & Efficient - Recommended)</option>
+                    <option value="gpt-4o">🧠 gpt-4o (High Intelligence)</option>
+                    <option value="o3-mini">🔬 o3-mini (STEM / Reasoning Specialist)</option>
+                    <option value="gpt-4.5-preview">💎 gpt-4.5-preview</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label style="font-size: 0.8rem; color: #64748b; font-weight: 500; display: block; margin-bottom: 0.3rem;">🌐 Custom Endpoint URL (Optional, defaults to https://api.openai.com/v1)</label>
+                <input type="text" id="cfgOpenAIBaseUrl" placeholder="https://api.openai.com/v1" style="width: 100%; padding: 0.5rem 0.8rem; border-radius: 6px; background: #0f172a; color: #94a3b8; border: 1px solid var(--border-color); font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <!-- Test Connection Section -->
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.8rem 1rem; background: rgba(0, 0, 0, 0.25); border: 1px dashed var(--border-color); border-radius: 8px; margin-top: 0.5rem;">
+              <div>
+                <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">Test Active Cloud Credentials</span>
+                <span style="display: block; font-size: 0.75rem; color: #64748b;">Verify API key authentication and latency before saving.</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.8rem;">
+                <span id="testAIStatusMsg" style="font-size: 0.8rem; font-weight: 500;"></span>
+                <button type="button" id="btnTestAIConnection" class="btn-secondary" style="padding: 0.45rem 1rem; font-size: 0.85rem; font-weight: 600;">
+                  🧪 Test Connection
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1.5rem;">
-          <button type="submit" class="btn-primary" style="padding: 0.75rem 1.8rem; font-weight: 600;">💾 Save System Settings</button>
+          <button type="submit" id="btnSaveSettings" class="btn-primary" style="padding: 0.75rem 1.8rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;">💾 Save System Settings</button>
         </div>
 
         <div style="margin-top: 2rem; border-top: 1px dashed rgba(239, 68, 68, 0.4); padding-top: 1.2rem;">
@@ -808,7 +965,7 @@
       <div class="modal-header" style="padding-bottom: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 0.8rem;">
         <div style="display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap;">
           <h2 style="font-size: 1.25rem; margin: 0; color: #f8fafc; display: flex; align-items: center; gap: 0.5rem;">
-            <span>💬 Local AI Document Archivist & Dossier Assistant</span>
+            <span id="chatAssistantTitle">💬 Local AI Document Archivist & Dossier Assistant</span>
           </h2>
           <span id="mcpStatusBadge" class="badge" style="background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.4); color: #4ade80; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.55rem; border-radius: 6px;" title="MCP Protocol Engine Connected & Active">
             <span style="width: 7px; height: 7px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e;"></span>
@@ -833,8 +990,8 @@
 
       <!-- Chat History Output Window -->
       <div id="chatMessageHistory" style="flex: 1; min-height: 0; overflow-y: auto; padding: 0.8rem; background: #030712; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; margin-bottom: 0.8rem;">
-        <div style="color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 2rem;">
-          👋 Hello! I am your local AI document archivist powered by Qwen 3.5.<br>Ask me any question or click a <strong>Quick Dossier chip</strong> above to generate a complete document checklist!
+        <div id="chatDefaultGreeting" style="color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 2rem;">
+          👋 Hello! I am your AI document archivist.<br>Ask me any question or click a <strong>Quick Dossier chip</strong> above to generate a complete document checklist!
         </div>
       </div>
 

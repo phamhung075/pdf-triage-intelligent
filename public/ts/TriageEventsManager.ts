@@ -151,6 +151,34 @@ class TriageEventsManager {
       const res = await fetch('/api/ollama/status');
       const data = await res.json();
 
+      if (data.provider === 'cloud') {
+        const cloudNames: Record<string, string> = {
+          google: 'Gemini',
+          gemini: 'Gemini',
+          claude: 'Claude',
+          anthropic: 'Claude',
+          deepseek: 'DeepSeek',
+          openai: 'OpenAI'
+        };
+        const pName = cloudNames[data.cloud_provider?.toLowerCase()] || data.cloud_provider || 'Cloud AI';
+        if (data.online) {
+          badge.className = 'ollama-status-badge online';
+          textEl.textContent = `☁️ ${pName} (${data.model})`;
+          badge.title = `Connected to Cloud AI (${pName}) model ${data.model}`;
+          if (btnStart) btnStart.style.display = 'none';
+          if (btnRestart) btnRestart.style.display = 'none';
+          this.setEngineStatus('Ready', '#10b981');
+        } else {
+          badge.className = 'ollama-status-badge offline';
+          textEl.textContent = `☁️ ${pName} (No Key)`;
+          badge.title = `Cloud AI (${pName}) is active but API key is missing. Open Settings to configure.`;
+          if (btnStart) btnStart.style.display = 'none';
+          if (btnRestart) btnRestart.style.display = 'none';
+          this.setEngineStatus('Key Missing', '#f59e0b');
+        }
+        return;
+      }
+
       if (data.online) {
         badge.className = 'ollama-status-badge online';
         textEl.textContent = `Ollama AI (${data.model})`;
@@ -191,7 +219,7 @@ class TriageEventsManager {
     const btn = document.getElementById('btnStartOllama') as HTMLButtonElement | null;
     if (btn) {
       btn.disabled = true;
-      btn.textContent = '⏳ Starting...';
+      btn.innerHTML = '<span class="spinner-small spinner-white" style="width: 12px; height: 12px; margin-right: 0.35rem;"></span> Starting...';
     }
 
     try {
@@ -201,23 +229,39 @@ class TriageEventsManager {
         this.checkOllamaStatus();
         if (btn) {
           btn.disabled = false;
-          btn.textContent = '▶️ Start Ollama';
+          btn.innerHTML = '▶️ Start Ollama';
         }
       }, 2500);
     } catch (err: any) {
       this.app.toast.error('Failed to start Ollama: ' + err.message);
       if (btn) {
         btn.disabled = false;
-        btn.textContent = '▶️ Start Ollama';
+        btn.innerHTML = '▶️ Start Ollama';
       }
     }
   }
 
   async handleRestartServer(): Promise<void> {
     if (!confirm('Are you sure you want to restart the backend server?')) return;
+    const btn = document.getElementById('btnRestartServer') as HTMLButtonElement | null;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-small spinner-white" style="width: 12px; height: 12px; margin-right: 0.35rem;"></span> Restarting...';
+    }
     try {
       await fetch('/api/server/restart', { method: 'POST' });
-    } catch (err) {}
+      setTimeout(() => {
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = '🔄 Restart Server';
+        }
+      }, 3000);
+    } catch (err) {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Restart Server';
+      }
+    }
   }
 
   async openFileLocation(targetPath?: string): Promise<void> {
@@ -304,6 +348,12 @@ class TriageEventsManager {
   async handleClearRegistry(): Promise<void> {
     if (!confirm('Are you sure you want to clear the registry and move all archived PDFs back to your incoming folder?')) return;
 
+    const btnClear = document.getElementById('btnClear') as HTMLButtonElement | null;
+    if (btnClear) {
+      btnClear.disabled = true;
+      btnClear.innerHTML = '<span class="spinner-small" style="width: 12px; height: 12px; border-color: rgba(239,68,68,0.3); border-top-color: #ef4444; margin-right: 0.35rem;"></span> Clearing...';
+    }
+
     try {
       const res = await fetch('/api/documents', { method: 'DELETE' });
       const data = await res.json();
@@ -317,6 +367,11 @@ class TriageEventsManager {
       }
     } catch (err: any) {
       this.app.toast.error('Failed to clear registry: ' + err.message);
+    } finally {
+      if (btnClear) {
+        btnClear.disabled = false;
+        btnClear.innerHTML = '🗑️ Clear Registry & Reset Database';
+      }
     }
   }
 

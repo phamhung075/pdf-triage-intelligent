@@ -98,6 +98,9 @@ class TriageApp {
     this.addEv('tabBtnDecisions', 'click', () => this.modals.switchSettingsTab('decisions'));
     this.addEv('btnClearAllDecisions', 'click', () => this.modals.clearAllDecisions());
     this.addEv('btnAddCategory', 'click', () => this.modals.handleAddCategory());
+    this.addEv('btnModeLocal', 'click', () => this.modals.switchAIProviderMode('local'));
+    this.addEv('btnModeCloud', 'click', () => this.modals.switchAIProviderMode('cloud'));
+    this.addEv('btnTestAIConnection', 'click', () => this.modals.handleTestAIConnection());
 
     // Tools & Utilities
     this.addEv('btnExportCsv', 'click', () => this.events.exportDocumentsCsv());

@@ -232,6 +232,18 @@ h1 {
   animation: spin 0.7s linear infinite;
   display: inline-block;
   vertical-align: middle;
+  flex-shrink: 0;
+  box-sizing: border-box;
+
+  &.spinner-white {
+    border-color: rgba(255, 255, 255, 0.25) !important;
+    border-top-color: #ffffff !important;
+  }
+
+  &.spinner-accent {
+    border-color: rgba(56, 189, 248, 0.25) !important;
+    border-top-color: #38bdf8 !important;
+  }
 }
 
 .btn-op-active {
@@ -338,6 +350,16 @@ h1 {
     .status-dot {
       background: #f87171;
       box-shadow: 0 0 10px #f87171;
+    }
+  }
+
+  &.checking, &.waiting {
+    border-color: rgba(56, 189, 248, 0.4);
+    color: #7dd3fc;
+    .status-dot {
+      background: #38bdf8;
+      box-shadow: 0 0 10px #38bdf8;
+      animation: buttonPulseGlow 1s ease-in-out infinite alternate;
     }
   }
 }
@@ -1496,3 +1518,82 @@ $file-type-styles: (
 }
 
 .editor-slider { width: 100%; }
+
+/* AI Provider & Cloud Services Configuration */
+.ai-config-card {
+  transition: all 0.3s ease;
+
+  .provider-mode-selector {
+    .mode-btn {
+      color: #94a3b8;
+      background: transparent;
+
+      &.active {
+        background: var(--accent-blue) !important;
+        color: #ffffff !important;
+        box-shadow: 0 2px 8px rgba(56, 189, 248, 0.3);
+      }
+
+      &:hover:not(.active) {
+        color: #e2e8f0;
+      }
+    }
+  }
+
+  .cloud-tab-btn {
+    transition: all 0.2s ease;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+
+    &.active[data-cloud="google"] {
+      border-color: #3b82f6 !important;
+      background: rgba(59, 130, 246, 0.2) !important;
+      color: #60a5fa !important;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
+    }
+
+    &.active[data-cloud="claude"] {
+      border-color: #f97316 !important;
+      background: rgba(249, 115, 22, 0.2) !important;
+      color: #fb923c !important;
+      box-shadow: 0 0 10px rgba(249, 115, 22, 0.25);
+    }
+
+    &.active[data-cloud="deepseek"] {
+      border-color: #0284c7 !important;
+      background: rgba(2, 132, 199, 0.2) !important;
+      color: #38bdf8 !important;
+      box-shadow: 0 0 10px rgba(2, 132, 199, 0.25);
+    }
+
+    &.active[data-cloud="openai"] {
+      border-color: #10b981 !important;
+      background: rgba(16, 185, 129, 0.2) !important;
+      color: #34d399 !important;
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+    }
+  }
+
+  .btn-toggle-pwd {
+    font-size: 0.9rem;
+    transition: transform 0.15s ease;
+    &:active {
+      transform: scale(0.92);
+    }
+  }
+
+  #testAIStatusMsg {
+    &.success {
+      color: #34d399;
+    }
+    &.error {
+      color: #f87171;
+    }
+    &.testing {
+      color: #fbbf24;
+    }
+  }
+}

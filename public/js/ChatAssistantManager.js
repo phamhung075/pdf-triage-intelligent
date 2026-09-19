@@ -5,6 +5,12 @@ class ChatAssistantManager {
     app;
     chatHistory = [];
     isSending = false;
+    aiInfo = {
+        provider: 'local',
+        cloudProvider: '',
+        model: 'qwen3.5:9b',
+        displayName: 'Local AI'
+    };
     constructor(app) {
         this.app = app;
     }
@@ -37,6 +43,79 @@ class ChatAssistantManager {
                 }
             });
         });
+        this.updateAIStatus();
+    }
+    async updateAIStatus() {
+        try {
+            const res = await fetch('/api/ollama/status');
+            if (!res.ok)
+                return;
+            const data = await res.json();
+            const cloudNames = {
+                deepseek: 'DeepSeek',
+                google: 'Gemini',
+                gemini: 'Gemini',
+                claude: 'Claude',
+                anthropic: 'Claude',
+                openai: 'OpenAI'
+            };
+            if (data.provider === 'cloud') {
+                const pName = cloudNames[data.cloud_provider?.toLowerCase()] || data.cloud_provider || 'Cloud AI';
+                this.aiInfo = {
+                    provider: 'cloud',
+                    cloudProvider: data.cloud_provider || '',
+                    model: data.model || '',
+                    displayName: pName
+                };
+            }
+            else {
+                this.aiInfo = {
+                    provider: 'local',
+                    cloudProvider: '',
+                    model: data.model || 'qwen3.5:9b',
+                    displayName: 'Local AI'
+                };
+            }
+            this.renderAIHeaderAndGreeting();
+        }
+        catch { }
+    }
+    getGreetingHtml() {
+        if (this.aiInfo.provider === 'cloud') {
+            const pName = this.aiInfo.displayName;
+            const model = this.aiInfo.model;
+            const providerLabel = model ? `${pName} (${model})` : pName;
+            return `
+        <div style="color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 2rem;">
+          👋 Hello! I am your AI document archivist powered by <strong>${providerLabel}</strong>.<br>
+          Ask me any question or click a <strong>Quick Dossier chip</strong> above to generate a complete document checklist!
+        </div>
+      `;
+        }
+        const model = this.aiInfo.model || 'qwen3.5:9b';
+        return `
+      <div style="color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 2rem;">
+        👋 Hello! I am your local AI document archivist powered by <strong>${model}</strong>.<br>
+        Ask me any question or click a <strong>Quick Dossier chip</strong> above to generate a complete document checklist!
+      </div>
+    `;
+    }
+    renderAIHeaderAndGreeting() {
+        const titleEl = document.getElementById('chatAssistantTitle');
+        if (titleEl) {
+            if (this.aiInfo.provider === 'cloud') {
+                titleEl.textContent = `💬 AI Document Archivist & Dossier Assistant (${this.aiInfo.displayName})`;
+            }
+            else {
+                titleEl.textContent = '💬 Local AI Document Archivist & Dossier Assistant';
+            }
+        }
+        if (this.chatHistory.length === 0) {
+            const historyContainer = document.getElementById('chatMessageHistory');
+            if (historyContainer) {
+                historyContainer.innerHTML = this.getGreetingHtml();
+            }
+        }
     }
     openChatModal() {
         const modal = document.getElementById('chatAssistantModal');
@@ -46,6 +125,7 @@ class ChatAssistantManager {
         if (input)
             input.focus();
         this.updateMcpStatusBadge();
+        this.updateAIStatus();
     }
     async updateMcpStatusBadge() {
         const badge = document.getElementById('mcpStatusBadge');
@@ -83,11 +163,7 @@ class ChatAssistantManager {
         this.chatHistory = [];
         const historyContainer = document.getElementById('chatMessageHistory');
         if (historyContainer) {
-            historyContainer.innerHTML = `
-        <div style="color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 2rem;">
-          👋 Hello! I am your local AI document archivist powered by Qwen 3.5.<br>Ask me any question or click a <strong>Quick Dossier chip</strong> above to generate a complete document checklist!
-        </div>
-      `;
+            historyContainer.innerHTML = this.getGreetingHtml();
         }
         if (this.app?.toast) {
             this.app.toast.info('Chat conversation history cleared.');
@@ -109,7 +185,8 @@ class ChatAssistantManager {
         typingBubble.id = typingId;
         typingBubble.className = 'chat-message-bubble assistant typing';
         typingBubble.style.cssText = 'background: rgba(30, 41, 59, 0.7); border: 1px solid var(--border-color); border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 1rem; color: #94a3b8; font-size: 0.9rem; display: flex; align-items: center; gap: 0.5rem;';
-        typingBubble.innerHTML = '<span>🤖 AI archivist searching documents & preparing dossier...</span>';
+        const archivistLabel = this.aiInfo.provider === 'cloud' ? `${this.aiInfo.displayName} archivist` : 'AI archivist';
+        typingBubble.innerHTML = `<span>🤖 ${archivistLabel} searching documents & preparing dossier...</span>`;
         historyContainer.appendChild(typingBubble);
         historyContainer.scrollTop = historyContainer.scrollHeight;
         try {
@@ -166,7 +243,10 @@ class ChatAssistantManager {
                 .replace(/\n/g, '<br>')
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
                 .replace(/\[Doc #(\d+): (.*?)\]/g, '<span class="badge" style="background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.5); color: #e9d5ff; font-weight: 600; padding: 0.15rem 0.4rem; font-size: 0.85rem;">📄 $2</span>');
-            bubble.innerHTML = `<div style="font-weight: 700; font-size: 0.8rem; color: var(--accent-purple); margin-bottom: 0.4rem;">🤖 Local AI Archivist</div>${formattedText}`;
+            const archivistLabel = this.aiInfo.provider === 'cloud'
+                ? `🤖 ${this.app.state.escapeHtml(this.aiInfo.displayName)} Archivist`
+                : '🤖 Local AI Archivist';
+            bubble.innerHTML = `<div style="font-weight: 700; font-size: 0.8rem; color: var(--accent-purple); margin-bottom: 0.4rem;">${archivistLabel}</div>${formattedText}`;
         }
         wrapper.appendChild(bubble);
         // If assistant reply has matched documents, render attached Interactive Cards in List Format
