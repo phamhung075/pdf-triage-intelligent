@@ -84,7 +84,7 @@ class ChatAssistantManager {
         if (this.aiInfo.provider === 'cloud') {
             const pName = this.aiInfo.displayName;
             const model = this.aiInfo.model;
-            const providerLabel = model ? `${pName} (${model})` : pName;
+            const providerLabel = model ? `${pName} (${this.app.state.escapeHtml(model)})` : pName;
             return `
         <div style="color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 2rem;">
           👋 Hello! I am your AI document archivist powered by <strong>${providerLabel}</strong>.<br>
@@ -95,7 +95,7 @@ class ChatAssistantManager {
         const model = this.aiInfo.model || 'qwen3.5:9b';
         return `
       <div style="color: #64748b; font-size: 0.9rem; text-align: center; margin-top: 2rem;">
-        👋 Hello! I am your local AI document archivist powered by <strong>${model}</strong>.<br>
+        👋 Hello! I am your local AI document archivist powered by <strong>${this.app.state.escapeHtml(model)}</strong>.<br>
         Ask me any question or click a <strong>Quick Dossier chip</strong> above to generate a complete document checklist!
       </div>
     `;

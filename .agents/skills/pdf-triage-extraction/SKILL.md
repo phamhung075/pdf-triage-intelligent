@@ -22,7 +22,7 @@ throws ──► FILE_FAILED for that document (no in-process fallback left)
 
 | Layer | Client | Implementation |
 | --- | --- | --- |
-| Extraction | [`infra/pdf2w`](../../../services/pdf-triage-pdf2w/infra/pdf2w/) | external, self-hosted `markdown-extract-service` (own repo, `/home/daihu/__projects__/markdown-extract-service`), port 3984, `PDF2W_SERVICE_URL` |
+| Extraction | [`infra/pdf2w`](../../../services/pdf-triage-pdf2w/infra/pdf2w/) | external, self-hosted `markdown-extract-service` (own repo, the sibling checkout ../markdown-extract-service), port 3984, `PDF2W_SERVICE_URL` |
 | Canonical path (organize-files, not extraction, but the other half of the same swap) | [`canonicalpath`](../../../services/pdf-triage-pdf2w/canonicalpath/) | in-process Go package, no service and no URL |
 
 The wrapper is `ExtractPDFContent()` in `infra/pdfextractor`; the orchestration entry point is

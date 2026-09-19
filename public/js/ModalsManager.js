@@ -1094,20 +1094,23 @@ class ModalsManager {
             this.app.toast.error('Error loading configuration: ' + err.message);
         }
     }
-    setStatsPlaceholders() {
+    setStatsPlaceholders(text = '…') {
         const state = this.app.state;
         [
             'statRawsSize', 'statRawsCount', 'statArchiveSize', 'statArchiveCount',
             'statDbSize', 'statTotalSize', 'statTotalCount', 'fmtPdfStats', 'fmtImgStats',
             'fmtTxtStats', 'fmtWordStats', 'fmtExcelStats'
-        ].forEach(id => state.setElemText(id, '…'));
+        ].forEach(id => state.setElemText(id, text));
     }
     async loadSystemStats(requestToken) {
         const state = this.app.state;
         try {
             const statsRes = await fetch('/api/system/stats');
-            if (!statsRes.ok)
+            if (!statsRes.ok) {
+                if (requestToken === this.settingsModalRequestToken)
+                    this.setStatsPlaceholders('—');
                 return;
+            }
             const stats = await statsRes.json();
             if (requestToken !== this.settingsModalRequestToken)
                 return;
@@ -1126,7 +1129,10 @@ class ModalsManager {
                 state.setElemText('fmtExcelStats', `${stats.formatBreakdown.excel?.count || 0} files (${stats.formatBreakdown.excel?.sizeFormatted || '0 B'})`);
             }
         }
-        catch (err) { }
+        catch (err) {
+            if (requestToken === this.settingsModalRequestToken)
+                this.setStatsPlaceholders('—');
+        }
     }
     async loadOllamaModels(activeModel) {
         const selectElem = document.getElementById('cfgOllamaModelSelect');
@@ -1295,15 +1301,18 @@ class ModalsManager {
             });
             const data = await res.json();
             if (res.ok && data.ok) {
+                const latencyLabel = typeof data.latency_ms === 'number' ? ` (${data.latency_ms}ms)` : '';
                 if (testStatus) {
-                    testStatus.innerHTML = `<span style="color: #34d399; display: inline-flex; align-items: center; gap: 0.35rem;">✅ Connected (${data.latency_ms}ms)</span>`;
+                    testStatus.innerHTML = `<span style="color: #34d399; display: inline-flex; align-items: center; gap: 0.35rem;">✅ Connected${latencyLabel}</span>`;
                 }
-                this.app.toast.success(`Success! Connected to ${cloudProvider} (${data.latency_ms}ms)`);
+                this.app.toast.success(`Success! Connected to ${cloudProvider}${latencyLabel}`);
             }
             else {
                 const errMsg = data.error || 'Connection failed';
+                const errMsgEsc = this.app.state.escapeHtml(errMsg);
+                const errMsgShortEsc = this.app.state.escapeHtml(errMsg.length > 35 ? errMsg.substring(0, 32) + '...' : errMsg);
                 if (testStatus) {
-                    testStatus.innerHTML = `<span style="color: #f87171; display: inline-flex; align-items: center; gap: 0.35rem;" title="${errMsg}">❌ ${errMsg.length > 35 ? errMsg.substring(0, 32) + '...' : errMsg}</span>`;
+                    testStatus.innerHTML = `<span style="color: #f87171; display: inline-flex; align-items: center; gap: 0.35rem;" title="${errMsgEsc}">❌ ${errMsgShortEsc}</span>`;
                 }
                 this.app.toast.error(`Connection failed: ${errMsg}`);
             }
