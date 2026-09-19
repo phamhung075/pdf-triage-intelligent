@@ -4,6 +4,7 @@ node_modules/
 # TypeScript & Installer Build Output
 dist/
 dist-installer/
+tmp/
 
 # SQLite Database Files
 *.db

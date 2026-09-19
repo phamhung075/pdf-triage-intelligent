@@ -4,6 +4,8 @@
   "description": "Local PDF Triage dashboard assets. The backend is one static, CGO-free Go binary built from the services/pdf-triage-pdf2w submodule (make build -> dist/pdf-triage).",
   "type": "module",
   "scripts": {
+    "dev": "make dev",
+    "dev:server": "make dev-server",
     "build:css": "sass public/scss/style.scss public/style.css --no-source-map",
     "build:frontend": "npm run build:css && tsc -p tsconfig.frontend.json",
     "watch:css": "sass --watch public/scss/style.scss:public/style.css",
