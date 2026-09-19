@@ -12,6 +12,39 @@
 > [CHANGELOG.md](CHANGELOG.md) is the dated record of how it got there — every notable change updates
 > both in the same turn.
 
+<!-- deepseek-offload: orchestrator rule — begin -->
+## Orchestrator rule — delegate execution to the DeepSeek Harness
+
+You are the orchestrator; the DeepSeek Harness is the worker. Always — no size exception.
+
+You keep thinking, planning, judgment, review, synthesis and anything user-facing. You never
+hand-execute code, docs or one-line fixes: every unit of execution is dispatched.
+
+Dispatch through these two entry points:
+
+- `deepseek_agent` — the MCP tool. Blocking: use it for a quick answer or one small precise edit. A
+  trivial job still gets dispatched, through this cheaper path.
+- `node .agents/skills/deepseek-offload/scripts/dsh-offload.mjs start "<task>" --label <role>` —
+  background: multi-step, multi-file or research-heavy work. It returns a job id; poll it with
+  `result <jobId>`.
+
+Investigation and diagnosis jobs: pass `--read-only` to `start`.
+
+Fan-out: independent domain-scoped work becomes one job per role in scope, never one per file. The
+orchestrator still does synthesis, conflict resolution, review and sign-off.
+
+Review every worker diff before reporting done; workers never commit or push.
+
+If this project defines Claude subagents (.claude/agents/*) or an agent roster in its docs, treat
+those roles as the `--label` / brief for a DeepSeek job, not as a reason to do the work in Claude's
+own context. Use a Claude subagent only for review or read-only analysis.
+
+If your prompt names one specific job and says you were dispatched as a worker, do that job
+yourself; do not re-delegate.
+
+Command surface, prompt contracts and safety rules: `.agents/skills/deepseek-offload/SKILL.md`.
+<!-- deepseek-offload: orchestrator rule — end -->
+
 ---
 
 ## 🧠 Golden Rule: Think First Before Action
@@ -34,7 +67,7 @@
 | Authoritative user spec (all master directives) | [AGENT_REQUIREMENTS.md](./AGENT_REQUIREMENTS.md) |
 | The 21 non-negotiable Golden Rules (rules override everything) | [docs/knowledge/golden-rules.md](docs/knowledge/golden-rules.md) |
 | Docs index — all knowledge, workflows, agent playbooks | [docs/README.md](docs/README.md) |
-| Agent roster — who owns what, when to invoke each | [docs/agents/README.md](docs/agents/README.md) |
+| Agent roster — who owns what; each role is the `--label`/brief for a DeepSeek job, not a Claude implementation agent | [docs/agents/README.md](docs/agents/README.md) |
 
 ### On-demand (lazy-load only when the topic is relevant)
 
@@ -46,23 +79,23 @@
 | Ollama / Qwen 3.5 — prompt design, JSON contract, fallbacks | [docs/knowledge/ollama-qwen.md](docs/knowledge/ollama-qwen.md) |
 | On-disk canonical folder layout & naming | [docs/knowledge/canonical-paths.md](docs/knowledge/canonical-paths.md) |
 | REST + SSE + MCP API reference | [docs/knowledge/api-reference.md](docs/knowledge/api-reference.md) |
-| PDF/photo text extraction (pdf2w, required) and canonical-path resolution (Go submodule, required) — `PDF2W_SERVICE_URL`, `CANONICAL_PATH_SERVICE_URL`, `src/infrastructure/pdf2w-remote.ts`, `src/infrastructure/canonical-path-remote.ts`, `services/pdf-triage-pdf2w/` | [docs/knowledge/pdf2w-extraction.md](docs/knowledge/pdf2w-extraction.md) |
+| PDF/photo text extraction (pdf2w, required) and in-process canonical-path/text cleaning (`PDF2W_SERVICE_URL`, `infra/pdf2w`, `canonicalpath`, `cleantext`, `services/pdf-triage-pdf2w/`) | [docs/knowledge/pdf2w-extraction.md](docs/knowledge/pdf2w-extraction.md) |
 | Service-split plan — **superseded**, kept as historical record; see the banner in the file for what actually shipped | [docs/knowledge/service-split-plan.md](docs/knowledge/service-split-plan.md) |
 | Taxonomy — categories, subcategories, private overlays | [docs/knowledge/taxonomy.md](docs/knowledge/taxonomy.md) |
 | Environment & config (`settings.json`, env vars) | [docs/knowledge/environment.md](docs/knowledge/environment.md) |
 | Workflows — triage, repair, relocalize, clear, SSE broadcast | [docs/workflows/](docs/workflows/) |
 | Skills index — methodology (Superpowers plugin) | [docs/skills.md](docs/skills.md) |
 | Per-agent playbooks (lazy-loaded on invocation) | [docs/agents/](docs/agents/) |
-| DeepSeek Harness delegation — orchestrator → worker dispatch, command surface, safety | [.agents/skills/deepseek-offload/SKILL.md](.agents/skills/deepseek-offload/SKILL.md) |
+| DeepSeek Harness delegation — all implementation is dispatched here (orchestrator → worker); command surface, safety | [.agents/skills/deepseek-offload/SKILL.md](.agents/skills/deepseek-offload/SKILL.md) |
 | Repository-owned skills & Agent Notes — procedures and decision records | [.agents/skills/](.agents/skills/) · [.agents/notes/](.agents/notes/README.md) |
 
 ---
 
 ## 🚀 What this project is
 
-Local-first **PDF Triage & Agentic Registry** — TypeScript + Node.js + Express + SQLite (+FTS5) + Ollama Qwen 3.5. Watches `__raws`, extracts text, classifies each document, writes SQLite + JSON registry mirrors, moves the file to a canonical `__archive/<category>/<subcategory>/<YYYY>/` folder, and pushes SSE updates to a web dashboard. Also exposes MCP tools for external agents.
+Local-first **PDF Triage & Agentic Registry** — one static, CGO-free **Go binary**, `pdf-triage` (`serve | scan | mcp | vision-lab`, built by `make build` into `dist/pdf-triage`), plus SQLite (+FTS5) and Ollama Qwen 3.5. Watches `__raws`, extracts text, classifies each document, writes SQLite + JSON registry mirrors, moves the file to a canonical `__archive/<category>/<subcategory>/<YYYY>/` folder, and pushes SSE updates to a web dashboard. Also exposes MCP tools for external agents. TypeScript remains only for the browser dashboard (`public/ts` → `public/js`, `public/scss` → `public/style.css`).
 
-Incoming **photos** (`.jpg/.png/.webp/.bmp/.tiff`) are not archived as images: they run through the vision pipeline (orient → crop → enhance → assemble) and are filed as A4 PDFs — see `src/application/convert-image-document.ts`. A **folder** in `__raws` holding only photos (2+) is bundled into ONE multi-page PDF named after the folder, pages ordered numerically (`IMG_2` before `IMG_10`); a lone photo, or a folder mixing photos with anything else, is triaged file-by-file as before. All PDF/photo text extraction — including OCR for scanned or image-only pages — is delegated to the external, self-hosted `markdown-extract-service` (**pdf2w**, reached via `PDF2W_SERVICE_URL`); pdf-triage runs no OCR of its own. Canonical-path resolution (taxonomy → on-disk archive path) is likewise delegated to a Go microservice submodule (`services/pdf-triage-pdf2w/`, reached via `CANONICAL_PATH_SERVICE_URL`). Both are required, not optional-with-fallback — see [pdf2w-extraction.md](docs/knowledge/pdf2w-extraction.md).
+Incoming **photos** (`.jpg/.png/.webp/.bmp/.tiff`) are not archived as images: they run through the vision pipeline (orient → crop → enhance → assemble) and are filed as A4 PDFs — see the `app/convertimage` package (`services/pdf-triage-pdf2w/app/convertimage`). A **folder** in `__raws` holding only photos (2+) is bundled into ONE multi-page PDF named after the folder, pages ordered numerically (`IMG_2` before `IMG_10`); a lone photo, or a folder mixing photos with anything else, is triaged file-by-file as before. All PDF/photo text extraction — including OCR for scanned or image-only pages — is delegated to the external, self-hosted `markdown-extract-service` (**pdf2w**, reached via `PDF2W_SERVICE_URL` from the `infra/pdf2w` package); pdf-triage runs no OCR of its own. Canonical-path resolution (taxonomy → on-disk archive path) and text cleaning now run **in-process** in the Go binary (`canonicalpath` and `cleantext` packages). Extraction is required, not optional-with-fallback — see [pdf2w-extraction.md](docs/knowledge/pdf2w-extraction.md).
 
 Full overview: [docs/overview.md](docs/overview.md).
 
@@ -73,7 +106,7 @@ Full overview: [docs/overview.md](docs/overview.md).
 These are the memory anchors that must never be forgotten, even before loading the full rules:
 
 1. **Think first** — read code, trace imports, verify schemas before editing. No guessing paths or field names. *(Golden Rule 0)*
-2. **Server command rule** — **NEVER** run `npm run dev` or any server background task yourself. Always ask/instruct the user to run it in their terminal. *(Golden Rule 2)*
+2. **Server command rule** — **NEVER** START the server binary (`./dist/pdf-triage serve`) or `make dev` / `air` or any other long-running process yourself, and never run a built binary bare (with no subcommand it defaults to `serve`). Always ask/instruct the user to run it in their terminal. Run `go test` instead. *(Golden Rule 2)*
 3. **Scan scope** — scan **ONLY** inside `__raws` (`CONFIG.INPUT_DIR`). Never full-disk / parent walks. *(Golden Rule 1)*
 4. **No-text block guard** — a PDF with `< 10` clean characters is BLOCKED: no DB row, no move, stays in `__raws`, emit `FILE_FAILED`. *(Golden Rule 3)*
 5. **STRICT no-subcategory fail guard** — resolving to empty / `general` / `other` / `divers` / a year-string → **FAILED / BLOCKED**: no SQLite row, no move, **MUST remain in `__raws`** for manual review. *(Golden Rule 4)*
@@ -86,17 +119,17 @@ These are the memory anchors that must never be forgotten, even before loading t
 12. **Clear Registry semantics** — `DELETE /api/documents` moves every `__archive` file back to `__raws`, cleans empty folders, purges the SQLite DB. *(Golden Rule 15)*
 13. **Toast only** — all UI feedback via Toast service, never `alert()`. *(Golden Rule 13)*
 14. **Only Qwen 3.5** — `qwen3.5:9b`. Legacy models are purged; do not reintroduce. *(Golden Rule 14)*
-15. **Personal-data hygiene** — never hardcode personal data in committed `prompts/` or `src/domain/classification.ts`. Real employers, bank product/filename codes, clinics, schools, scanner prefixes go in the gitignored `.prompts.private.json`, which feeds BOTH the prompt (`{{USER_PRIORITY_RULES}}` / `{{USER_KNOWN_ENTITIES}}`) and `ruleBasedClassify()` via `matchPriorityRules()` — one source keeps them aligned. `src/domain/prompt-hygiene.test.ts` fails the build on a leak. *(see [taxonomy.md](docs/knowledge/taxonomy.md#personal-prompt-overlay))*
-16. **No speculative DDD scaffolding** — do NOT reintroduce a DI container, aggregate classes, a domain-event bus, a unit of work, or a command/query dispatcher. The wired 3-layer design (`index.ts` → `http/web-server.ts` → `application/*` → `domain/*` + `infrastructure/*`) plus parameter-injected, unit-tested domain functions is the architecture; `index.ts` is the composition root; the SSE broadcast callback is the event mechanism. *(see [architecture.md](docs/knowledge/architecture.md))*
-17. **Photo-pipeline invariants** — never re-apply EXIF orientation (`exifDegrees` is `null` by design), never reintroduce the crop-detector texture gate (the signal is inverted on half the corpus), never delete a source image (move it to `__raws/.delete_files/img_converted/`; conversion is an enhancement, never a gate). *(see headers of `src/domain/flood-crop.ts` and `src/application/convert-image-document.ts`)*
+15. **Personal-data hygiene** — never hardcode personal data in committed `prompts/` or in the `classification` package (`services/pdf-triage-pdf2w/classification`). Real employers, bank product/filename codes, clinics, schools, scanner prefixes go in the gitignored `.prompts.private.json`, which feeds BOTH the prompt (`{{USER_PRIORITY_RULES}}` / `{{USER_KNOWN_ENTITIES}}`) and `ruleBasedClassify()` via `matchPriorityRules()` — one source keeps them aligned. The TypeScript prompt-hygiene test was retired; a repo-tree personal-data scan belongs in CI and is an open item. *(see [taxonomy.md](docs/knowledge/taxonomy.md#personal-prompt-overlay))*
+16. **No speculative DDD scaffolding** — do NOT reintroduce a DI container, aggregate classes, a domain-event bus, a unit of work, or a command/query dispatcher. The layered Go design is the architecture: domain (top-level pure packages) → `infra/` → `store/` → `app/` → `httpapi` / `mcpserver` / `visionlab` → `cmd/pdf-triage`; `cmd/pdf-triage` is the composition root; `app/` takes its collaborators as small interfaces; raw SQL lives only in `store/database`; the OS launcher only in `infra/osopen`. *(see [architecture.md](docs/knowledge/architecture.md))*
+17. **Photo-pipeline invariants** — never re-apply EXIF orientation (`exifDegrees` is `null` by design), never reintroduce the crop-detector texture gate (the signal is inverted on half the corpus), never delete a source image (move it to `__raws/.delete_files/img_converted/`; conversion is an enhancement, never a gate). *(see the `floodcrop` and `app/convertimage` package docs)*
 
 ---
 
 ## 👥 Team (lazy-loaded)
 
-The roster, ownership table, and invocation etiquette live in [docs/agents/README.md](docs/agents/README.md) — load it before spawning or joining an agent team.
+The roster, ownership table, and dispatch etiquette live in [docs/agents/README.md](docs/agents/README.md) — load it before dispatching DeepSeek jobs. Each role there is the `--label`/brief for a DeepSeek job: implementation goes to a job started with the role name as `--label`, per the orchestrator rule at the top of this file. Claude subagents are used only for review or read-only analysis, and the only ones are `qa-reviewer` and `read-only-investigator`.
 
-Shells in `.claude/agents/*.md` are **description-only frontmatter** linking to the full playbooks in `docs/agents/*.md`: agents load only the description upfront, then lazy-load their playbook + required knowledge on invocation. All operational knowledge is diff-friendly and lives in one place.
+Shells in `.claude/agents/*.md` are **description-only frontmatter** linking to the full playbooks in `docs/agents/*.md`: the description is loaded upfront, the playbook + required knowledge are lazy-loaded when the role is dispatched. For an implementation role the shell only names the DeepSeek `--label`; it is not an instruction to implement in Claude's own context. All operational knowledge is diff-friendly and lives in one place.
 
 ---
 
@@ -116,17 +149,19 @@ Shells in `.claude/agents/*.md` are **description-only frontmatter** linking to 
 
 ## 🧭 Claude is the Orchestrator (DeepSeek Harness = worker)
 
-> Claude thinks, plans, reviews and stays user-facing. Token-heavy, multi-file or research-shaped
-> execution is dispatched to background DeepSeek Harness workers on `deepseek-flash`, which cost a
+> Claude thinks, plans, reviews and stays user-facing. All implementation, with no size exception,
+> is dispatched to background DeepSeek Harness workers on `deepseek-flash`, which cost a
 > fraction of the orchestrator's tokens. The bridge is registered as `deepseek` in
 > [`.mcp.json`](.mcp.json) — machine-local and gitignored; approve it the first time Claude Code
 > prompts for the server.
 
 `deepseek_agent` is the blocking MCP call for a quick inline answer or one small precise edit. `node .agents/skills/deepseek-offload/scripts/dsh-offload.mjs start "<task>" --label <name>` is the fire-and-forget path for anything multi-step, multi-file or research-heavy: it prints a job id and returns immediately, so keep working and poll with `result <jobId>` rather than blocking.
 
-Read [pdf-triage-dispatch](.agents/skills/pdf-triage-dispatch/SKILL.md) before delegating — it owns the work-order contract, the constraints every prompt must carry, the role split and the review rule. The [deepseek-offload skill](.agents/skills/deepseek-offload/SKILL.md) owns the command surface, the mandatory safety rules, prompt contracts and troubleshooting; install and refresh from [INSTALL.md](.agents/deepseek-offload/INSTALL.md).
+Read [pdf-triage-dispatch](.agents/skills/pdf-triage-dispatch/SKILL.md) before every dispatch — it owns the work-order contract, the constraints every prompt must carry, the role split and the review rule. The [deepseek-offload skill](.agents/skills/deepseek-offload/SKILL.md) owns the command surface, the mandatory safety rules, prompt contracts and troubleshooting; install and refresh from [INSTALL.md](.agents/deepseek-offload/INSTALL.md).
 
-**If you were dispatched as a worker:** your prompt is your authority — do the one job it names, do not re-delegate, do not commit or push, and return findings rather than a transcript.
+**Precedence:** the orchestrator rule at the top of this file is unconditional. Implementation goes to a DeepSeek job started with the role name as `--label`; Claude subagents are used only for review or read-only analysis. No other wording in this repository (roster docs, `.claude/agents/*` shells, skills) overrides it.
+
+**If you were dispatched as a worker** (you are the DeepSeek job): your prompt is your authority — do the one job it names yourself, do not re-delegate or spawn a subagent, do not commit or push, and return findings rather than a transcript.
 
 **Investigation is read-only by construction, never by request.** When the deliverable is a diagnosis — root-cause work, audits, tracing — dispatch the `read-only-investigator` subagent ([.claude/agents/read-only-investigator.md](.claude/agents/read-only-investigator.md)), whose tool list is `Read, Grep, Glob`: it has nothing that can write. Do not use the built-in `fork` subagent type for investigation work, and do not brief a DeepSeek job as read-only without passing `--read-only` to `dsh-offload.mjs start`, which pins the job to the Harness's `read-only` file policy. Instructions do not constrain a fork; a tool list and a file policy do.
 
@@ -141,22 +176,25 @@ pdf_triage/
 ├── CHANGELOG.md               # dated, grouped record of every notable change — updated alongside docs/code
 ├── AGENT_REQUIREMENTS.md      # user-authored full spec (authoritative — must-read)
 ├── LICENSE                    # MIT
+├── Makefile                   # build / test / frontend / dev for the Go binary (build → dist/pdf-triage)
 ├── categories.json            # PUBLIC, generic starter taxonomy (committed) — top-level categories only
-├── .categories.private.json   # PRIVATE taxonomy overlay (gitignored) — real auto-created subcategories; merged with categories.json at runtime by categories-store.ts
+├── .categories.private.json   # PRIVATE taxonomy overlay (gitignored) — real auto-created subcategories; merged with categories.json at runtime by the store/categories package
 ├── entity_dictionary.json     # curated generic entity reference (banks, telecoms, etc.) — safe to commit, not personal
 ├── prompts.private.json.example # committed template for .prompts.private.json
-├── .prompts.private.json      # PRIVATE prompt overlay (gitignored) — your real employers, bank product/filename codes, clinics, scanner prefixes; injected into the generic prompts/ templates at build time by prompt-personalization-store.ts
-├── settings.json               # runtime config (gitignored — contains real folder paths); see settings.json.example for the template
+├── .prompts.private.json      # PRIVATE prompt overlay (gitignored) — your real employers, bank product/filename codes, clinics, scanner prefixes; injected into the generic prompts/ templates at build time by the store/promptpersonalization package
+├── settings.json              # runtime config (gitignored — contains real folder paths); see settings.json.example for the template
 ├── settings.json.example      # committed template for settings.json
-├── .env.example                # committed template for .env (gitignored) — BASE_DIR override, ports, Ollama host, etc.
-├── pdf_triage.db               # SQLite (runtime, gitignored)
-├── registry.json               # JSON mirror (runtime, gitignored)
-├── package.json                # tsx dev + build scripts
-├── docker-compose.yml          # `docker compose up -d --build` → builds services/pdf-triage-pdf2w (Go canonical-path service) on :3985 · PDF/photo extraction = EXTERNAL project /home/daihu/__projects__/markdown-extract-service (own git repo, own compose on :3984)
-├── .gitmodules                 # registers services/pdf-triage-pdf2w (and .agents/deepseek-offload)
+├── .env.example               # committed template for .env (gitignored) — BASE/DATA dirs, ports, Ollama host, pdf2w URL
+├── pdf_triage.db              # SQLite (runtime, gitignored)
+├── registry.json              # JSON mirror (runtime, gitignored)
+├── package.json               # frontend-only build manifest (sass + tsc); the backend is the Go binary
+├── pnpm-workspace.yaml        # frontend pnpm workspace
+├── docker-compose.yml         # no in-repo service — extraction is the EXTERNAL markdown-extract-service (pdf2w) on :3984
+├── .gitmodules                # registers services/pdf-triage-pdf2w (and .agents/deepseek-offload)
 ├── services/
-│   └── pdf-triage-pdf2w/       # git submodule → https://github.com/phamhung075/pdf-triage-pdf2w — Go canonical-path service (computeCanonicalPath ported from src/domain/taxonomy.ts), POST /canonical-path
-├── .dockerignore               # keeps node_modules/personal data out of image build contexts
+│   └── pdf-triage-pdf2w/      # git submodule → the Go backend: cmd/pdf-triage (serve | scan | mcp | vision-lab),
+│                              #   httpapi, mcpserver, visionlab, app/, store/, infra/, and the top-level domain packages
+├── .dockerignore               # keeps personal data out of build contexts
 ├── docs/                      # → knowledge, workflows, agent playbooks (LAZY-LOADED — see context map above)
 │   ├── README.md
 │   ├── overview.md
@@ -165,6 +203,9 @@ pdf_triage/
 │   ├── agents/{README,*.md}   # per-agent playbooks
 │   ├── knowledge/*.md         # architecture, data-model, ollama-qwen, canonical-paths, api-reference, taxonomy, environment, golden-rules, pdf2w-extraction, service-split-plan (superseded)
 │   └── workflows/*.md         # triage-pipeline, repair-registry, relocalize, clear-registry, classification-flow, sse-broadcast
+├── prompts/                   # committed, publishable Qwen prompt templates
+├── public/                    # UI — public/ts/ (source) compiled to public/js/ (served), public/scss/ (source) compiled to public/style.css (served), public/js/vendor/ (marked.js, vendored not CDN)
+│   └── test-image-to-pdf.html # standalone Vision Lab diagnostic page (served by `pdf-triage vision-lab`, not the main app)
 ├── .agents/                    # agent tooling — repository-owned skills, Agent Notes, DeepSeek delegation
 ├── .claude/
 │   ├── settings.json          # enables superpowers plugin locally
@@ -172,55 +213,6 @@ pdf_triage/
 │   ├── skills/                # junction → .claude/plugins/superpowers/skills
 │   └── plugins/
 │       └── superpowers/       # full obra/superpowers repo, cloned
-├── src/
-│   ├── index.ts                       # composition root: dispatch default web, `scan`, `mcp`
-│   ├── vision-lab-server.ts           # Vision Lab standalone Express app: POST /api/vision/diagnose-step, own port
-│   ├── vision-lab-main.ts             # Vision Lab entrypoint: calls startVisionLabServer() — `npm run vision:dev`
-│   ├── domain/                        # pure logic, zero I/O
-│   │   ├── document.schema.ts         # Zod schemas
-│   │   ├── classification.ts          # ruleBasedClassify, cleanAndParseJSON, entity matching, normalizeSlug
-│   │   ├── prompt.ts                  # Qwen prompt building (Step A/C/D)
-│   │   ├── prompt-personalization.ts  # schema + rendering for the private prompt overlay (.prompts.private.json)
-│   │   ├── classification-resolution.ts  # refine/resolve category & subcategory, entity-priority override
-│   │   ├── taxonomy.ts                # isForbiddenSubcategory, isYearString, detectFileType, isPathInsideDir, findCanonicalCategoryForSubcategory, mergeSubcategoryInTaxonomy (computeCanonicalPath moved to services/pdf-triage-pdf2w/, see canonical-path-remote.ts)
-│   │   ├── pdf-text.ts                # cleanExtractedText
-│   │   ├── pdf-page-fit.ts            # fitImageToA4 — pure page geometry for photo-to-PDF pages
-│   │   ├── image-adjust.ts            # pure auto-levels/sharpen math for the Vision Lab pipeline (ported from pdf-awesome)
-│   │   └── path-conversion.ts         # windowsToWslPath / wslToWindowsPath / isWslMountPath — pure WSL↔Windows path forms (Golden Rule 21)
-│   ├── application/                   # orchestration / use-cases
-│   │   ├── classify-document.ts       # classifyPDFText orchestrator (Step A entity + Step C markdown + Step D classify)
-│   │   ├── triage-scan.ts             # runTriageScan — the real, live-wired scan pipeline
-│   │   ├── ai-chat-assistant.ts       # local chat assistant grounded in the document registry (via MCP prepare_dossier)
-│   │   ├── image-to-pdf.ts            # Vision Lab step functions: runOrientStep/runCropStep/runEnhanceStep/runExtractStep
-│   │   ├── convert-image-document.ts  # convertImageToPdf — photo in __raws -> archivable A4 PDF, text via extractPDFContent() (pdf2w) after assembly, no local OCR (used by triage-scan); source photo kept in .delete_files/img_converted
-│   │   ├── repair-registry.ts
-│   │   ├── relocalize-document.ts
-│   │   ├── clear-registry.ts
-│   │   ├── scan-lock.ts
-│   ├── infrastructure/                # I/O adapters
-│       ├── settings.ts                # CONFIG, BASE_DIR (defaults to process.cwd(), overridable via PDF_TRIAGE_BASE_DIR)
-│       ├── os-open.ts                 # the ONLY module that launches Explorer/Chrome — WSL-safe, see Golden Rule 21
-│       ├── logger.ts
-│       ├── categories-store.ts        # merges categories.json (public) + .categories.private.json (private) on read; diffs writes to the private file only
-│       ├── entity-dictionary-store.ts # entity_dictionary.json read
-│       ├── prompt-personalization-store.ts # .prompts.private.json read + merges human decisions (personal prompt overlay)
-│       ├── manual-decisions-store.ts  # manual_decisions.json + SQLite read/write (user feedback log — feeds the AI's STEP 0 block, see docs/knowledge/taxonomy.md)
-│       ├── zip-builder.ts             # pure-TS ZIP archive builder (no native deps) — PDF package export + bulk Markdown export
-│       ├── ollama-client.ts
-│       ├── vision-client.ts           # detectOrientation/detectCropBox — Ollama calls against CONFIG.OLLAMA_VISION_MODEL
-│       ├── pdf2w-remote.ts            # extractPdf2wContent — HTTP client for the required, self-hosted markdown-extract-service (pdf2w), no fallback
-│       ├── canonical-path-remote.ts   # computeCanonicalPathRemote — HTTP client for the required services/pdf-triage-pdf2w Go service, no fallback
-│       ├── image-processor.ts         # @napi-rs/canvas ops: rotateImage, cropImage, applyBrightnessContrast, applySharpen
-│       ├── pdf-extractor.ts
-│       ├── pdf-scanner.ts
-│       ├── pid-lock.ts
-│       ├── db/database.ts
-│       ├── json-registry.ts
-│       ├── http/web-server.ts         # all real REST/SSE routes live here
-│       └── mcp/mcp-server.ts
-├── public/                    # UI — public/ts/ (source) compiled to public/js/ (served), public/scss/ (source) compiled to public/style.css (served), public/js/vendor/ (marked.js, vendored not CDN)
-│   └── test-image-to-pdf.html # standalone Vision Lab diagnostic page (served by vision-lab-server.ts, not the main app)
-├── social/                    # gitignored — LinkedIn/marketing drafts, not project source
 └── logs/triage_debug.log
 ```
 
@@ -228,20 +220,15 @@ pdf_triage/
 
 ## 📜 Scripts
 
-- `npm run dev` / `npm start` — dev server (web + SSE + 10s auto-watcher). **User runs this, not the agent.**
-- `npm run scan` — one-shot triage scan.
-- `npm run mcp` — MCP stdio server.
-- `npm run vision:dev` — standalone Vision Lab diagnostic server (port `3179`), run independently of `npm run dev`.
-- `npm run build` — `clean:dist` + `build:css` + `tsc` (backend) + `tsc -p tsconfig.frontend.json` (frontend).
-- `npm run clean:dist` — removes `dist/`. Runs first in `build` because `tsc` never prunes output for
-  deleted sources, and `package.json`'s `build.files` ships `dist/**/*` — so orphaned `.js` from a
-  removed module would otherwise be packaged into the `.exe` forever.
-- `npm run build:css` — compile `public/scss/style.scss` → `public/style.css`.
-- `npm run watch:css` — `sass --watch` for local SCSS development.
-- `npm run build:frontend` — `build:css` + compile `public/ts/*.ts` → `public/js/*.js`. Run this after editing any `public/ts/*.ts` file — nothing recompiles it automatically.
-- `npm run watch:frontend` — `tsc -p tsconfig.frontend.json -w` for local frontend development.
-- `npm run typecheck` — `tsc -p tsconfig.test.json` + `tsc -p tsconfig.frontend.json`, no emit.
-- `npm run desktop` — Electron desktop shell.
-- `npm run dist:exe` — build the portable Windows installer.
-- `npm test` — run the Vitest unit test suite (pure classification/path/schema logic; see `docs/superpowers/specs/2026-07-31-test-harness-design.md`).
-- `npm run test:watch` — Vitest in watch mode for local development.
+- `make build` — build the dashboard assets + the static, CGO-free Go binary → `dist/pdf-triage`.
+- `make test` — run the Go module's test suite (`go test ./...`).
+- `make frontend` — compile `public/scss/style.scss` → `public/style.css` and `public/ts/*.ts` → `public/js/*.js`.
+- `make dev` / `make dev-server` — live-reloading dev mode (frontend watchers + Go hot-reload). **The operator runs this, not the agent.**
+- `./dist/pdf-triage serve` — dashboard + REST + SSE + 10s auto-watcher (the default when no subcommand is given). **The operator starts the server, not the agent.**
+- `./dist/pdf-triage scan` — one-shot triage scan.
+- `./dist/pdf-triage mcp` — MCP over stdio (+ streamable HTTP per settings).
+- `./dist/pdf-triage vision-lab` — standalone Vision Lab diagnostic server (port `3179`).
+- `pnpm run build:css` — compile `public/scss/style.scss` → `public/style.css`.
+- `pnpm run build:frontend` — `build:css` + compile `public/ts/*.ts` → `public/js/*.js`. Run this after editing any `public/ts/*.ts` file — nothing recompiles it automatically.
+- `pnpm run watch:css` / `pnpm run watch:frontend` — local watch mode for SCSS / frontend TypeScript.
+- `pnpm run typecheck` — `tsc -p tsconfig.frontend.json --noEmit`.
