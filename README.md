@@ -112,12 +112,15 @@ Clicking **`🌐 Open`** on document cards or **`🌐 Open in Chrome`** in the G
 ## 📊 How to Open & Use the Web Dashboard
 
 ### 1. Launch the Server
-Ensure Ollama is running, then start the web server in your terminal:
+Ensure Ollama is running, then build and start the server in your terminal:
 ```bash
-npm run dev
+make build            # dashboard assets + dist/pdf-triage
+./dist/pdf-triage serve
 ```
 
-> **OCR service**: text recognition uses a small local **PaddleOCR** service (`paddleocr-server/`, Python + FastAPI on port `8871`). The app **auto-spawns it** on first use, so there is usually nothing to do — see [`paddleocr-server/README.md`](paddleocr-server/README.md) for the one-time dependency install. If Python or the dependencies are missing, OCR silently falls back to the bundled `Tesseract.js`, so the app keeps working with slightly lower text quality.
+> **Extraction service**: all PDF/photo text extraction (including OCR for scanned pages) is
+> delegated to the external, self-hosted **pdf2w** `markdown-extract-service`, reached through
+> `PDF2W_SERVICE_URL` (default `http://127.0.0.1:3984`). pdf-triage runs no OCR of its own.
 
 ### 2. Open the Dashboard in Browser
 Navigate to **`http://localhost:3971`** in Google Chrome, Microsoft Edge, Firefox, or Safari.
@@ -142,7 +145,7 @@ Navigate to **`http://localhost:3971`** in Google Chrome, Microsoft Edge, Firefo
 
 ### 4. MCP Server — Connect External AI Agents
 
-`npm run mcp` starts a stdio-based [Model Context Protocol](https://modelcontextprotocol.io) server exposing your document registry as tools: `search_documents`, `get_full_document_text`, `update_document_metadata`, `trigger_triage`, `list_categories`, `prepare_dossier`. Point Claude Desktop (or any other MCP-capable client) at it to query and reason over your archive directly — your documents never leave your machine; only the MCP client's own queries and the tool results cross that boundary, and both stay local since the tool itself runs locally.
+`./dist/pdf-triage mcp` starts a stdio-based [Model Context Protocol](https://modelcontextprotocol.io) server exposing your document registry as tools: `search_documents`, `get_full_document_text`, `update_document_metadata`, `trigger_triage`, `list_categories`, `prepare_dossier`. Point Claude Desktop (or any other MCP-capable client) at it to query and reason over your archive directly — your documents never leave your machine; only the MCP client's own queries and the tool results cross that boundary, and both stay local since the tool itself runs locally.
 
 ---
 
@@ -176,7 +179,7 @@ This project exists because sending ID cards, bank statements, and tax records t
 - **Every AI call stays local.** Classification, entity extraction, embeddings, and the chat assistant all run through your own local Ollama instance. Nothing about a document's content is ever sent anywhere else.
 - **No auth, so it's locked to your machine instead.** The dashboard has no login system — rather than build one, it binds to `127.0.0.1` only and ships with no CORS headers, so it's not reachable from your network or from other tabs in your browser. This is deliberate: for a single-user local tool, "not reachable at all" is a stronger guarantee than "reachable but password-protected."
 - **Personal taxonomy stays out of git.** If you fork this repo for your own use, every category/subcategory your documents actually create goes to `.categories.private.json` (gitignored) — the committed `categories.json` never picks up your real bank branches, employers, or any other entity extracted from your documents.
-- **So do your classification prompts.** The files in `prompts/` are committed and deliberately generic. Anything that identifies you — your bank's statement filename codes, your employers, your scanner's filename prefix, your clinic — lives in `.prompts.private.json` (gitignored), injected into the prompt at build time and matched by the offline fallback classifier from that same file, so the two never drift apart. A test (`src/domain/prompt-hygiene.test.ts`) fails the build if a name from your denylist reappears anywhere in the committed tree.
+- **So do your classification prompts.** The files in `prompts/` are committed and deliberately generic. Anything that identifies you — your bank's statement filename codes, your employers, your scanner's filename prefix, your clinic — lives in `.prompts.private.json` (gitignored), injected into the prompt at build time and matched by the offline fallback classifier from that same file, so the two never drift apart. A repo-tree personal-data scan is the intended CI guard (open item; the old TypeScript prompt-hygiene test was retired at cutover).
 - **No telemetry, no update pings, no analytics.** The only network calls this app makes are to your own local Ollama instance.
 
 If you do want to expose the dashboard beyond your own machine (e.g. to reach it from your phone on the same network), that's an explicit opt-in via `PDF_TRIAGE_HOST` in `.env` — and worth knowing there's still no authentication layer if you do.
@@ -274,7 +277,7 @@ So adding VRAM speeds up the fast half; adding CPU cores speeds up the slow half
   ```bash
   ollama pull minicpm-v4.6
   ```
-- **Optional, only if you plan to build the desktop `.exe`**: Visual Studio Build Tools with the "Desktop development with C++" workload (Windows). The desktop build compiles `sqlite3`'s native binding against Electron's own Node ABI, which needs a C++ toolchain available. Not needed for `npm run dev` or the web dashboard.
+- **Optional, only for the frontend build**: Node.js + pnpm to compile `public/ts` → `public/js` and `public/scss` → `public/style.css`. The server binary itself is static and CGO-free, with no Node runtime and no native `sqlite3`/canvas/Electron toolchain.
 
 ### 2. 🚀 Initial Setup & Startup for a New Repository (From Zero)
 When setting up `smart-pdf-triage` on a new computer or for a new user starting from scratch:
@@ -312,7 +315,7 @@ Customize `input_dir` (where incoming PDFs arrive) and `output_root_dir` (where 
 
 Alternatively (or in addition), copy `.env.example` to `.env` and set any of `PDF_TRIAGE_BASE_DIR`, `PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_TRIAGE_HOST`, `PORT`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `SYSTEM_LANGUAGE` — see the file for what each one does. `settings.json` (via the Settings modal in the UI) is the friendlier way to change input/output folders and language day-to-day; `.env` is for things you set once per install.
 
-`categories.json` (the generic starter taxonomy) is committed and needs no setup. Everything auto-created from your own documents goes to `.categories.private.json` instead, which is gitignored — see [`categories-store.ts`](src/infrastructure/categories-store.ts) if you're curious how the two get merged.
+`categories.json` (the generic starter taxonomy) is committed and needs no setup. Everything auto-created from your own documents goes to `.categories.private.json` instead, which is gitignored — see the `store/categories` Go package (`services/pdf-triage-pdf2w/store/categories`) if you're curious how the two get merged.
 
 **Optional — teach the classifier about your own documents.** If your bank writes statement filenames as codes, or your scanner prefixes files, or you want a specific employer always filed a certain way, copy the template and edit it:
 ```bash
@@ -321,34 +324,31 @@ cp prompts.private.json.example .prompts.private.json
 It holds a list of known entities and a set of keyword → category/subcategory overrides that are evaluated *before* the generic decision flow. The file is gitignored, it is read fresh on every classification (so edits take effect without restarting), and an invalid file is logged and ignored rather than breaking triage. Skipping this is completely fine — the prompts work generically without it.
 
 #### Step 4: Run the Application
-- **Development Mode** (API & Web Dashboard on `http://localhost:3971`):
+- **Build everything** (dashboard assets + the static Go binary at `dist/pdf-triage`):
   ```bash
-  npm run dev
+  pnpm install          # once, for the frontend toolchain (sass + typescript)
+  make build
   ```
-- **Build Frontend TypeScript** (run this after editing any `public/ts/*.ts` file — nothing recompiles it automatically):
+- **Serve** (API & Web Dashboard on `http://localhost:3971`; the operator runs this, never the agent):
   ```bash
-  npm run build:frontend
+  ./dist/pdf-triage serve
   ```
-- **Desktop Electron App Mode** (Native Window with System Tray):
+- **Build Frontend TypeScript only** (run this after editing any `public/ts/*.ts` file — nothing recompiles it automatically):
   ```bash
-  npm run desktop
+  pnpm run build:frontend
   ```
-- **Build Portable Desktop Installer (.exe)** — requires Visual Studio Build Tools, see Prerequisites above:
-  ```bash
-  npm run build
-  npm run dist:exe
-  ```
+- **Other subcommands**: `./dist/pdf-triage scan`, `./dist/pdf-triage mcp`, `./dist/pdf-triage vision-lab`.
 
 ---
 
 ## 🧪 Testing & Code Quality
 
 ```bash
-# Run the full unit test suite
-npm test
+# Run the full Go test suite (the backend is one Go module in services/pdf-triage-pdf2w)
+make test
 
-# Type-check both backend and frontend (no emit)
-npm run typecheck
+# Type-check the frontend TypeScript (no emit)
+pnpm run typecheck
 ```
 
 ---

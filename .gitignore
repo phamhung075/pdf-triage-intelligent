@@ -34,7 +34,7 @@ taxonomy_hints.json
 # Personal taxonomy overlay — auto-created categories/subcategories derived from your own
 # documents (real bank branches, employers, etc.). categories.json (committed) stays a clean,
 # generic starter taxonomy; this file is where your real data actually lives. See
-# src/infrastructure/categories-store.ts for how the two are merged.
+# the store/categories Go package for how the two are merged.
 .categories.private.json
 
 # Local user settings (contains private folder paths)
@@ -43,11 +43,11 @@ settings.json
 # Personal prompt overlay — real employers, bank product codes, scan filename prefixes and
 # clinics injected into the committed, generic prompts/ templates at prompt-build time. The
 # templates stay publishable; this file is where your own signals live. See
-# prompts.private.json.example and src/domain/prompt-personalization.ts.
+# prompts.private.json.example and the promptpersonalization Go package.
 .prompts.private.json
 
-# MCP HTTP transport auth token (auto-generated on first `npm run mcp` if absent — see
-# src/infrastructure/mcp/mcp-server.ts). Grants full tool access over the network; never commit.
+# MCP HTTP transport auth token (auto-generated on first `./dist/pdf-triage mcp` if absent — see
+# the mcpserver Go package). Grants full tool access over the network; never commit.
 .mcp-api-token
 
 # Zip packages built by the MCP package_documents tool / REST package-zip endpoint.
@@ -64,9 +64,6 @@ yarn-error.log*
 # Single-instance server lock
 .server.lock
 .scan.lock
-
-# Tesseract OCR language data (large binaries, runtime-downloaded)
-*.traineddata
 
 # Operating System Files
 .DS_Store
@@ -96,13 +93,8 @@ scratch/
 # Social media drafts/posts about the project (personal, not project source)
 social/
 
-# Python (paddleocr-server)
-paddleocr-server/__pycache__/
-paddleocr-server/.pytest_cache/
-.venv-paddle/
-
 # Vision Lab crop benchmark artifacts — generated contact sheets and previews (hundreds of MB).
-# Regenerate with scripts/crop-bench.ts / crop-score.ts; never commit.
+# Regenerate with the (untracked) Vision Lab benchmark tooling; never commit.
 crop-bench-out/
 .tmp-gt/
 

@@ -1,34 +1,20 @@
 {
   "name": "pdf_triage",
   "version": "1.0.0",
-  "description": "Local PDF Triage, Categorization, SQLite/JSON Registry, Web UI & FastMCP Server",
-  "main": "desktop/main.cjs",
+  "description": "Local PDF Triage dashboard assets. The backend is one static, CGO-free Go binary built from the services/pdf-triage-pdf2w submodule (make build -> dist/pdf-triage).",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --exclude \"*.db\" --exclude \"*.db-journal\" --exclude \"*.db-shm\" --exclude \"*.db-wal\" --exclude \"registry.json\" --exclude \"categories.json\" --exclude \"settings.json\" --exclude \"logs/**\" --exclude \".server.lock\" --exclude \".scan.lock\" src/index.ts",
-    "start": "tsx watch --exclude \"*.db\" --exclude \"*.db-journal\" --exclude \"*.db-shm\" --exclude \"*.db-wal\" --exclude \"registry.json\" --exclude \"categories.json\" --exclude \"settings.json\" --exclude \"logs/**\" --exclude \".server.lock\" --exclude \".scan.lock\" src/index.ts",
-    "desktop": "electron desktop/main.cjs",
-    "dist:exe": "node scripts/build-exe.mjs",
-    "scan": "tsx src/index.ts scan",
-    "mcp": "tsx src/index.ts mcp",
-    "vision:dev": "tsx src/vision-lab-main.ts",
-    "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean:dist && npm run build:css && tsc && tsc -p tsconfig.frontend.json",
     "build:css": "sass public/scss/style.scss public/style.css --no-source-map",
-    "watch:css": "sass --watch public/scss/style.scss:public/style.css",
     "build:frontend": "npm run build:css && tsc -p tsconfig.frontend.json",
+    "watch:css": "sass --watch public/scss/style.scss:public/style.css",
     "watch:frontend": "tsc -p tsconfig.frontend.json -w",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.frontend.json"
+    "typecheck": "tsc -p tsconfig.frontend.json --noEmit",
+    "build": "npm run build:frontend && make -C services/pdf-triage-pdf2w build DIST=../../dist"
   },
   "keywords": [
     "pdf",
     "triage",
-    "ollama",
-    "mcp",
-    "sqlite",
-    "zod"
+    "dashboard"
   ],
   "author": "Dai Hung PHAM",
   "license": "MIT",
@@ -36,70 +22,8 @@
     "type": "git",
     "url": "git+https://github.com/phamhung075/smart-pdf-triage-local-ai.git"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.6.1",
-    "@napi-rs/canvas": "^0.1.100",
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "marked": "^18.0.9",
-    "ollama": "^0.5.15",
-    "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^5.4.624",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.1.7",
-    "tesseract.js": "^7.0.0",
-    "zod": "^3.24.2"
-  },
   "devDependencies": {
-    "@types/express": "^5.0.0",
-    "@types/node": "^22.13.5",
-    "@types/pdf-parse": "^1.1.4",
-    "@types/sqlite3": "^3.1.11",
-    "@types/supertest": "^7.2.1",
-    "electron": "^41.7.1",
-    "electron-builder": "^25.1.8",
-    "pdf-lib": "^1.17.1",
     "sass": "^1.102.0",
-    "supertest": "^7.2.2",
-    "tsx": "^4.19.3",
-    "typescript": "^5.7.3",
-    "vitest": "^4.1.10"
-  },
-  "overrides": {
-    "@noble/hashes": "1.7.1"
-  },
-  "build": {
-    "appId": "com.smartpdftriage.app",
-    "productName": "Smart PDF Triage",
-    "asar": false,
-    "directories": {
-      "output": "dist-installer"
-    },
-    "files": [
-      "desktop/**/*",
-      "public/**/*",
-      "dist/**/*",
-      "src/**/*",
-      "prompts/**/*",
-      "categories.json",
-      "entity_dictionary.json",
-      "prompts.private.json.example",
-      "package.json"
-    ],
-    "win": {
-      "target": [
-        "nsis",
-        "dir"
-      ],
-      "publish": null,
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Smart PDF Triage"
-    }
+    "typescript": "^5.7.3"
   }
 }

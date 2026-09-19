@@ -11,7 +11,7 @@
     "                   rendered as a STEP 0 evaluated BEFORE the generic STEP 1..13 flow",
     "extra_rules_text -> free-form Markdown appended to that same STEP 0 block",
     "",
-    "See src/domain/prompt-personalization.ts for the schema and docs/knowledge/taxonomy.md for the why."
+    "See the promptpersonalization Go package (services/pdf-triage-pdf2w/promptpersonalization) for the schema and docs/knowledge/taxonomy.md for the why."
   ],
 
   "known_entities": [

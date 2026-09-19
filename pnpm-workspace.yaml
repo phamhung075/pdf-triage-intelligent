@@ -1,2 +1,5 @@
+# Frontend-only pnpm workspace. The only native install script allowed is @parcel/watcher, pulled in
+# by `sass --watch`. Every backend native build (sqlite3, @napi-rs/canvas, tesseract.js, electron)
+# was retired at the Go cutover, so it must not be re-allowed here.
 allowBuilds:
-  sqlite3: true
+  '@parcel/watcher': true
