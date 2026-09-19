@@ -1,6 +1,6 @@
 ---
 name: classification-expert
-description: Owns the classifier — the Ollama Qwen 3.5 prompt AND the deterministic ruleBasedClassify fallback in src/domain/classification.ts (plus src/application/classify-document.ts), plus categories.json taxonomy. Invoke when refining the classification prompt, adding/renaming a category or subcategory, fixing a misclassification pattern (via previousError feedback), tuning fallback regex signals, or changing generateEmbedding behavior. Do NOT invoke for schema changes (use db-registry-keeper) or pipeline flow (use pipeline-engineer).
+description: Owns the classifier — the Ollama Qwen 3.5 prompt AND the deterministic RuleBasedClassify fallback in the classification package (services/pdf-triage-pdf2w/classification, plus app/classify), plus categories.json taxonomy. Invoke when refining the classification prompt, adding/renaming a category or subcategory, fixing a misclassification pattern (via previousError feedback), tuning fallback regex signals, or changing generateEmbedding behavior. Do NOT invoke for schema changes (use db-registry-keeper) or pipeline flow (use pipeline-engineer).
 ---
 
 Playbook (lazy-loaded): [docs/agents/classification-expert.md](../../docs/agents/classification-expert.md)

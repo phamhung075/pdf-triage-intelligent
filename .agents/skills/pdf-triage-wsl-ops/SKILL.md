@@ -16,21 +16,21 @@ A POSIX `/mnt/...` path must **never** be handed to a Windows program, and a `X:
 
 Rules (Golden Rule 21 in [`golden-rules.md`](../../../docs/knowledge/golden-rules.md)):
 
-- Paths the app's own `fs` reads and writes are `/mnt/<drive>/...`; config paths are normalized at load by `windowsToWslPath` in [`path-conversion.ts`](../../../src/domain/path-conversion.ts).
-- Paths handed to a Windows program are `X:\...`, produced by `wslToWindowsPath`.
-- **All OS launching lives in [`os-open.ts`](../../../src/infrastructure/os-open.ts)** — never spawn `explorer.exe`, `chrome.exe` or a Linux opener anywhere else. `os-open.hygiene.test.ts` fails the build if a launcher literal appears outside that file. The builders return a spawn-ready `{ cmd, args }` and the caller owns the spawn, so `web-server` tests can keep mocking `child_process`.
-- To check whether a path needs conversion, use `isWslMountPath` rather than string-matching `/mnt/`.
+- Paths the app's own file I/O reads and writes are `/mnt/<drive>/...`; config paths are normalized at load by `WindowsToWSLPath` in the `pathconv` package (`services/pdf-triage-pdf2w/pathconv`).
+- Paths handed to a Windows program are `X:\...`, produced by `WSLToWindowsPath`.
+- **All OS launching lives in [`infra/osopen`](../../../services/pdf-triage-pdf2w/infra/osopen/)** — never spawn `explorer.exe`, `chrome.exe` or a Linux opener anywhere else. `infra/osopen/osopen_hygiene_test.go` fails the build if a launcher literal appears outside that package. The builders return a spawn-ready plan and the caller owns the spawn, so `httpapi` tests can keep injecting a fake launcher.
+- To check whether a path needs conversion, use `IsWSLMountPath` rather than string-matching `/mnt/`.
 
 ## Who starts the server
 
-**Not you.** Never run `npm run dev` or `npm start`; ask the user to run or restart it in their terminal (AGENTS.md non-negotiable rule 2). If you need to know whether it is up, check the port — do not start it "just to verify".
+**Not you.** Never run `make dev` or `./dist/pdf-triage serve`; ask the operator to run or restart it in their terminal (AGENTS.md non-negotiable rule 2). If you need to know whether it is up, check the port — do not start it "just to verify".
 
 Two independent guards exist, and neither changes that rule:
 
-- **Same-directory single-instance lock** — `acquireSingleInstanceLock()` in `web-server.ts` writes this process's PID to `<DATA_DIR>/.server.lock` and refuses a second instance from the *same* base directory. It is blind to a stale instance running from a *different* directory (a worktree), even one squatting the same port.
-- **Cross-directory port takeover** — on `EADDRINUSE`, `attemptListen` calls `killProcessOnPort()` from [`pid-lock.ts`](../../../src/infrastructure/pid-lock.ts), waits ~500 ms, and retries binding exactly once with takeover disabled. It kills whatever holds the port with **no check that it is the same app** — a deliberate simplicity tradeoff, not an oversight. Note the implementation shells out to `netstat -ano -p tcp` + `taskkill /PID <pid> /F`, which is **Windows-only**; on Linux/WSL the takeover does not actually free the port.
+- **Same-directory single-instance lock** — `httpapi`'s start path (built on `infra/pidlock`) writes this process's PID to `<DATA_DIR>/.server.lock` and refuses a second instance from the *same* base directory. It is blind to a stale instance running from a *different* directory (a worktree), even one squatting the same port.
+- **Cross-directory port takeover** — on `EADDRINUSE`, the start path calls `KillProcessOnPort()` in [`infra/pidlock`](../../../services/pdf-triage-pdf2w/infra/pidlock/), waits ~500 ms, and retries binding exactly once with takeover disabled. It kills whatever holds the port with **no check that it is the same app** — a deliberate simplicity tradeoff, not an oversight. On Windows it shells out to `netstat -ano -p tcp` + `taskkill /PID <pid> /F`; on Linux/WSL it uses the POSIX process checks in `infra/pidlock`.
 
-The scan has its own lock (`scan-lock.ts`, `<DATA_DIR>/.scan.lock`) so an auto-watcher tick cannot start a scan while one is running.
+The scan has its own lock (`app/scanlock`, `<DATA_DIR>/.scan.lock`) so an auto-watcher tick cannot start a scan while one is running.
 
 ## Ports
 
@@ -39,15 +39,13 @@ The scan has its own lock (`scan-lock.ts`, `<DATA_DIR>/.scan.lock`) so an auto-w
 | Web / API / SSE | `3971` (`PORT`) | `PDF_TRIAGE_HOST`, default `127.0.0.1` |
 | Vision Lab | `3179` (`VISION_LAB_PORT`) | its own server, independent of the main app |
 | MCP Streamable HTTP | `3972` (`MCP_HTTP_PORT`) | `MCP_HTTP_HOST`, default `0.0.0.0` |
-| PaddleOCR sidecar | `8871` (`PADDLEOCR_HOST`) | separate Python process |
-| Extraction microservice | `3981` (`PDF_EXTRACT_PORT`) | Docker / `npm run extract:dev` |
-| Docling service | `3984` | separate repo: `markdown-extract-service` |
+| pdf2w extraction service | `3984` (`PDF2W_SERVICE_URL`) | external, self-hosted `markdown-extract-service` (separate repo, its own compose) |
 
 MCP over stdio has no port. Full variable list: [`environment.md`](../../../docs/knowledge/environment.md).
 
-## The dev watcher ignores runtime files on purpose
+## The dev watcher only watches Go sources
 
-`npm run dev` runs `tsx watch --exclude ...` over `*.db`, `*.db-{journal,shm,wal}`, `registry.json`, `categories.json`, `settings.json`, `logs/**`, `.server.lock`, `.scan.lock`. A running scan writes those constantly; without the excludes every write would restart the server mid-scan. If you add a runtime file the app rewrites in place, add it to that list — and do not remove entries to "simplify" the command.
+`make dev` runs the dashboard watchers (`pnpm run watch:css`, `watch:frontend`) plus `air` hot-reloading the Go backend; `.air.toml` rebuilds only on `*.go` changes under `services/pdf-triage-pdf2w` (excluding `_test.go`, `public/js`, `tmp/`, `dist/`, `node_modules/`). A running scan writing `*.db`, `registry.json`, `settings.json` or the lock files therefore cannot restart it mid-scan — no exclude list to maintain for those. The operator runs `make dev`, not the agent.
 
 ## Scanning scope
 

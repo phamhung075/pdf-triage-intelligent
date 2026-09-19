@@ -18,7 +18,7 @@ This repository keeps one fact in one place, and every notable change lands in *
 
 ## Is this change "notable"?
 
-Update the set when the change alters any of: observable behavior, a REST/SSE/MCP endpoint, an env var or `settings.json` key, the SQLite schema or a Zod contract, the on-disk folder shape, the prompt contract, a gate or test strategy, or a rule in this repository's non-negotiable list.
+Update the set when the change alters any of: observable behavior, a REST/SSE/MCP endpoint, an env var or `settings.json` key, the SQLite schema or a `documentschema` contract, the on-disk folder shape, the prompt contract, a gate or test strategy, or a rule in this repository's non-negotiable list.
 
 A purely local edit — a typo, a rename with no behavior change, a test-only refactor — is exempt. Do not add a changelog entry for it.
 
@@ -50,4 +50,4 @@ Group by date and topic, newest first, matching the existing `## Unreleased` →
 
 ## Before you commit
 
-Run the [pdf-triage-verify](../pdf-triage-verify/SKILL.md) gates for whatever you touched, and run the [pdf-triage-personal-data](../pdf-triage-personal-data/SKILL.md) check if the change touches `prompts/`, `src/domain/classification.ts`, `categories.json`, or anything that could carry a real employer, bank, clinic, school or filename prefix.
+Run the [pdf-triage-verify](../pdf-triage-verify/SKILL.md) gates for whatever you touched, and run the [pdf-triage-personal-data](../pdf-triage-personal-data/SKILL.md) check if the change touches `prompts/`, the `classification` package (`services/pdf-triage-pdf2w/classification/`), `categories.json`, or anything that could carry a real employer, bank, clinic, school or filename prefix.

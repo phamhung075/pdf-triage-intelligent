@@ -15,7 +15,7 @@ Use all six fields. A missing field is the usual cause of a run that comes back 
 
 1. **Objective** — one imperative sentence. "Add X to Y", not "look into Y".
 2. **Scope** — exact paths it may read, and the repo docs it must read first (`docs/knowledge/architecture.md`, `docs/knowledge/golden-rules.md`, the relevant `docs/workflows/*`). Name what is out of bounds.
-3. **Method** — the commands you expect: `npm run typecheck`, `npm test`. Include the trap that applies (e.g. `npm run build:frontend` after any `public/ts/**` edit).
+3. **Method** — the commands you expect: `make test` (the Go suite), `pnpm run typecheck` (the dashboard). Include the trap that applies (e.g. `pnpm run build:frontend` after any `public/ts/**` edit).
 4. **Output contract** — the exact format you will parse, plus a word budget. Findings, not a transcript.
 5. **Write policy** — default `read-only`. If it may write, scope it to the exact paths, and route any scratch output under `scratch/`.
 6. **Evidence rule** — "cite the files and commands you actually ran; mark anything unverified". A claim without a command behind it is not a finding.
@@ -24,12 +24,12 @@ Use all six fields. A missing field is the usual cause of a run that comes back 
 
 Copy these into the prompt; the worker cannot infer them:
 
-- **Never run `npm run dev` or `npm start`.** The user runs the server. This is the most-violated rule by a worker that wants to check its own work.
+- **Never run `make dev` or `./dist/pdf-triage serve`.** The operator runs the server. This is the most-violated rule by a worker that wants to check its own work.
 - **Scan scope is `__raws` only** (`CONFIG.INPUT_DIR`) — never walk parents, siblings, or the disk.
 - **Never write to** `.env`, `settings.json`, `.prompts.private.json`, `.categories.private.json`, `registry.json`, `manual_decisions.json`, `taxonomy_hints.json`, or any `*.db`. These hold the operator's real data.
 - **No personal data in committed files** — see [pdf-triage-personal-data](../pdf-triage-personal-data/SKILL.md). Hand the worker the rule; do not hand it the values.
 - **Do not commit or push.** Workers return findings and diffs; the orchestrator commits.
-- **The three gates** are `npm run typecheck`, `npm test`, `npm run build:frontend` — see [pdf-triage-verify](../pdf-triage-verify/SKILL.md).
+- **The three gates** are `make test` (Go), `pnpm run typecheck` and `pnpm run build:frontend` (dashboard) — see [pdf-triage-verify](../pdf-triage-verify/SKILL.md).
 
 `DEEPSEEK_MCP_PERMISSION=allow` means every permission prompt is auto-accepted: the child can run shell commands and edit files unattended. Pass `--permission reject` for a read-only investigation.
 
@@ -39,12 +39,12 @@ Slice a request by [agent role](../../../docs/agents/README.md) — one job per 
 
 | `--label` | Owns |
 | --- | --- |
-| `pipeline-engineer` | `application/{triage-scan,repair-registry,relocalize-document,clear-registry}.ts`, `pdf-extractor.ts`, `web-server.ts`, SSE, watcher |
-| `classification-expert` | `classify-document.ts`, `domain/{classification,prompt,classification-resolution,decision-rule}.ts`, the Qwen prompt, `ruleBasedClassify` |
-| `db-registry-keeper` | `db/database.ts`, `document.schema.ts`, FTS5, `json-registry.ts` |
+| `pipeline-engineer` | `app/{triagescan,repair,relocalize,clear}`, `infra/pdfextractor`, `httpapi`, SSE, watcher |
+| `classification-expert` | `app/classify`, `classification`, `prompt`, `classificationresolution`, `decisionrule`, the Qwen prompt, `RuleBasedClassify` |
+| `db-registry-keeper` | `store/database`, `documentschema`, FTS5, `infra/jsonregistry` |
 | `ui-frontend` | `public/**` — cards, modals, pills, Toast, SSE consumer |
-| `mcp-integrator` | `infrastructure/mcp/mcp-server.ts` and its tool schemas |
-| `ollama-ops` | Ollama connectivity, `ollama-client.ts`, `/api/ollama/*`, model lifecycle |
+| `mcp-integrator` | `mcpserver` and its tool schemas |
+| `ollama-ops` | Ollama connectivity, `infra/ollama`, `/api/ollama/*`, model lifecycle |
 | `qa-reviewer` | Reviewing a change against `AGENT_REQUIREMENTS.md` + Golden Rules |
 
 Dispatch concurrently, then keep working — `start` is fire-and-forget. Poll with `result <jobId>`; `wait` only when the next step truly needs that output.
@@ -57,6 +57,6 @@ Follow it in the terminal with `node .agents/skills/deepseek-offload/scripts/ses
 
 ## Reviewing what comes back
 
-A worker inherits nothing of your rules, so **read its diff as if a stranger wrote it**. Run `git status` and `git diff` after any job that wrote files. Check it against the numbered rules in `AGENTS.md` — the frequent misses are the `< 10` character no-text guard, the strict no-subcategory fail guard, writing a taxonomy slug to `categories.json` instead of the private overlay, and `Promise.all`-ing the scan pipeline (Golden Rule 9 requires one file at a time with a `setTimeout(50)` yield).
+A worker inherits nothing of your rules, so **read its diff as if a stranger wrote it**. Run `git status` and `git diff` after any job that wrote files. Check it against the numbered rules in `AGENTS.md` — the frequent misses are the `< 10` character no-text guard, the strict no-subcategory fail guard, writing a taxonomy slug to `categories.json` instead of the private overlay, and parallelising the scan pipeline (Golden Rule 9 requires one file at a time with a 50 ms pause).
 
 Nothing a worker produced is committed until you have reviewed it and the [qa-reviewer](../../../docs/agents/qa-reviewer.md) gate has run.

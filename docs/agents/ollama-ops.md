@@ -6,8 +6,8 @@ Owns Ollama connectivity, model lifecycle, and the health endpoints. Small surfa
 
 ## Owns
 
-- `ensureOllamaModel()` in `src/infrastructure/ollama-client.ts` (co-owned with `classification-expert` for prompt-related concerns).
-- `/api/ollama/status` and `/api/ollama/start` in `src/infrastructure/http/web-server.ts` (co-owned with `pipeline-engineer`).
+- `EnsureOllamaModel()` in `infra/ollama` (co-owned with `classification-expert` for prompt-related concerns).
+- `/api/ollama/status` and `/api/ollama/start` in `httpapi` (co-owned with `pipeline-engineer`).
 - Model pinning: `CONFIG.OLLAMA_MODEL`, `CONFIG.OLLAMA_HOST`, `CONFIG.OLLAMA_EMBED_MODEL`.
 
 ## Must-read before editing
@@ -26,13 +26,13 @@ See [docs/skills.md](../skills.md). Default stack for this agent:
 - Ollama connectivity issue reported (`ECONNREFUSED`, timeout, missing model).
 - Adding a new health signal or endpoint.
 - Upgrading the pinned model version (rare).
-- Reworking auto-spawn logic (`child_process.exec('ollama serve')`).
-- Tweaking retry / backoff for `ensureOllamaModel`.
+- Reworking auto-spawn logic (the `ollama serve` spawn in `infra/ollama`).
+- Tweaking retry / backoff for `EnsureOllamaModel`.
 
 ## Forbidden
 
 - Reintroduce non-Qwen 3.5 models (Rule #14).
-- Silently swallow Ollama errors — always log via `logger` with actionable context.
+- Silently swallow Ollama errors — always log via `infra/logger` with actionable context.
 - Auto-spawn `ollama serve` in a tight loop (bounded retry only).
 - Add hard-coded hostnames — always via `CONFIG.OLLAMA_HOST`.
 

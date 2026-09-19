@@ -11,12 +11,12 @@ This split keeps `.claude/agents/` small (fast to load, easy to browse) and make
 
 | Agent                                       | Owns                                                                                          | Invoke when                                                    |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| [pipeline-engineer](./pipeline-engineer.md) | `application/{triage-scan,repair-registry,relocalize-document,clear-registry}.ts`, `infrastructure/pdf-extractor.ts`, `infrastructure/http/web-server.ts`, SSE, watcher | Pipeline logic, scan/repair/clear/relocalize, HTTP routes, SSE |
-| [classification-expert](./classification-expert.md) | `application/classify-document.ts`, `domain/{classification,prompt,classification-resolution,decision-rule}.ts`, Qwen prompt, `ruleBasedClassify`, `categories.json` | Prompt changes, taxonomy tweaks, feedback loop                 |
-| [db-registry-keeper](./db-registry-keeper.md) | `infrastructure/db/database.ts`, `domain/document.schema.ts`, FTS5, `infrastructure/json-registry.ts`                    | Schema migrations, query performance, JSON mirror              |
+| [pipeline-engineer](./pipeline-engineer.md) | `app/{triagescan,repair,relocalize,clear}`, `infra/pdfextractor`, `httpapi`, SSE, watcher | Pipeline logic, scan/repair/clear/relocalize, HTTP routes, SSE |
+| [classification-expert](./classification-expert.md) | `app/classify`, `classification`, `prompt`, `classificationresolution`, `decisionrule`, Qwen prompt, `RuleBasedClassify`, `categories.json` | Prompt changes, taxonomy tweaks, feedback loop                 |
+| [db-registry-keeper](./db-registry-keeper.md) | `store/database`, `documentschema`, FTS5, `infra/jsonregistry`                    | Schema migrations, query performance, JSON mirror              |
 | [ui-frontend](./ui-frontend.md)             | `public/*` (HTML/CSS/JS), modals, pills, Toast, SSE consumer                                  | Any UI change — cards, filters, settings, relocalize modal     |
-| [mcp-integrator](./mcp-integrator.md)       | `infrastructure/mcp/mcp-server.ts`, tool schemas                                                                 | Adding/modifying MCP tools exposed to external agents          |
-| [ollama-ops](./ollama-ops.md)               | Ollama connectivity, `infrastructure/ollama-client.ts`, `/api/ollama/*`, model lifecycle                                         | Model install, health, auto-spawn, connectivity errors         |
+| [mcp-integrator](./mcp-integrator.md)       | `mcpserver`, tool schemas                                                                 | Adding/modifying MCP tools exposed to external agents          |
+| [ollama-ops](./ollama-ops.md)               | Ollama connectivity, `infra/ollama`, `/api/ollama/*`, model lifecycle                                         | Model install, health, auto-spawn, connectivity errors         |
 | [qa-reviewer](./qa-reviewer.md)             | Reviews changes vs `AGENT_REQUIREMENTS.md` + Golden Rules                                     | After any non-trivial change; always before merge              |
 | [docs-curator](./docs-curator.md)           | Everything in `docs/` and `AGENTS.md` (root bootstrap; `CLAUDE.md` is a symlink to it)        | After code changes that alter behavior described in docs       |
 
