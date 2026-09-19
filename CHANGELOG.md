@@ -22,8 +22,33 @@ external self-hosted pdf2w service (`PDF2W_SERVICE_URL`); canonical-path and tex
 in-process Go; SQLite stays the pure-Go `modernc.org/sqlite` over the same `pdf_triage.db` schema.
 Decision record: [`.agents/notes/implemented/architecture/2026-09-19-go-backend-cutover.md`](.agents/notes/implemented/architecture/2026-09-19-go-backend-cutover.md).
 
-- **Provider selection (cloud LLM providers) is in progress on the operator's branch** and is not
-  described in these docs; only the committed Ollama/Qwen behaviour is documented.
+- **Cloud LLM providers are now committed in the Go backend** (see the next entry) but the
+  knowledge docs (`ollama-qwen.md`, `api-reference.md`, `environment.md`) still describe only the
+  Ollama/Qwen behaviour. Documenting the provider settings is an open follow-up.
+
+### Cloud AI providers (Google, Claude, DeepSeek, OpenAI) alongside local Ollama
+
+Settings and classification can run against a cloud provider instead of the local Ollama model.
+`infra/aiprovider` holds one client per provider behind a common interface (classification, text chat,
+connection test). `ai_provider`, `cloud_provider` and the per-provider key, model and base URL
+round-trip through `GET`/`PUT /api/config`; an unknown non-empty provider is rejected with 400.
+`/api/ollama/status` reports the active cloud provider, `POST /api/ai/test` checks live connectivity, and
+a config change applies immediately instead of at the next scan. Google sends its key in a header, not
+the URL, and provider errors shown in the chat answer are trimmed and stripped of tokens and keys.
+
+### Settings modal opens immediately; system stats are cached
+
+Opening the Settings modal took about 3.5 s because it awaited GET /api/system/stats (an uncached, sequential walk of the raws and archive trees on a slow 9p/OneDrive mount) before showing anything. openSettingsModal in public/ts/ModalsManager.ts now shows the modal as soon as GET /api/config has been applied, then loads the Ollama model list and the storage/format stats in parallel; stats fields show a placeholder until they arrive, and a per-open token discards a stale response after a quick close and reopen.
+
+On the Go side, the stats handler in services/pdf-triage-pdf2w/httpapi/system.go caches the raws/archive walk result for 30 s (keyed on the input and output directories, so saving new paths in Settings invalidates it), walks the two trees concurrently, and runs at most one walk at a time. The database size is still read fresh on every request. Trade-off: the file counts and sizes can be up to 30 s stale after a scan; no invalidation is wired to scan, relocalize or clear. The response shape is unchanged.
+
+### AI chat assistant header/greeting follow the active provider
+
+The chat assistant title, greeting and reply label now use whichever provider
+`/api/ollama/status` reports: Local Qwen, DeepSeek, Gemini, Claude or OpenAI. The
+DeepSeek-specific `deepseek-chat` fallback was removed, so a cloud greeting shows the provider
+name plus the model when one is returned, and the `#btnOpenChatAssistant` tooltip is no longer
+"Local AI".
 
 ### Docling structured extraction — optional quality layer in front of PDF extraction
 
