@@ -140,7 +140,7 @@ class TriageEventsManager {
     }
   }
 
-  async checkOllamaStatus(): Promise<void> {
+  async checkOllamaStatus(refresh: boolean = false): Promise<void> {
     const badge = document.getElementById('ollamaStatusBadge');
     const textEl = document.getElementById('ollamaStatusText');
     const btnStart = document.getElementById('btnStartOllama');
@@ -148,7 +148,7 @@ class TriageEventsManager {
     if (!badge || !textEl) return;
 
     try {
-      const res = await fetch('/api/ollama/status');
+      const res = await fetch(refresh ? '/api/ollama/status?refresh=1' : '/api/ollama/status');
       const data = await res.json();
 
       if (data.provider === 'cloud') {
@@ -162,12 +162,37 @@ class TriageEventsManager {
         };
         const pName = cloudNames[data.cloud_provider?.toLowerCase()] || data.cloud_provider || 'Cloud AI';
         if (data.online) {
+          const requested = String(data.model || '');
+          const confirmed = String(data.model_confirmed || '');
+          const verified = data.model_verified === true;
+          const lastModel = String(data.last_classification_model || '');
+          const lastDate = data.last_classification_at ? new Date(data.last_classification_at) : null;
+          const lastAtLabel = lastDate && !isNaN(lastDate.getTime()) ? lastDate.toLocaleString() : '';
+          const titleLines: string[] = [`Requested: ${requested}`];
+
           badge.className = 'ollama-status-badge online';
-          textEl.textContent = `☁️ ${pName} (${data.model})`;
-          badge.title = `Connected to Cloud AI (${pName}) model ${data.model}`;
+          if (verified) {
+            textEl.textContent = `☁️ ${pName} (${requested}) ✓`;
+            if (confirmed) titleLines.push(`Confirmed by ${pName} API: ${confirmed}`);
+            if (lastModel) titleLines.push(`Last triage classification: ${lastModel}${lastAtLabel ? ` at ${lastAtLabel}` : ''}`);
+            this.setEngineStatus('Ready', '#10b981');
+          } else if (confirmed) {
+            textEl.textContent = `☁️ ${pName} (asked ${requested} · API served ${confirmed}) ⚠`;
+            titleLines.push(`API served: ${confirmed}`);
+            titleLines.push(`⚠ Provider reported a different model than requested.`);
+            if (lastModel) titleLines.push(`Last triage classification: ${lastModel}${lastAtLabel ? ` at ${lastAtLabel}` : ''}`);
+            this.setEngineStatus('Model mismatch', '#f59e0b');
+          } else {
+            textEl.textContent = `☁️ ${pName} (${requested}, unconfirmed)`;
+            titleLines.push(`The provider did not report which model served the call.`);
+            this.setEngineStatus('Ready', '#10b981');
+          }
+          if (lastModel && confirmed && lastModel !== confirmed) {
+            titleLines.push(`Note: last triage used ${lastModel}, not the API-confirmed ${confirmed}.`);
+          }
+          badge.title = titleLines.join('\n');
           if (btnStart) btnStart.style.display = 'none';
           if (btnRestart) btnRestart.style.display = 'none';
-          this.setEngineStatus('Ready', '#10b981');
         } else {
           badge.className = 'ollama-status-badge offline';
           textEl.textContent = `☁️ ${pName} (No Key)`;

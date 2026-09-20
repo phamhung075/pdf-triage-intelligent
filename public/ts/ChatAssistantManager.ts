@@ -70,7 +70,7 @@ class ChatAssistantManager {
         this.aiInfo = {
           provider: 'cloud',
           cloudProvider: data.cloud_provider || '',
-          model: data.model || '',
+          model: (data.model_confirmed && data.model_confirmed !== data.model) ? data.model_confirmed : (data.model || ''),
           displayName: pName
         };
       } else {

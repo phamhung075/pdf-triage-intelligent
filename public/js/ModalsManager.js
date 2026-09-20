@@ -1293,7 +1293,7 @@ class ModalsManager {
         let baseUrl = '';
         if (cloudProvider === 'google') {
             apiKey = document.getElementById('cfgGoogleApiKey')?.value.trim() || '';
-            model = document.getElementById('cfgGoogleModel')?.value || 'gemini-2.5-flash';
+            model = document.getElementById('cfgGoogleModel')?.value || 'gemini-3.8-flash';
             baseUrl = document.getElementById('cfgGoogleBaseUrl')?.value.trim() || '';
         }
         else if (cloudProvider === 'claude') {
@@ -1303,7 +1303,7 @@ class ModalsManager {
         }
         else if (cloudProvider === 'deepseek') {
             apiKey = document.getElementById('cfgDeepSeekApiKey')?.value.trim() || '';
-            model = document.getElementById('cfgDeepSeekModel')?.value || 'deepseek-chat';
+            model = document.getElementById('cfgDeepSeekModel')?.value || 'deepseek-flash';
             baseUrl = document.getElementById('cfgDeepSeekBaseUrl')?.value.trim() || '';
         }
         else if (cloudProvider === 'openai') {
@@ -1340,10 +1340,22 @@ class ModalsManager {
             const data = await res.json();
             if (res.ok && data.ok) {
                 const latencyLabel = typeof data.latency_ms === 'number' ? ` (${data.latency_ms}ms)` : '';
-                if (testStatus) {
-                    testStatus.innerHTML = `<span style="color: #34d399; display: inline-flex; align-items: center; gap: 0.35rem;">✅ Connected${latencyLabel}</span>`;
+                const reqModel = String(data.model_requested || model || '');
+                const confModel = String(data.model_confirmed || '');
+                let confirmText = ' · model not reported by API';
+                let confirmHtml = confirmText;
+                if (data.model_verified === true) {
+                    confirmText = ` · model ${confModel} ✓ confirmed by API`;
+                    confirmHtml = ` · model ${this.app.state.escapeHtml(confModel)} ✓ confirmed by API`;
                 }
-                this.app.toast.success(`Success! Connected to ${cloudProvider}${latencyLabel}`);
+                else if (confModel) {
+                    confirmText = ` · ⚠ asked ${reqModel}, API served ${confModel}`;
+                    confirmHtml = ` · ⚠ asked ${this.app.state.escapeHtml(reqModel)}, API served ${this.app.state.escapeHtml(confModel)}`;
+                }
+                if (testStatus) {
+                    testStatus.innerHTML = `<span style="color: #34d399; display: inline-flex; align-items: center; gap: 0.35rem;">✅ Connected${latencyLabel}${confirmHtml}</span>`;
+                }
+                this.app.toast.success(`Success! Connected to ${cloudProvider}${latencyLabel}${confirmText}`);
             }
             else {
                 const errMsg = data.error || 'Connection failed';
@@ -1629,11 +1641,11 @@ class ModalsManager {
             ollama_host: state.getVal('cfgOllamaHost').trim(),
             ai_provider: aiProvider,
             cloud_provider: cloudProvider,
-            google_model: document.getElementById('cfgGoogleModel')?.value || 'gemini-2.5-flash',
+            google_model: document.getElementById('cfgGoogleModel')?.value || 'gemini-3.8-flash',
             google_base_url: document.getElementById('cfgGoogleBaseUrl')?.value.trim() || '',
             anthropic_model: document.getElementById('cfgAnthropicModel')?.value || 'claude-3-7-sonnet-20250219',
             anthropic_base_url: document.getElementById('cfgAnthropicBaseUrl')?.value.trim() || '',
-            deepseek_model: document.getElementById('cfgDeepSeekModel')?.value || 'deepseek-chat',
+            deepseek_model: document.getElementById('cfgDeepSeekModel')?.value || 'deepseek-flash',
             deepseek_base_url: document.getElementById('cfgDeepSeekBaseUrl')?.value.trim() || '',
             openai_model: document.getElementById('cfgOpenAIModel')?.value || 'gpt-4o-mini',
             openai_base_url: document.getElementById('cfgOpenAIBaseUrl')?.value.trim() || ''
@@ -1672,7 +1684,7 @@ class ModalsManager {
                 state.systemLanguage = payload.language;
                 this.app.toast.success('System configuration updated successfully!');
                 this.closeSettingsModal();
-                this.app.events.checkOllamaStatus();
+                this.app.events.checkOllamaStatus(true);
                 this.app.categoryPills.loadCategories();
                 this.app.documentGrid.loadDocuments();
             }

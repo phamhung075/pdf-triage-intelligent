@@ -12,6 +12,14 @@ as the code/doc change, not reconstructed later from `git log`.
 
 ## Unreleased
 
+### Cloud model defaults: `deepseek-flash` and `gemini-3.8-flash`
+
+The default DeepSeek model is now `deepseek-flash` (was `deepseek-chat`) and the default Google model is now `gemini-3.8-flash` (was `gemini-2.5-flash`); both ids were checked against the providers' official docs on 2026-09-20. The default applies in `infra/aiprovider` (`defaultDeepSeekModel`, `defaultGoogleModel`), the `Manager.ListModels` order, the status fallback in `httpapi/ollama.go`, `cloudModelFor` in `cmd/pdf-triage/app.go`, the `aiInfo` fallback in `app/classify/classify.go`, and the Settings dropdowns in `public/index.html` (new option first, marked Recommended) with the fallbacks in `public/ts/ModalsManager.ts`. `deepseek-chat`, `deepseek-reasoner` and the older Gemini ids stay selectable, and a model already saved in Settings still keeps winning over the default. One shared model per provider: triage classification (`RequestClassification`) and the Chat Assistant (`RequestTextChat`) use the same setting. A model changed in Settings takes effect on the running backend without a restart, because the settings save calls `Manager.UpdateConfig`, which rebuilds the providers; `TestManagerLiveModelChangeDeepSeek` and `TestManagerLiveModelChangeGoogle` in `infra/aiprovider/live_change_test.go` prove it for both methods.
+
+### Backend-confirmed model in the status badge and connection test
+
+The backend now reports which model a cloud provider actually served, taken from the provider's own response echo and never from configuration. `GET /api/ollama/status` (cloud) and `POST /api/ai/test` return `model_confirmed` and `model_verified`; the status also returns `last_classification_model` / `last_classification_at` for the most recent successful triage classification. `?refresh=1` forces a fresh probe and a Settings save uses it. The header badge shows `✓` when confirmed, a warning with the served model when it differs, and `unconfirmed` when the provider reports nothing; the connection test shows the same result. Implemented in `infra/aiprovider` (`TestWithModel`, `ModelMatches`, `Manager.LastClassification`), `httpapi/ollama.go` and the dashboard TypeScript; tests `TestModelMatches`, `TestCloudStatusReportsEchoNotConfig`, `TestCloudStatusRefreshBypassesCache`. `model_verified` is deliberately strict: a dated or numeric build suffix or `:tag` still matches, but a different variant such as `gpt-4o` served as `gpt-4o-mini` is reported as not verified.
+
 ### Go backend cutover — docs synced to the single Go binary
 
 The TypeScript backend is retired. `docs/` (knowledge, workflows, overview, index), `CHANGELOG.md`

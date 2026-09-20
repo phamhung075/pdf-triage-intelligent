@@ -47,12 +47,13 @@ to clear a key. Keys live in plain text in `settings.json` (written with mode `0
 
 | Method | Route                | Contract |
 | ------ | -------------------- | -------- |
-| POST   | `/api/ai/test`       | `{ provider, api_key?, model?, base_url? }` → `{ ok, message \| error, latency_ms }`. `provider` accepts `google`/`gemini`, `claude`/`anthropic`, `deepseek`, `openai`, `local`/`ollama`; an unknown provider is `400`. An omitted/empty `api_key`, `model` or `base_url` falls back to the stored setting. |
-| GET    | `/api/ollama/status` | Local mode returns `{ online, model, host, modelsCount, models, modelExists, modelCanGenerate, modelError? }`; cloud mode adds `provider: "cloud"`, `cloud_provider`, the active `model` and `host: "Cloud API (<provider>)"`. |
+| POST   | `/api/ai/test`       | `{ provider, api_key?, model?, base_url? }` → `{ ok, message \| error, latency_ms, model_requested, model_confirmed, model_verified }`. `provider` accepts `google`/`gemini`, `claude`/`anthropic`, `deepseek`, `openai`, `local`/`ollama`; an unknown provider is `400`. An omitted/empty `api_key`, `model` or `base_url` falls back to the stored setting. On success `model_confirmed` is the model id the provider's own API response echoed (`model` for DeepSeek/OpenAI/Claude, `modelVersion` for Gemini), `""` when the provider omitted it, and it is never copied from configuration; `model_verified` is true only when it matches `model_requested` (whitespace-trimmed and case-insensitive; true when the confirmed id equals the requested id, or is the requested id plus a `:tag`, a `-` date or numeric build suffix such as `-2024-08-06`, `-001` or `-20250219`, or `-latest`; any other suffix such as `-mini` or `-lite` names a different model and is not verified). |
+| GET    | `/api/ollama/status` | Local mode returns `{ online, model, host, modelsCount, models, modelExists, modelCanGenerate, modelError? }`; cloud mode adds `provider: "cloud"`, `cloud_provider`, the active `model`, `model_confirmed`, `model_verified`, `last_classification_model` / `last_classification_at` (RFC3339) and `host: "Cloud API (<provider>)"`. `model_confirmed` and `model_verified` follow the same contract as `/api/ai/test`; `last_classification_model` / `last_classification_at` are omitted until a triage classification has succeeded since start or since the last config change (any Settings save resets them). Local mode is unchanged. `?refresh=1` bypasses the 60 s cloud health cache and re-probes the provider. |
 | GET    | `/api/system/stats`  | `{ raws, archive, database, total, formatBreakdown }` — file counts/sizes plus DB size. |
 
 The cloud health result behind `/api/ollama/status` is cached for **60 s** (failures included); a
-forced refresh bypasses the cache. `/api/system/stats` caches its walk of the raws/archive trees for
+changed model misses the cache automatically (the cache key includes the model) and `?refresh=1`
+forces a fresh probe. `/api/system/stats` caches its walk of the raws/archive trees for
 **30 s** (keyed on the two directories); the database size is read fresh on every request.
 
 ## Categories

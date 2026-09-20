@@ -1306,7 +1306,7 @@ class ModalsManager {
 
     if (cloudProvider === 'google') {
       apiKey = (document.getElementById('cfgGoogleApiKey') as HTMLInputElement | null)?.value.trim() || '';
-      model = (document.getElementById('cfgGoogleModel') as HTMLSelectElement | null)?.value || 'gemini-2.5-flash';
+      model = (document.getElementById('cfgGoogleModel') as HTMLSelectElement | null)?.value || 'gemini-3.8-flash';
       baseUrl = (document.getElementById('cfgGoogleBaseUrl') as HTMLInputElement | null)?.value.trim() || '';
     } else if (cloudProvider === 'claude') {
       apiKey = (document.getElementById('cfgAnthropicApiKey') as HTMLInputElement | null)?.value.trim() || '';
@@ -1314,7 +1314,7 @@ class ModalsManager {
       baseUrl = (document.getElementById('cfgAnthropicBaseUrl') as HTMLInputElement | null)?.value.trim() || '';
     } else if (cloudProvider === 'deepseek') {
       apiKey = (document.getElementById('cfgDeepSeekApiKey') as HTMLInputElement | null)?.value.trim() || '';
-      model = (document.getElementById('cfgDeepSeekModel') as HTMLSelectElement | null)?.value || 'deepseek-chat';
+      model = (document.getElementById('cfgDeepSeekModel') as HTMLSelectElement | null)?.value || 'deepseek-flash';
       baseUrl = (document.getElementById('cfgDeepSeekBaseUrl') as HTMLInputElement | null)?.value.trim() || '';
     } else if (cloudProvider === 'openai') {
       apiKey = (document.getElementById('cfgOpenAIApiKey') as HTMLInputElement | null)?.value.trim() || '';
@@ -1354,10 +1354,21 @@ class ModalsManager {
       const data = await res.json();
       if (res.ok && data.ok) {
         const latencyLabel = typeof data.latency_ms === 'number' ? ` (${data.latency_ms}ms)` : '';
-        if (testStatus) {
-          testStatus.innerHTML = `<span style="color: #34d399; display: inline-flex; align-items: center; gap: 0.35rem;">✅ Connected${latencyLabel}</span>`;
+        const reqModel = String(data.model_requested || model || '');
+        const confModel = String(data.model_confirmed || '');
+        let confirmText = ' · model not reported by API';
+        let confirmHtml = confirmText;
+        if (data.model_verified === true) {
+          confirmText = ` · model ${confModel} ✓ confirmed by API`;
+          confirmHtml = ` · model ${this.app.state.escapeHtml(confModel)} ✓ confirmed by API`;
+        } else if (confModel) {
+          confirmText = ` · ⚠ asked ${reqModel}, API served ${confModel}`;
+          confirmHtml = ` · ⚠ asked ${this.app.state.escapeHtml(reqModel)}, API served ${this.app.state.escapeHtml(confModel)}`;
         }
-        this.app.toast.success(`Success! Connected to ${cloudProvider}${latencyLabel}`);
+        if (testStatus) {
+          testStatus.innerHTML = `<span style="color: #34d399; display: inline-flex; align-items: center; gap: 0.35rem;">✅ Connected${latencyLabel}${confirmHtml}</span>`;
+        }
+        this.app.toast.success(`Success! Connected to ${cloudProvider}${latencyLabel}${confirmText}`);
       } else {
         const errMsg = data.error || 'Connection failed';
         const errMsgEsc = this.app.state.escapeHtml(errMsg);
@@ -1641,11 +1652,11 @@ class ModalsManager {
       ollama_host: state.getVal('cfgOllamaHost').trim(),
       ai_provider: aiProvider,
       cloud_provider: cloudProvider,
-      google_model: (document.getElementById('cfgGoogleModel') as HTMLSelectElement | null)?.value || 'gemini-2.5-flash',
+      google_model: (document.getElementById('cfgGoogleModel') as HTMLSelectElement | null)?.value || 'gemini-3.8-flash',
       google_base_url: (document.getElementById('cfgGoogleBaseUrl') as HTMLInputElement | null)?.value.trim() || '',
       anthropic_model: (document.getElementById('cfgAnthropicModel') as HTMLSelectElement | null)?.value || 'claude-3-7-sonnet-20250219',
       anthropic_base_url: (document.getElementById('cfgAnthropicBaseUrl') as HTMLInputElement | null)?.value.trim() || '',
-      deepseek_model: (document.getElementById('cfgDeepSeekModel') as HTMLSelectElement | null)?.value || 'deepseek-chat',
+      deepseek_model: (document.getElementById('cfgDeepSeekModel') as HTMLSelectElement | null)?.value || 'deepseek-flash',
       deepseek_base_url: (document.getElementById('cfgDeepSeekBaseUrl') as HTMLInputElement | null)?.value.trim() || '',
       openai_model: (document.getElementById('cfgOpenAIModel') as HTMLSelectElement | null)?.value || 'gpt-4o-mini',
       openai_base_url: (document.getElementById('cfgOpenAIBaseUrl') as HTMLInputElement | null)?.value.trim() || ''
@@ -1683,7 +1694,7 @@ class ModalsManager {
         state.systemLanguage = payload.language;
         this.app.toast.success('System configuration updated successfully!');
         this.closeSettingsModal();
-        this.app.events.checkOllamaStatus();
+        this.app.events.checkOllamaStatus(true);
         this.app.categoryPills.loadCategories();
         this.app.documentGrid.loadDocuments();
       } else {
