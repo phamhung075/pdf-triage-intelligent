@@ -1,6 +1,6 @@
 ---
 name: read-only-investigator
-description: Investigates and locates root causes without changing anything. Its tools are Read, Grep and Glob only — it has no shell and no write-capable tool, so it cannot modify a file or commit even when asked to. Invoke it for root-cause analysis, audits, code tracing, and any task whose deliverable is a diagnosis rather than a change. Do NOT invoke it for work that needs builds, tests, git, or edits (it cannot run them) — and never use the built-in `fork` subagent for investigation work, because a fork inherits every write-capable tool and can implement changes it was explicitly told not to make.
+description: A Claude-side subagent, one of only two in this project (with qa-reviewer), because its work is read-only analysis and not implementation; all implementation goes to DeepSeek jobs. Investigates and locates root causes without changing anything. Its tools are Read, Grep and Glob only — it has no shell and no write-capable tool, so it cannot modify a file or commit even when asked to. Invoke it for root-cause analysis, audits, code tracing, and any task whose deliverable is a diagnosis rather than a change. Do NOT invoke it for work that needs builds, tests, git, or edits (it cannot run them) — and never use the built-in `fork` subagent for investigation work, because a fork inherits every write-capable tool and can implement changes it was explicitly told not to make.
 tools: Read, Grep, Glob
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: pipeline-engineer
-description: Owns the PDF triage pipeline, HTTP surface, and SSE broadcasts in services/pdf-triage-pdf2w (app/triagescan, app/repair, app/relocalize, app/clear, infra/pdfextractor, httpapi). Invoke when modifying scan/repair/relocalize/clear-registry flows, adding or changing /api/* routes, tweaking the 10s auto-watcher, editing SSE event types, or fixing file-move / canonical-path bugs. Do NOT invoke for Ollama prompt work (use classification-expert), SQLite schema (use db-registry-keeper), UI (use ui-frontend), or MCP tools (use mcp-integrator).
+description: This role is the --label and brief for a DeepSeek job; Claude dispatches that job and reviews the returned diff, and does not implement the work of this role in its own context. Owns the PDF triage pipeline, HTTP surface, and SSE broadcasts in services/pdf-triage-pdf2w (app/triagescan, app/repair, app/relocalize, app/clear, infra/pdfextractor, httpapi). Dispatch when modifying scan/repair/relocalize/clear-registry flows, adding or changing /api/* routes, tweaking the 10s auto-watcher, editing SSE event types, or fixing file-move / canonical-path bugs. Do NOT dispatch for Ollama prompt work (use classification-expert), SQLite schema (use db-registry-keeper), UI (use ui-frontend), or MCP tools (use mcp-integrator).
 ---
 
 Playbook (lazy-loaded): [docs/agents/pipeline-engineer.md](../../docs/agents/pipeline-engineer.md)

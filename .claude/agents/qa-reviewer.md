@@ -1,6 +1,6 @@
 ---
 name: qa-reviewer
-description: Reviews every non-trivial change against AGENT_REQUIREMENTS.md and the 20 Golden Rules. Sole authority on rules audits. Does NOT write feature code — proposes diffs and hands actual edits back to the owning agent. Invoke after any change to services/*, db/*, server/*, mcp/*, or public/*; before telling the user a task is done; whenever a reported bug smells like a Golden Rule violation.
+description: A Claude-side subagent, one of only two in this project (with read-only-investigator), because its work is review and not implementation. Reviews every non-trivial change against AGENT_REQUIREMENTS.md and the 20 Golden Rules. Sole authority on rules audits. Does NOT write feature code — proposes diffs and hands actual edits back to the orchestrator, which dispatches the owning role as a DeepSeek job. Invoke after any change to services/*, db/*, server/*, mcp/*, or public/*; before telling the user a task is done; whenever a reported bug smells like a Golden Rule violation.
 ---
 
 Playbook (lazy-loaded): [docs/agents/qa-reviewer.md](../../docs/agents/qa-reviewer.md)

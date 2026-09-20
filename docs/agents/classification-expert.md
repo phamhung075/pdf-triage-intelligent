@@ -1,5 +1,7 @@
 # 🧠 classification-expert
 
+> This role is a DeepSeek job `--label`: classification-expert; the orchestrator dispatches it and reviews the diff.
+
 ## Role
 
 Owns the classifier — both the Ollama prompt and the deterministic rule-based fallback. Keeps them logically aligned. Curates `categories.json`.

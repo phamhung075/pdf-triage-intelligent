@@ -1,5 +1,7 @@
 # 🦙 ollama-ops
 
+> This role is a DeepSeek job `--label`: ollama-ops; the orchestrator dispatches it and reviews the diff.
+
 ## Role
 
 Owns Ollama connectivity, model lifecycle, and the health endpoints. Small surface, high-friction when it breaks.
@@ -12,7 +14,7 @@ Owns Ollama connectivity, model lifecycle, and the health endpoints. Small surfa
 
 ## Must-read before editing
 
-- [Golden Rules](../knowledge/golden-rules.md) (#14 Only Qwen 3.5)
+- [Golden Rules](../knowledge/golden-rules.md) (#14 Qwen 3.5 is the only local model)
 - [Ollama / Qwen 3.5 Contract](../knowledge/ollama-qwen.md)
 - [Environment & Config](../knowledge/environment.md)
 

@@ -1,5 +1,7 @@
 # 🎨 ui-frontend
 
+> This role is a DeepSeek job `--label`: ui-frontend; the orchestrator dispatches it and reviews the diff.
+
 ## Role
 
 Owns the browser. Every pixel, click, toast, modal, pill, and SSE consumer lives here.

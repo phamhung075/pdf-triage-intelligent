@@ -1,6 +1,6 @@
 ---
 name: classification-expert
-description: Owns the classifier — the Ollama Qwen 3.5 prompt AND the deterministic RuleBasedClassify fallback in the classification package (services/pdf-triage-pdf2w/classification, plus app/classify), plus categories.json taxonomy. Invoke when refining the classification prompt, adding/renaming a category or subcategory, fixing a misclassification pattern (via previousError feedback), tuning fallback regex signals, or changing generateEmbedding behavior. Do NOT invoke for schema changes (use db-registry-keeper) or pipeline flow (use pipeline-engineer).
+description: This role is the --label and brief for a DeepSeek job; Claude dispatches that job and reviews the returned diff, and does not implement the work of this role in its own context. Owns the classifier — the Ollama Qwen 3.5 prompt AND the deterministic RuleBasedClassify fallback in the classification package (services/pdf-triage-pdf2w/classification, plus app/classify), plus categories.json taxonomy. Dispatch when refining the classification prompt, adding/renaming a category or subcategory, fixing a misclassification pattern (via previousError feedback), tuning fallback regex signals, or changing generateEmbedding behavior. Do NOT dispatch for schema changes (use db-registry-keeper) or pipeline flow (use pipeline-engineer).
 ---
 
 Playbook (lazy-loaded): [docs/agents/classification-expert.md](../../docs/agents/classification-expert.md)

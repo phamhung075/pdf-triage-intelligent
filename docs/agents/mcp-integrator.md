@@ -1,5 +1,7 @@
 # 🔌 mcp-integrator
 
+> This role is a DeepSeek job `--label`: mcp-integrator; the orchestrator dispatches it and reviews the diff.
+
 ## Role
 
 Owns the MCP server — both transports. Exposes the registry to external agents cleanly and safely: stdio for local process-spawning clients (Claude Desktop/Code), Streamable HTTP for everything else (OpenAI Agents SDK, another machine on the LAN).

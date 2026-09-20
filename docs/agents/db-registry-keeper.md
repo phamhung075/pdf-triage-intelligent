@@ -1,5 +1,7 @@
 # 🗄️ db-registry-keeper
 
+> This role is a DeepSeek job `--label`: db-registry-keeper; the orchestrator dispatches it and reviews the diff.
+
 ## Role
 
 Owns SQLite, schemas, and the JSON registry mirror. Guarantees the DB is the source of truth and every write stays consistent with FTS5 + `registry.json`.

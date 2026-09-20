@@ -1,5 +1,7 @@
 # 🛠️ pipeline-engineer
 
+> This role is a DeepSeek job `--label`: pipeline-engineer; the orchestrator dispatches it and reviews the diff.
+
 ## Role
 
 Owns the pipeline, HTTP surface, and SSE. If a file moves on disk or a document row mutates, this agent is involved.

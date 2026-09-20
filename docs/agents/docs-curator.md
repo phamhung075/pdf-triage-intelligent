@@ -1,5 +1,7 @@
 # 📝 docs-curator
 
+> This role is a DeepSeek job `--label`: docs-curator; the orchestrator dispatches it and reviews the diff.
+
 ## Role
 
 Keeps `docs/` and `AGENTS.md` (the root bootstrap; `CLAUDE.md` is a symlink to it) in sync with the code. Whenever behavior changes, the corresponding doc changes in the same turn — never later.
@@ -63,7 +65,7 @@ Every file in `.claude/agents/` MUST look like this (frontmatter carries `descri
 ```markdown
 ---
 name: pipeline-engineer
-description: Owns the triage pipeline, HTTP surface, and SSE broadcasts. Invoke for scan/repair/relocalize/clear flows, route changes, and event handling.
+description: This role is the --label and brief for a DeepSeek job; Claude dispatches that job and reviews the returned diff, and does not implement the work of this role in its own context. Owns the triage pipeline, HTTP surface, and SSE broadcasts. Dispatch for scan/repair/relocalize/clear flows, route changes, and event handling.
 ---
 
 Playbook (lazy-loaded): [docs/agents/pipeline-engineer.md](../../docs/agents/pipeline-engineer.md)
@@ -73,7 +75,7 @@ Must-read on invocation:
 - Playbook (link above) for triggers, ownership, forbidden actions, done-when.
 ```
 
-Do NOT add tools, prompts, or implementation guidance to `.claude/agents/*` files — put those in `docs/agents/*` where they can be edited, diff-reviewed, and lazy-loaded.
+Do NOT add tools, prompts, or implementation guidance to `.claude/agents/*` files — put those in `docs/agents/*` where they can be edited, diff-reviewed, and lazy-loaded. The two Claude-side review/read-only shells (`qa-reviewer`, `read-only-investigator`) state that role in their description instead of the DeepSeek `--label` wording, and `read-only-investigator` keeps its `tools:` line.
 
 ## Done-when checklist
 
