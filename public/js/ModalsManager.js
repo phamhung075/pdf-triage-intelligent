@@ -5,6 +5,8 @@ class ModalsManager {
     app;
     debounceLoadSessionLogs;
     settingsModalRequestToken = 0;
+    /** Which cloud providers have a stored API key, from the last /api/config response. */
+    savedApiKeyFlags = { google: false, anthropic: false, deepseek: false, openai: false };
     constructor(app) {
         this.app = app;
         this.debounceLoadSessionLogs = this.app.state.debounce(() => {
@@ -1044,6 +1046,44 @@ class ModalsManager {
         }
     }
     /* --- SETTINGS MODAL --- */
+    setApiKeyPlaceholder(inputId, isSet) {
+        const el = document.getElementById(inputId);
+        if (el)
+            el.placeholder = isSet ? 'Saved - leave empty to keep' : 'Enter API key';
+    }
+    /**
+     * Clear the four key inputs and relabel them from the stored-flag booleans.
+     * The server never returns key values, so a saved key is never placed in the DOM.
+     */
+    refreshApiKeyInputs(flags) {
+        this.savedApiKeyFlags = {
+            google: !!flags.google,
+            anthropic: !!flags.anthropic,
+            deepseek: !!flags.deepseek,
+            openai: !!flags.openai
+        };
+        const state = this.app.state;
+        state.setVal('cfgGoogleApiKey', '');
+        this.setApiKeyPlaceholder('cfgGoogleApiKey', this.savedApiKeyFlags.google);
+        state.setVal('cfgAnthropicApiKey', '');
+        this.setApiKeyPlaceholder('cfgAnthropicApiKey', this.savedApiKeyFlags.anthropic);
+        state.setVal('cfgDeepSeekApiKey', '');
+        this.setApiKeyPlaceholder('cfgDeepSeekApiKey', this.savedApiKeyFlags.deepseek);
+        state.setVal('cfgOpenAIApiKey', '');
+        this.setApiKeyPlaceholder('cfgOpenAIApiKey', this.savedApiKeyFlags.openai);
+    }
+    /** Apply a /api/config-shaped object (`P_api_key_set`) to the four key inputs. */
+    applyApiKeyFlags(cfg) {
+        this.refreshApiKeyInputs({
+            google: cfg.google_api_key_set,
+            anthropic: cfg.anthropic_api_key_set,
+            deepseek: cfg.deepseek_api_key_set,
+            openai: cfg.openai_api_key_set
+        });
+    }
+    hasSavedApiKey(provider) {
+        return !!this.savedApiKeyFlags[provider === 'claude' ? 'anthropic' : provider];
+    }
     async openSettingsModal() {
         const state = this.app.state;
         const requestToken = ++this.settingsModalRequestToken;
@@ -1060,22 +1100,20 @@ class ModalsManager {
             this.switchAIProviderMode(aiProvider === 'cloud' ? 'cloud' : 'local');
             const cloudProvider = cfg.cloud_provider || 'google';
             this.switchCloudProviderTab(cloudProvider);
-            state.setVal('cfgGoogleApiKey', cfg.google_api_key || '');
             if (cfg.google_model)
                 state.setVal('cfgGoogleModel', cfg.google_model);
             state.setVal('cfgGoogleBaseUrl', cfg.google_base_url || '');
-            state.setVal('cfgAnthropicApiKey', cfg.anthropic_api_key || '');
             if (cfg.anthropic_model)
                 state.setVal('cfgAnthropicModel', cfg.anthropic_model);
             state.setVal('cfgAnthropicBaseUrl', cfg.anthropic_base_url || '');
-            state.setVal('cfgDeepSeekApiKey', cfg.deepseek_api_key || '');
             if (cfg.deepseek_model)
                 state.setVal('cfgDeepSeekModel', cfg.deepseek_model);
             state.setVal('cfgDeepSeekBaseUrl', cfg.deepseek_base_url || '');
-            state.setVal('cfgOpenAIApiKey', cfg.openai_api_key || '');
             if (cfg.openai_model)
                 state.setVal('cfgOpenAIModel', cfg.openai_model);
             state.setVal('cfgOpenAIBaseUrl', cfg.openai_base_url || '');
+            // The server never returns key values; only whether one is stored.
+            this.applyApiKeyFlags(cfg);
             const testStatus = document.getElementById('testAIStatusMsg');
             if (testStatus)
                 testStatus.innerHTML = '';
@@ -1275,7 +1313,7 @@ class ModalsManager {
         }
         const testStatus = document.getElementById('testAIStatusMsg');
         const btn = document.getElementById('btnTestAIConnection');
-        if (!apiKey) {
+        if (!apiKey && !this.hasSavedApiKey(cloudProvider)) {
             if (testStatus)
                 testStatus.innerHTML = '<span style="color: #f87171;">⚠️ API Key required</span>';
             this.app.toast.error(`Please enter an API Key for ${cloudProvider.toUpperCase()}`);
@@ -1294,7 +1332,7 @@ class ModalsManager {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     provider: cloudProvider,
-                    api_key: apiKey,
+                    ...(apiKey ? { api_key: apiKey } : {}),
                     model: model,
                     base_url: baseUrl
                 })
@@ -1579,6 +1617,10 @@ class ModalsManager {
         const state = this.app.state;
         const aiProvider = document.getElementById('cfgAIProvider')?.value || 'local';
         const cloudProvider = document.getElementById('cfgCloudProvider')?.value || 'google';
+        const googleApiKey = document.getElementById('cfgGoogleApiKey')?.value.trim() || '';
+        const anthropicApiKey = document.getElementById('cfgAnthropicApiKey')?.value.trim() || '';
+        const deepseekApiKey = document.getElementById('cfgDeepSeekApiKey')?.value.trim() || '';
+        const openaiApiKey = document.getElementById('cfgOpenAIApiKey')?.value.trim() || '';
         const payload = {
             language: state.getVal('cfgLanguage') || 'FR',
             input_dir: state.getVal('cfgInputDir').trim(),
@@ -1587,19 +1629,24 @@ class ModalsManager {
             ollama_host: state.getVal('cfgOllamaHost').trim(),
             ai_provider: aiProvider,
             cloud_provider: cloudProvider,
-            google_api_key: document.getElementById('cfgGoogleApiKey')?.value.trim() || '',
             google_model: document.getElementById('cfgGoogleModel')?.value || 'gemini-2.5-flash',
             google_base_url: document.getElementById('cfgGoogleBaseUrl')?.value.trim() || '',
-            anthropic_api_key: document.getElementById('cfgAnthropicApiKey')?.value.trim() || '',
             anthropic_model: document.getElementById('cfgAnthropicModel')?.value || 'claude-3-7-sonnet-20250219',
             anthropic_base_url: document.getElementById('cfgAnthropicBaseUrl')?.value.trim() || '',
-            deepseek_api_key: document.getElementById('cfgDeepSeekApiKey')?.value.trim() || '',
             deepseek_model: document.getElementById('cfgDeepSeekModel')?.value || 'deepseek-chat',
             deepseek_base_url: document.getElementById('cfgDeepSeekBaseUrl')?.value.trim() || '',
-            openai_api_key: document.getElementById('cfgOpenAIApiKey')?.value.trim() || '',
             openai_model: document.getElementById('cfgOpenAIModel')?.value || 'gpt-4o-mini',
             openai_base_url: document.getElementById('cfgOpenAIBaseUrl')?.value.trim() || ''
         };
+        // An omitted/empty key means "keep the stored key"; only send non-empty values.
+        if (googleApiKey)
+            payload.google_api_key = googleApiKey;
+        if (anthropicApiKey)
+            payload.anthropic_api_key = anthropicApiKey;
+        if (deepseekApiKey)
+            payload.deepseek_api_key = deepseekApiKey;
+        if (openaiApiKey)
+            payload.openai_api_key = openaiApiKey;
         const btnSave = document.getElementById('btnSaveSettings');
         if (btnSave) {
             btnSave.disabled = true;
@@ -1612,6 +1659,16 @@ class ModalsManager {
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
+                const data = await res.json().catch(() => null);
+                const savedCfg = data && data.config ? data.config : (data || {});
+                if (savedCfg && typeof savedCfg === 'object' && ('google_api_key_set' in savedCfg || 'anthropic_api_key_set' in savedCfg ||
+                    'deepseek_api_key_set' in savedCfg || 'openai_api_key_set' in savedCfg)) {
+                    // Never leave a saved key visible in the DOM.
+                    this.applyApiKeyFlags(savedCfg);
+                }
+                else {
+                    this.refreshApiKeyInputs(this.savedApiKeyFlags);
+                }
                 state.systemLanguage = payload.language;
                 this.app.toast.success('System configuration updated successfully!');
                 this.closeSettingsModal();
