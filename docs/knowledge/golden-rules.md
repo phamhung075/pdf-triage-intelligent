@@ -64,9 +64,9 @@ Every classified doc stores a `markdown_content` field — a clean structured Ma
 
 No `alert()`. Use the Toast service (`Toast.success/info/warning/error`).
 
-## 14. Only Qwen 3.5
+## 14. Qwen 3.5 is the only local model
 
-`CONFIG.OLLAMA_MODEL = 'qwen3.5:9b'`. Legacy models (`qwen2.5:7b`, `deepseek-r1:8b`) are purged; do not reintroduce.
+`CONFIG.OLLAMA_MODEL = 'qwen3.5:9b'` is the only supported local model. Legacy local models (`qwen2.5:7b`, `deepseek-r1:8b`) are purged; do not reintroduce. Cloud providers (Google, Claude, DeepSeek, OpenAI) are an opt-in alternative selected in Settings; local Ollama remains the default.
 
 ## 15. Clear Registry semantics
 

@@ -43,6 +43,8 @@ Two things that grow without bound and nothing prunes: the log file (see [Logs](
 
 Only `qwen3.5:9b` is supported for `OLLAMA_MODEL`. Legacy models are purged; do not reintroduce. `OLLAMA_VISION_MODEL` is separately pinned to `minicpm-v4.6:latest` for the Vision Lab image-to-PDF pipeline (orientation/crop detection) — any other value is rejected and falls back, same lock-down pattern as `OLLAMA_MODEL`.
 
+Cloud providers are opt-in and read as env fallbacks behind `settings.json`: `AI_PROVIDER` (`local`/`cloud`), `CLOUD_PROVIDER` (`google`/`claude`/`deepseek`/`openai`), the key vars `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`/`CLAUDE_API_KEY`, `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, and matching `GEMINI_MODEL`/`GOOGLE_MODEL`, `ANTHROPIC_MODEL`/`CLAUDE_MODEL`, `DEEPSEEK_MODEL`, `OPENAI_MODEL` plus `GOOGLE_BASE_URL`, `ANTHROPIC_BASE_URL`, `DEEPSEEK_BASE_URL`, `OPENAI_BASE_URL`; local Ollama remains the default.
+
 ## Vision Lab
 
 | Key                | Source                             | Default |

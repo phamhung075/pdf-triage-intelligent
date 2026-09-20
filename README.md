@@ -167,7 +167,7 @@ Navigate to **`http://localhost:3971`** in Google Chrome, Microsoft Edge, Firefo
 - 💬 **Local AI Chat Assistant**: Query your own document registry in natural language, answered by the local model.
 - 🔌 **MCP Server**: Exposes your archive to any MCP-capable AI agent (Claude Desktop and others) via `search_documents`, `get_full_document_text`, `update_document_metadata`, `trigger_triage`, `list_categories`, `prepare_dossier`.
 - 📝 **Markdown Export**: Per-document `.md` download, or a one-click ZIP of every document's converted Markdown.
-- 🔒 **Locked to localhost by default**: the web server binds to `127.0.0.1` only and has no wide-open CORS — reachable from your machine, not your network, unless you explicitly opt in via `PDF_TRIAGE_HOST`.
+- 🔒 **Locked to localhost by default (no auth)**: the web server binds to `127.0.0.1` only and ships with no CORS headers, but it has no Host-header check and no authentication layer — do not expose it beyond localhost. Setting `PDF_TRIAGE_HOST` to a non-loopback address exposes the dashboard, the API and the stored settings to that network.
 
 ---
 
@@ -176,12 +176,13 @@ Navigate to **`http://localhost:3971`** in Google Chrome, Microsoft Edge, Firefo
 This project exists because sending ID cards, bank statements, and tax records to a third-party cloud API wasn't an option. A few concrete things that back that up, not just marketing copy:
 
 - **AI stays local by default.** Classification, entity extraction, embeddings, and the chat assistant run through your own local Ollama instance. Cloud AI providers (Google, Claude, DeepSeek, OpenAI) are available, but only as an explicit opt-in in Settings — with none selected, nothing about a document's content is sent to a cloud API.
-- **No auth, so it's locked to your machine instead.** The dashboard has no login system — rather than build one, it binds to `127.0.0.1` only and ships with no CORS headers, so it's not reachable from your network or from other tabs in your browser. This is deliberate: for a single-user local tool, "not reachable at all" is a stronger guarantee than "reachable but password-protected."
+- **Cloud API keys never come back to the browser.** A configured key is stored in plain text in `settings.json` in the data directory (`DATA_DIR`), which the server writes with mode `0600`. `GET` and `PUT /api/config` answer with `*_api_key_set` booleans only — never the key value; saving an empty key field keeps the stored key, and there is deliberately no API way to clear it.
+- **No auth, so it's locked to your machine instead.** The dashboard has no login system and no Host-header check; it relies on binding to `127.0.0.1` by default. It ships with no CORS headers, which stops another origin from reading the API via `fetch()`, but that is not access control — a local process, or a tab navigated to the port, can still call it. Do not expose the port beyond localhost.
 - **Personal taxonomy stays out of git.** If you fork this repo for your own use, every category/subcategory your documents actually create goes to `.categories.private.json` (gitignored) — the committed `categories.json` never picks up your real bank branches, employers, or any other entity extracted from your documents.
 - **So do your classification prompts.** The files in `prompts/` are committed and deliberately generic. Anything that identifies you — your bank's statement filename codes, your employers, your scanner's filename prefix, your clinic — lives in `.prompts.private.json` (gitignored), injected into the prompt at build time and matched by the offline fallback classifier from that same file, so the two never drift apart. A repo-tree personal-data scan is the intended CI guard (open item; the old TypeScript prompt-hygiene test was retired at cutover).
 - **No telemetry, no update pings, no analytics.** The network calls this app makes are to your own local Ollama instance, the self-hosted pdf2w extractor (`PDF2W_SERVICE_URL`), and — only if you select one — the cloud AI provider you configured.
 
-If you do want to expose the dashboard beyond your own machine (e.g. to reach it from your phone on the same network), that's an explicit opt-in via `PDF_TRIAGE_HOST` in `.env` — and worth knowing there's still no authentication layer if you do.
+If you do want to expose the dashboard beyond your own machine (e.g. to reach it from your phone on the same network), that's an explicit opt-in via `PDF_TRIAGE_HOST` in `.env` — but be aware that a non-loopback value exposes the dashboard, the API and the stored settings to that network, and there is still no authentication layer or Host-header check.
 
 ---
 
@@ -202,7 +203,7 @@ If you do want to expose the dashboard beyond your own machine (e.g. to reach it
 
 ### 💻 System Requirements
 
-Smart PDF Triage runs 100% locally on your computer as one static, CGO-free Go binary with SQLite (pure-Go `modernc.org/sqlite`), local AI via **Ollama** (`qwen3.5:9b`), and the external, self-hosted **pdf2w** extractor. No runtime beyond the Go binary is required to run it — TypeScript and pnpm are needed only to build the browser dashboard. A cloud AI provider is an optional, opt-in choice in Settings.
+Smart PDF Triage runs 100% locally by default on your computer as one static, CGO-free Go binary with SQLite (pure-Go `modernc.org/sqlite`), local AI via **Ollama** (`qwen3.5:9b`), and the external, self-hosted **pdf2w** extractor. No runtime beyond the Go binary is required to run it — TypeScript and pnpm are needed only to build the browser dashboard. A cloud AI provider (Google, Claude, DeepSeek, OpenAI) is an optional, opt-in choice in Settings — when enabled it sends document text to the chosen provider; with none selected, document text stays local.
 
 #### 🔹 Minimum System Requirements (CPU-only Ollama)
 | Component | Requirement |

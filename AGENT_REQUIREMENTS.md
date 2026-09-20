@@ -35,7 +35,7 @@
 - **Active Model**: `qwen3.5:9b` (Host: `http://127.0.0.1:11434`).
 - **Resilience**: Auto-spawn `ollama serve` on Windows if disconnected via `POST /api/ollama/start`.
 - **Status Badge**: UI header displays real-time connection status with `▶️ Start Ollama` button.
-- **Model Cleanup**: Only `qwen3.5:9b` should be used. Unused legacy models (`qwen2.5:7b`, `deepseek-r1:8b`, etc.) have been purged.
+- **Model Cleanup**: Only `qwen3.5:9b` should be used as the local model. Unused legacy local models (`qwen2.5:7b`, `deepseek-r1:8b`, etc.) have been purged. Cloud providers (Google, Claude, DeepSeek, OpenAI) are an opt-in alternative selected in Settings; local Ollama remains the default.
 
 ---
 

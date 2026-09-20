@@ -8,7 +8,7 @@
 | Embeddings     | `nomic-embed-text`      | `OLLAMA_EMBED_MODEL` | `CONFIG.OLLAMA_EMBED_MODEL` |
 | Host           | `http://127.0.0.1:11434` | `OLLAMA_HOST`      | `CONFIG.OLLAMA_HOST` |
 
-Only Qwen 3.5 is supported. Legacy models (`qwen2.5:7b`, `deepseek-r1:8b`) were purged; do not reintroduce.
+`qwen3.5:9b` is the only supported **local** model. Legacy local models (`qwen2.5:7b`, `deepseek-r1:8b`) were purged; do not reintroduce them. Cloud providers (Google, Claude, DeepSeek, OpenAI) are an opt-in alternative selected in Settings; local Ollama remains the default.
 
 ## Ensuring the model is present
 

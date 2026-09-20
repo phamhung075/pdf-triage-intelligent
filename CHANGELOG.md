@@ -22,10 +22,6 @@ external self-hosted pdf2w service (`PDF2W_SERVICE_URL`); canonical-path and tex
 in-process Go; SQLite stays the pure-Go `modernc.org/sqlite` over the same `pdf_triage.db` schema.
 Decision record: [`.agents/notes/implemented/architecture/2026-09-19-go-backend-cutover.md`](.agents/notes/implemented/architecture/2026-09-19-go-backend-cutover.md).
 
-- **Cloud LLM providers are now committed in the Go backend** (see the next entry) but the
-  knowledge docs (`ollama-qwen.md`, `api-reference.md`, `environment.md`) still describe only the
-  Ollama/Qwen behaviour. Documenting the provider settings is an open follow-up.
-
 ### Cloud AI providers (Google, Claude, DeepSeek, OpenAI) alongside local Ollama
 
 Settings and classification can run against a cloud provider instead of the local Ollama model.
@@ -34,7 +30,10 @@ connection test). `ai_provider`, `cloud_provider` and the per-provider key, mode
 round-trip through `GET`/`PUT /api/config`; an unknown non-empty provider is rejected with 400.
 `/api/ollama/status` reports the active cloud provider, `POST /api/ai/test` checks live connectivity, and
 a config change applies immediately instead of at the next scan. Google sends its key in a header, not
-the URL, and provider errors shown in the chat answer are trimmed and stripped of tokens and keys.
+the URL, and provider errors shown in the chat answer are trimmed and stripped of tokens and keys. The
+server no longer returns API keys in config responses — `GET`/`PUT /api/config` carry `*_api_key_set`
+flags only, and saving an empty key keeps the stored key — and `settings.json` is written with mode
+`0600`. The cloud-provider status check is cached for 60 s.
 
 ### Settings modal opens immediately; system stats are cached
 

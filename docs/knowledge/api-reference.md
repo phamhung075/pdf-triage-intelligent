@@ -31,6 +31,30 @@ route and the test that covers it, is
 | GET    | `/api/config` | Returns current `input_dir`, `output_root_dir`, `ollama_model`, `ollama_host` |
 | PUT    | `/api/config` | Body validated by the settings parser; persists to `settings.json` |
 
+## AI providers & system stats
+
+`GET`/`PUT /api/config` carry the provider selection: `ai_provider` (`local` | `cloud`),
+`cloud_provider` (`google` | `claude` | `deepseek` | `openai`, plus the case-insensitive aliases
+`gemini` → `google` and `anthropic` → `claude`), and per provider the `google_*`, `anthropic_*`,
+`deepseek_*` and `openai_*` `_model` / `_base_url` fields. An unknown non-empty `cloud_provider` is
+rejected with `400`.
+
+**API keys never leave the server.** `GET /api/config` and the `config` object in the `PUT` response
+carry no `*_api_key` value — each provider has an always-present `P_api_key_set` boolean (true iff the
+stored key is non-empty after trimming). On `PUT`, an omitted, `null`, empty or whitespace-only
+`P_api_key` keeps the stored key and a non-empty value replaces it; there is deliberately no API way
+to clear a key. Keys live in plain text in `settings.json` (written with mode `0600`).
+
+| Method | Route                | Contract |
+| ------ | -------------------- | -------- |
+| POST   | `/api/ai/test`       | `{ provider, api_key?, model?, base_url? }` → `{ ok, message \| error, latency_ms }`. `provider` accepts `google`/`gemini`, `claude`/`anthropic`, `deepseek`, `openai`, `local`/`ollama`; an unknown provider is `400`. An omitted/empty `api_key`, `model` or `base_url` falls back to the stored setting. |
+| GET    | `/api/ollama/status` | Local mode returns `{ online, model, host, modelsCount, models, modelExists, modelCanGenerate, modelError? }`; cloud mode adds `provider: "cloud"`, `cloud_provider`, the active `model` and `host: "Cloud API (<provider>)"`. |
+| GET    | `/api/system/stats`  | `{ raws, archive, database, total, formatBreakdown }` — file counts/sizes plus DB size. |
+
+The cloud health result behind `/api/ollama/status` is cached for **60 s** (failures included); a
+forced refresh bypasses the cache. `/api/system/stats` caches its walk of the raws/archive trees for
+**30 s** (keyed on the two directories); the database size is read fresh on every request.
+
 ## Categories
 
 | Method | Route                          | Description                                       |
