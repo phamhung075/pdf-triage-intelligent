@@ -45,6 +45,29 @@ Only `qwen3.5:9b` is supported for `OLLAMA_MODEL`. Legacy models are purged; do 
 
 Cloud providers are opt-in and read as env fallbacks behind `settings.json`: `AI_PROVIDER` (`local`/`cloud`), `CLOUD_PROVIDER` (`google`/`claude`/`deepseek`/`openai`), the key vars `GEMINI_API_KEY`/`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`/`CLAUDE_API_KEY`, `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, and matching `GEMINI_MODEL`/`GOOGLE_MODEL`, `ANTHROPIC_MODEL`/`CLAUDE_MODEL`, `DEEPSEEK_MODEL`, `OPENAI_MODEL` plus `GOOGLE_BASE_URL`, `ANTHROPIC_BASE_URL`, `DEEPSEEK_BASE_URL`, `OPENAI_BASE_URL`; local Ollama remains the default.
 
+## TypeSafe (System One / Jev)
+
+TypeSafe is an **optional** semantic judge used only for taxonomy placement during classification
+and search ordering in the chat assistant — it decides nothing else (see
+[classification-flow](../workflows/classification-flow.md#typesafe-decision-step-optional)). It is
+active only when an API key is configured; with no key behavior is unchanged. The key stays
+server-side: `GET /api/config` reports `typesafe_api_key_set` and `typesafe_api_key_source`
+(`"settings"`, `"env"` or `""`), never the key. All three fields are accepted by `PUT /api/config`:
+`typesafe_model` must be `jev-latest`, `jev-preview` or a versioned `jev-x.y.z` id, and
+`typesafe_min_confidence` is a number in `[0.5, 0.95]` (both `400` and nothing saved otherwise). A
+saved key or model takes effect on the next judge call without a restart — the dynamic client
+re-reads settings per call and its 60 s status cache is keyed on key+model.
+
+| Key                       | Source                                   | Default |
+| ------------------------- | ---------------------------------------- | ------- |
+| `typesafe_api_key`        | `settings.json` › `TYPESAFE_AI_API`      | *(unset → TypeSafe off)* |
+| `typesafe_model`          | `settings.json` › `TYPESAFE_MODEL`       | `jev-latest` |
+| `typesafe_min_confidence` | `settings.json` › `TYPESAFE_MIN_CONFIDENCE` | `0.6` |
+
+`TYPESAFE_MIN_CONFIDENCE` is a probability and must be in `[0,1]`; anything else (wrong type, out of
+range, unparseable) silently falls back to `0.6`. The Settings API is stricter: `PUT /api/config`
+accepts only `[0.5, 0.95]` and answers `400` for anything else.
+
 ## Vision Lab
 
 | Key                | Source                             | Default |
@@ -113,7 +136,7 @@ route; reloaded on every scan.
 
 ## Environment variables
 
-`PDF_TRIAGE_BASE_DIR`, `PDF_TRIAGE_DATA_DIR`, `PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_DB_PATH`, `PDF_REGISTRY_PATH`, `SYSTEM_LANGUAGE`, `PORT`, `PDF_TRIAGE_HOST`, `VISION_LAB_PORT`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PDF2W_SERVICE_URL`, `PDF2W_SERVICE_TIMEOUT_MS`, `MCP_HTTP_PORT`, `MCP_HTTP_HOST`, `PDF_TRIAGE_LOG_DIR`, `PDF_TRIAGE_LOG_MAX_BYTES`, `PDF_TRIAGE_LOG_RETAIN`.
+`PDF_TRIAGE_BASE_DIR`, `PDF_TRIAGE_DATA_DIR`, `PDF_INPUT_DIR`, `PDF_OUTPUT_DIR`, `PDF_DB_PATH`, `PDF_REGISTRY_PATH`, `SYSTEM_LANGUAGE`, `PORT`, `PDF_TRIAGE_HOST`, `VISION_LAB_PORT`, `OLLAMA_HOST`, `OLLAMA_MODEL`, `OLLAMA_EMBED_MODEL`, `OLLAMA_VISION_MODEL`, `PDF2W_SERVICE_URL`, `PDF2W_SERVICE_TIMEOUT_MS`, `MCP_HTTP_PORT`, `MCP_HTTP_HOST`, `TYPESAFE_AI_API`, `TYPESAFE_MODEL`, `TYPESAFE_MIN_CONFIDENCE`, `PDF_TRIAGE_LOG_DIR`, `PDF_TRIAGE_LOG_MAX_BYTES`, `PDF_TRIAGE_LOG_RETAIN`.
 
 This is the exact set read by `infra/settings` and listed in the configuration table of
 [`services/pdf-triage-pdf2w/README.md`](../../services/pdf-triage-pdf2w/README.md). A `.env` in

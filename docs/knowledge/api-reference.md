@@ -7,7 +7,9 @@ The Go server registers the **same 46 REST routes** as the retired TypeScript se
 below are the operator-facing contract; the full per-route table, with the Go handler file for each
 route and the test that covers it, is
 [`docs/superpowers/specs/2026-09-18-http-parity-audit.md`](../superpowers/specs/2026-09-18-http-parity-audit.md)
-(§1). The SSE/MCP contracts are frozen the same way.
+(§1). `GET /api/typesafe/status` and `POST /api/typesafe/test` (below) are the two Go-side additions to
+that frozen set. The SSE/MCP
+contracts are frozen the same way.
 
 ## System
 
@@ -28,8 +30,8 @@ route and the test that covers it, is
 
 | Method | Route         | Description                                            |
 | ------ | ------------- | ------------------------------------------------------ |
-| GET    | `/api/config` | Returns current `input_dir`, `output_root_dir`, `ollama_model`, `ollama_host` |
-| PUT    | `/api/config` | Body validated by the settings parser; persists to `settings.json` |
+| GET    | `/api/config` | Returns current `input_dir`, `output_root_dir`, `ollama_model`, `ollama_host` plus the non-secret TypeSafe state (`typesafe_api_key_set`, `typesafe_api_key_source`, `typesafe_model`, `typesafe_min_confidence`) |
+| PUT    | `/api/config` | Body validated by the settings parser; persists to `settings.json`. Accepts the TypeSafe fields below |
 
 ## AI providers & system stats
 
@@ -45,15 +47,28 @@ stored key is non-empty after trimming). On `PUT`, an omitted, `null`, empty or 
 `P_api_key` keeps the stored key and a non-empty value replaces it; there is deliberately no API way
 to clear a key. Keys live in plain text in `settings.json` (written with mode `0600`).
 
+The TypeSafe (System One / Jev) judge adds `typesafe_api_key`, `typesafe_model` and
+`typesafe_min_confidence` to `PUT /api/config`, and `GET` plus the `PUT` response carry
+`typesafe_api_key_set` (a key exists in `settings.json` or `TYPESAFE_AI_API`),
+`typesafe_api_key_source` (`"settings"`, `"env"` or `""`), the effective `typesafe_model` (default
+`jev-latest`) and `typesafe_min_confidence` (default `0.6`). A non-empty `typesafe_api_key` replaces
+the stored key and an omitted/empty value keeps it; `typesafe_model` must be `jev-latest`,
+`jev-preview` or a versioned id matching `^jev-\d+\.\d+\.\d+$`; `typesafe_min_confidence` is a number
+in `[0.5, 0.95]`. Anything else is `400` and nothing is saved. A saved value takes effect on the next
+TypeSafe call without a restart.
+
 | Method | Route                | Contract |
 | ------ | -------------------- | -------- |
 | POST   | `/api/ai/test`       | `{ provider, api_key?, model?, base_url? }` → `{ ok, message \| error, latency_ms, model_requested, model_confirmed, model_verified }`. `provider` accepts `google`/`gemini`, `claude`/`anthropic`, `deepseek`, `openai`, `local`/`ollama`; an unknown provider is `400`. An omitted/empty `api_key`, `model` or `base_url` falls back to the stored setting. An empty `model` with no stored model resolves to the provider's built-in default before the call (`aiprovider.DefaultModel`), so `model_requested` is always the model actually asked for. On success `model_confirmed` is the model id the provider's own API response echoed (`model` for DeepSeek/OpenAI/Claude, `modelVersion` for Gemini), `""` when the provider omitted it, and it is never copied from configuration; `model_verified` is true only when it matches `model_requested` (whitespace-trimmed and case-insensitive; true when the confirmed id equals the requested id, or is the requested id plus a `:tag`, a `-` date or numeric build suffix such as `-2024-08-06`, `-001` or `-20250219`, or `-latest`; any other suffix such as `-mini` or `-lite` names a different model and is not verified). |
 | GET    | `/api/ollama/status` | Local mode returns `{ online, model, host, modelsCount, models, modelExists, modelCanGenerate, modelError? }`; cloud mode adds `provider: "cloud"`, `cloud_provider`, the active `model`, `model_confirmed`, `model_verified`, `last_classification_model` / `last_classification_at` (RFC3339) and `host: "Cloud API (<provider>)"`. `model_confirmed` and `model_verified` follow the same contract as `/api/ai/test`; `last_classification_model` / `last_classification_at` are omitted until a triage classification has succeeded since start or since the last config change (any Settings save resets them). Local mode is unchanged. `?refresh=1` bypasses the 60 s cloud health cache and re-probes the provider. |
+| GET    | `/api/typesafe/status` | `{ configured, online, model, model_confirmed, last_call_at?, min_confidence, roles, error?, checked_at }` — whether the optional TypeSafe (System One / Jev) judge is configured and reachable. Always **200**. `configured` is true iff a TypeSafe API key is set (`typesafe_api_key` / `TYPESAFE_AI_API`); when false, `online` is false and there is **no network probe and no `error`**. Otherwise `online` is the result of the health probe `GET https://api.typesafe.ai/v1/models` (not an evaluation, no document data), cached 60 s per key+model and bypassed by `?refresh=1`. `model` is the requested `typesafe_model` (default `jev-latest`); `model_confirmed` is the versioned model id the most recent **successful evaluation** echoed (never copied from configuration) and `last_call_at` (RFC3339) is that evaluation's time, omitted until one succeeds; `error` carries the probe error text otherwise and never the key; `min_confidence` is the settings threshold (default `0.6`); `roles` is `["classification","search_rerank"]`; `checked_at` (RFC3339) is when the health result was produced. |
+| POST   | `/api/typesafe/test` | `{ api_key?, model? }` → `{ ok, models?, model_available?, message? }` or `{ ok:false, error }`. Uses the body `api_key` when non-empty, else the effective saved key (settings, then env), and calls `GET https://api.typesafe.ai/v1/models` — no document state, no evaluation — on a throwaway 10 s, no-retry client. `model_available` is true when the requested model (body `model` or the effective setting) is an alias in the list or matches `^jev-\d+\.\d+\.\d+$` (versioned ids are accepted but not listed). Always **200** except a malformed body (`400`); the error text never contains the key, and no key anywhere returns `{"ok":false,"error":"No TypeSafe API key — enter one or set TYPESAFE_AI_API"}`. |
 | GET    | `/api/system/stats`  | `{ raws, archive, database, total, formatBreakdown }` — file counts/sizes plus DB size. |
 
 The cloud health result behind `/api/ollama/status` is cached for **60 s** (failures included); a
 changed model misses the cache automatically (the cache key includes the model) and `?refresh=1`
-forces a fresh probe. `/api/system/stats` caches its walk of the raws/archive trees for
+forces a fresh probe. The `/api/typesafe/status` models probe is cached the same way, keyed on the
+TypeSafe key+model. `/api/system/stats` caches its walk of the raws/archive trees for
 **30 s** (keyed on the two directories); the database size is read fresh on every request.
 
 ## Categories

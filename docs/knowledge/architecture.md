@@ -59,6 +59,10 @@ Notes:
 - The image branch (orient → crop → enhance → assemble, `app/imagetopdf` + `app/convertimage`) feeds into the **same** classification path as PDFs from `E` onward — a photo is never classified or OCR'd differently from a scanned document, only assembled into a PDF first. Text for both comes from the same `extractPDFContent()` → pdf2w call; there is no separate OCR step for photos anymore. See [pdf2w-extraction.md](./pdf2w-extraction.md#photo-pipeline-change--no-local-ocr).
 - `BLOCK1`/`BLOCK2` are terminal: no DB row, no move, no auto-create. The file stays in `__raws` and is skipped on future ticks via the `blocked_files` skip-cache until it changes (see [triage-pipeline](../workflows/triage-pipeline.md)).
 - Golden Rule #4 is enforced at node `O`.
+- When a TypeSafe key is configured, the optional judge runs between Step D (`K`) and
+  `refineClassification` (`L`) to choose a category and a speculative subcategory from the existing
+  taxonomy, plus a pre-creation existence check before the auto-create node `P`. It never touches
+  Steps A/C/D; with no key the diagram above is the whole story.
 
 ## Go layer map
 
@@ -94,6 +98,7 @@ services/pdf-triage-pdf2w/
 │   ├── osopen/            # the ONLY package allowed to launch Explorer/Chrome (WSL-safe)
 │   ├── logger/            # color terminal + rotating file logs
 │   ├── ollama/            # Ollama client + `ollama serve` spawn
+│   ├── typesafe/          # HTTP client for TypeSafe System One (Jev) — optional semantic judge
 │   ├── pdf2w/             # HTTP client for the required external pdf2w service
 │   ├── pdfextractor/      # extractPDFContent() — delegates to pdf2w, plus SHA-256 checksum
 │   ├── pdfscanner/        # filesystem walk
@@ -152,7 +157,7 @@ domain (top-level pure packages)  →  infra/  →  store/  →  app/  →  http
   resolution (`classificationresolution`), taxonomy/path helpers (`taxonomy`, `pathconv`,
   `canonicalpath`), text cleanup (`pdftext`, `cleantext`), and the validation contracts
   (`documentschema`). **Domain imports nothing above it.**
-- **`infra/`** — I/O adapters: `settings`, `osopen`, `logger`, `ollama`, `pdf2w`,
+- **`infra/`** — I/O adapters: `settings`, `osopen`, `logger`, `ollama`, `typesafe`, `pdf2w`,
   `pdfextractor`, `pdfscanner`, `pidlock`, `jsonregistry`, `zipbuilder`, `imageprocessor`,
   `vision`, `orientation`, `crop`.
 - **`store/`** — SQLite and file-backed stores. **Raw SQL lives only in `store/database`**; every
@@ -169,6 +174,26 @@ This structure exists so the pure decision logic (which category, which subcateg
 grounded, what canonical path) can be unit-tested without mocking I/O — see
 `docs/superpowers/specs/2026-07-31-test-harness-design.md` (Phase 1) and
 `docs/superpowers/specs/2026-07-31-ddd-restructure-design.md` (Phase 2).
+
+## Optional TypeSafe seams
+
+`infra/typesafe` is a small HTTP client for TypeSafe's System One models (Jev) and the only package
+that talks to `api.typesafe.ai`; there is no Go SDK, so it POSTs to `/v1/systemone` directly. It is
+consumed through two narrow interfaces that the `app/` use-cases define themselves:
+
+- **`classify.TaxonomyJudge`** (`app/classify`) — the optional taxonomy judge. When configured, the
+  classifier makes one System One request to choose a category and a speculative subcategory from
+  the existing taxonomy, and one existence-check request before auto-creating a category or
+  subcategory. It decides placement only; Steps A/C/D still produce title, summary, date, amounts
+  and markdown. See
+  [classification-flow](../workflows/classification-flow.md#typesafe-decision-step-optional).
+- **`aichat.Reranker`** (`app/aichat`) — the optional relevance judge over the FTS candidates. Its
+  `TypeSafeReranker` scores each candidate with one `noul` in a single request and reorders the
+  hits before de-duplication and truncation.
+
+The composition root (`cmd/pdf-triage`) constructs the concrete `*typesafe.Client` and injects both
+seams only when a TypeSafe API key is configured; with no key both interfaces are nil and the
+pipeline behaves exactly as before.
 
 ## Server startup and port takeover
 

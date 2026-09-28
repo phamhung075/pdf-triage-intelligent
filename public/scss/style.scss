@@ -362,6 +362,16 @@ h1 {
       animation: buttonPulseGlow 1s ease-in-out infinite alternate;
     }
   }
+
+  &.disabled {
+    border-color: var(--border-color);
+    color: var(--text-muted);
+    opacity: 0.75;
+    .status-dot {
+      background: #94a3b8;
+      box-shadow: none;
+    }
+  }
 }
 
 /* Buttons */

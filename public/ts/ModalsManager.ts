@@ -7,6 +7,8 @@ class ModalsManager {
   settingsModalRequestToken = 0;
   /** Which cloud providers have a stored API key, from the last /api/config response. */
   savedApiKeyFlags: { [provider: string]: boolean } = { google: false, anthropic: false, deepseek: false, openai: false };
+  /** Whether a usable TypeSafe key exists (settings or env), from the last /api/config response. */
+  typesafeApiKeySet = false;
 
   constructor(app: any) {
     this.app = app;
@@ -1088,6 +1090,54 @@ class ModalsManager {
     return !!this.savedApiKeyFlags[provider === 'claude' ? 'anthropic' : provider];
   }
 
+  /**
+   * Fill the TypeSafe block from a /api/config-shaped object. The key value is
+   * never returned by the server, so only the placeholder and source note change.
+   */
+  applyTypeSafeConfig(cfg: { [key: string]: any }): void {
+    const state = this.app.state;
+    this.typesafeApiKeySet = !!cfg.typesafe_api_key_set;
+
+    state.setVal('cfgTypeSafeApiKey', '');
+    this.setApiKeyPlaceholder('cfgTypeSafeApiKey', this.typesafeApiKeySet);
+
+    const model = String(cfg.typesafe_model || 'jev-latest');
+    const modelSelect = document.getElementById('cfgTypeSafeModel') as HTMLSelectElement | null;
+    if (modelSelect) {
+      // A versioned id saved in settings is not one of the listed aliases; append
+      // it so the select preserves it instead of silently switching models.
+      const known = Array.from(modelSelect.options).some(opt => opt.value === model);
+      if (!known) {
+        const opt = document.createElement('option');
+        opt.value = model;
+        opt.textContent = model;
+        modelSelect.appendChild(opt);
+      }
+      modelSelect.value = model;
+    }
+
+    const minConf = document.getElementById('cfgTypeSafeMinConfidence') as HTMLInputElement | null;
+    if (minConf) {
+      const parsed = Number(cfg.typesafe_min_confidence);
+      minConf.value = String(Number.isFinite(parsed) ? parsed : 0.6);
+    }
+
+    this.renderTypeSafeKeySourceNote(String(cfg.typesafe_api_key_source || ''));
+  }
+
+  /** Explain where the effective TypeSafe key comes from (settings wins over env). */
+  renderTypeSafeKeySourceNote(source: string): void {
+    const note = document.getElementById('typesafeKeySourceNote');
+    if (!note) return;
+    if (source === 'env') {
+      note.textContent = 'Using TYPESAFE_AI_API from the server environment — a key saved here takes precedence.';
+    } else if (source === 'settings') {
+      note.textContent = 'Key saved in settings.';
+    } else {
+      note.textContent = 'No key — TypeSafe is off; classification uses the AI engine alone.';
+    }
+  }
+
   async openSettingsModal(): Promise<void> {
     const state = this.app.state;
     const requestToken = ++this.settingsModalRequestToken;
@@ -1122,9 +1172,12 @@ class ModalsManager {
 
       // The server never returns key values; only whether one is stored.
       this.applyApiKeyFlags(cfg);
+      this.applyTypeSafeConfig(cfg);
 
       const testStatus = document.getElementById('testAIStatusMsg');
       if (testStatus) testStatus.innerHTML = '';
+      const testTypeSafeStatus = document.getElementById('testTypeSafeStatusMsg');
+      if (testTypeSafeStatus) testTypeSafeStatus.textContent = '';
 
       this.renderCategoriesManager();
 
@@ -1391,6 +1444,74 @@ class ModalsManager {
     }
   }
 
+  /**
+   * Probe the TypeSafe key via POST /api/typesafe/test. Sends the typed key when
+   * present (else the backend falls back to the saved/env key) and the selected
+   * model; the endpoint only lists models, so no document data leaves the browser.
+   */
+  async handleTestTypeSafe(): Promise<void> {
+    const apiKey = (document.getElementById('cfgTypeSafeApiKey') as HTMLInputElement | null)?.value.trim() || '';
+    const model = (document.getElementById('cfgTypeSafeModel') as HTMLSelectElement | null)?.value || 'jev-latest';
+
+    const status = document.getElementById('testTypeSafeStatusMsg');
+    const btn = document.getElementById('btnTestTypeSafe') as HTMLButtonElement | null;
+
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-small spinner-white" style="width: 13px; height: 13px; margin-right: 0.4rem;"></span> Testing...';
+    }
+    if (status) status.textContent = '';
+
+    try {
+      const res = await fetch('/api/typesafe/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(apiKey ? { api_key: apiKey } : {}),
+          model: model
+        })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.ok) {
+        if (data.model_available === false) {
+          // The key is accepted; only the requested model is unknown.
+          if (status) {
+            status.textContent = `⚠️ Key OK but model "${model}" not available`;
+            status.style.color = '#f59e0b';
+          }
+          this.app.toast.warning(`TypeSafe key accepted, but model "${model}" is not available`);
+        } else {
+          const msg = typeof data.message === 'string' && data.message ? data.message : 'TypeSafe key accepted';
+          if (status) {
+            status.textContent = `✅ ${msg}`;
+            status.style.color = '#34d399';
+          }
+          this.app.toast.success(msg);
+        }
+      } else {
+        const errMsg = typeof data.error === 'string' && data.error ? data.error : 'TypeSafe test failed';
+        if (status) {
+          status.textContent = `❌ ${errMsg}`;
+          status.style.color = '#f87171';
+        }
+        this.app.toast.error(`TypeSafe: ${errMsg}`);
+      }
+    } catch (err: any) {
+      if (status) {
+        status.textContent = '❌ Network error';
+        status.style.color = '#f87171';
+      }
+      this.app.toast.error('TypeSafe test request failed: ' + err.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '🧪 Test TypeSafe';
+      }
+    }
+  }
+
   switchSettingsTab(tabName: string): void {
     const systemForm = document.getElementById('settingsForm');
     const catEditor = document.getElementById('categoriesEditor');
@@ -1644,6 +1765,18 @@ class ModalsManager {
     const deepseekApiKey = (document.getElementById('cfgDeepSeekApiKey') as HTMLInputElement | null)?.value.trim() || '';
     const openaiApiKey = (document.getElementById('cfgOpenAIApiKey') as HTMLInputElement | null)?.value.trim() || '';
 
+    const typesafeApiKey = (document.getElementById('cfgTypeSafeApiKey') as HTMLInputElement | null)?.value.trim() || '';
+    const typesafeModel = (document.getElementById('cfgTypeSafeModel') as HTMLSelectElement | null)?.value || 'jev-latest';
+    const typesafeMinConfidenceEl = document.getElementById('cfgTypeSafeMinConfidence') as HTMLInputElement | null;
+    // A missing input (stale cached page) must not block every settings save; it falls back to the default.
+    const typesafeMinConfidence = typesafeMinConfidenceEl ? Number(typesafeMinConfidenceEl.value) : 0.6;
+
+    // The server enforces the same floor/ceiling; fail fast before any request.
+    if (!Number.isFinite(typesafeMinConfidence) || typesafeMinConfidence < 0.5 || typesafeMinConfidence > 0.95) {
+      this.app.toast.error('TypeSafe minimum confidence must be between 0.5 and 0.95');
+      return;
+    }
+
     const payload: any = {
       language: state.getVal('cfgLanguage') || 'FR',
       input_dir: state.getVal('cfgInputDir').trim(),
@@ -1659,7 +1792,9 @@ class ModalsManager {
       deepseek_model: (document.getElementById('cfgDeepSeekModel') as HTMLSelectElement | null)?.value || 'deepseek-flash',
       deepseek_base_url: (document.getElementById('cfgDeepSeekBaseUrl') as HTMLInputElement | null)?.value.trim() || '',
       openai_model: (document.getElementById('cfgOpenAIModel') as HTMLSelectElement | null)?.value || 'gpt-4o-mini',
-      openai_base_url: (document.getElementById('cfgOpenAIBaseUrl') as HTMLInputElement | null)?.value.trim() || ''
+      openai_base_url: (document.getElementById('cfgOpenAIBaseUrl') as HTMLInputElement | null)?.value.trim() || '',
+      typesafe_model: typesafeModel,
+      typesafe_min_confidence: typesafeMinConfidence
     };
 
     // An omitted/empty key means "keep the stored key"; only send non-empty values.
@@ -1667,6 +1802,7 @@ class ModalsManager {
     if (anthropicApiKey) payload.anthropic_api_key = anthropicApiKey;
     if (deepseekApiKey) payload.deepseek_api_key = deepseekApiKey;
     if (openaiApiKey) payload.openai_api_key = openaiApiKey;
+    if (typesafeApiKey) payload.typesafe_api_key = typesafeApiKey;
 
     const btnSave = document.getElementById('btnSaveSettings') as HTMLButtonElement | null;
     if (btnSave) {
@@ -1691,10 +1827,19 @@ class ModalsManager {
         } else {
           this.refreshApiKeyInputs(this.savedApiKeyFlags);
         }
+        if (savedCfg && typeof savedCfg === 'object' && ('typesafe_api_key_set' in savedCfg ||
+            'typesafe_model' in savedCfg || 'typesafe_api_key_source' in savedCfg)) {
+          this.applyTypeSafeConfig(savedCfg);
+        } else {
+          // No echo from the server: still drop the typed key and keep the old label.
+          state.setVal('cfgTypeSafeApiKey', '');
+          this.setApiKeyPlaceholder('cfgTypeSafeApiKey', this.typesafeApiKeySet);
+        }
         state.systemLanguage = payload.language;
         this.app.toast.success('System configuration updated successfully!');
         this.closeSettingsModal();
         this.app.events.checkOllamaStatus(true);
+        this.app.events.checkTypeSafeStatus(true);
         this.app.categoryPills.loadCategories();
         this.app.documentGrid.loadDocuments();
       } else {

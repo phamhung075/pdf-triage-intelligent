@@ -28,7 +28,9 @@ class TriageApp {
         this.events.setupLiveReload();
         this.events.setupGlobalTriageSSE();
         this.events.checkOllamaStatus();
+        this.events.checkTypeSafeStatus();
         setInterval(() => this.events.checkOllamaStatus(), 10000);
+        setInterval(() => this.events.checkTypeSafeStatus(), 10000);
         this.events.checkActiveTaskStatus();
         this.categoryPills.loadCategories();
         this.documentGrid.loadDocuments();
@@ -89,6 +91,7 @@ class TriageApp {
         this.addEv('btnModeLocal', 'click', () => this.modals.switchAIProviderMode('local'));
         this.addEv('btnModeCloud', 'click', () => this.modals.switchAIProviderMode('cloud'));
         this.addEv('btnTestAIConnection', 'click', () => this.modals.handleTestAIConnection());
+        this.addEv('btnTestTypeSafe', 'click', () => this.modals.handleTestTypeSafe());
         // Tools & Utilities
         this.addEv('btnExportCsv', 'click', () => this.events.exportDocumentsCsv());
         this.addEv('btnExportMarkdown', 'click', () => this.events.exportDocumentsMarkdown());

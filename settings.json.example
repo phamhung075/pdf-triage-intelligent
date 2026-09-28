@@ -3,5 +3,8 @@
   "output_root_dir": "./organized",
   "ollama_model": "qwen3.5:9b",
   "ollama_host": "http://127.0.0.1:11434",
-  "personal_name_denylist": []
+  "personal_name_denylist": [],
+  "typesafe_api_key": "",
+  "typesafe_model": "jev-latest",
+  "typesafe_min_confidence": 0.6
 }

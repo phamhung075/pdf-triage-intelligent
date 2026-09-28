@@ -334,6 +334,15 @@ h1 {
   box-shadow: 0 0 10px #38bdf8;
   animation: buttonPulseGlow 1s ease-in-out infinite alternate;
 }
+.ollama-status-badge.disabled {
+  border-color: var(--border-color);
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+.ollama-status-badge.disabled .status-dot {
+  background: #94a3b8;
+  box-shadow: none;
+}
 
 /* Buttons */
 .btn-primary {

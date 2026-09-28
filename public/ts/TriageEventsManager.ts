@@ -233,6 +233,65 @@ class TriageEventsManager {
     }
   }
 
+  async checkTypeSafeStatus(refresh: boolean = false): Promise<void> {
+    const badge = document.getElementById('typesafeStatusBadge');
+    const textEl = document.getElementById('typesafeStatusText');
+    if (!badge || !textEl) return;
+
+    try {
+      const res = await fetch(refresh ? '/api/typesafe/status?refresh=1' : '/api/typesafe/status');
+      if (!res.ok) {
+        badge.className = 'ollama-status-badge disabled';
+        textEl.textContent = '🧭 TypeSafe unavailable';
+        badge.title = `TypeSafe status is unavailable (HTTP ${res.status}).`;
+        return;
+      }
+      const data = await res.json();
+
+      const model = String(data.model || 'jev-latest');
+      const confirmed = String(data.model_confirmed || '');
+      const minConfidence = data.min_confidence !== undefined && data.min_confidence !== null
+        ? String(data.min_confidence)
+        : '0.6';
+      const titleLines: string[] = [
+        `Judge: picks category/subcategory from the existing taxonomy (min confidence ${minConfidence}) and re-ranks chat search results.`,
+        `Title, summary, date and amounts: primary AI provider (see the other badge).`
+      ];
+
+      if (!data.configured) {
+        badge.className = 'ollama-status-badge disabled';
+        textEl.textContent = '🧭 TypeSafe off';
+        titleLines.push(`Requested: ${model}`);
+        titleLines.push(`Not configured — set typesafe_api_key in settings.json or TYPESAFE_AI_API. Classification then uses the primary provider alone.`);
+        badge.title = titleLines.join('\n');
+        return;
+      }
+
+      titleLines.push(`Requested: ${model}`);
+      if (confirmed) {
+        const lastDate = data.last_call_at ? new Date(data.last_call_at) : null;
+        const lastAtLabel = lastDate && !isNaN(lastDate.getTime()) ? lastDate.toLocaleString() : '';
+        titleLines.push(`Served by last call: ${confirmed}${lastAtLabel ? ` at ${lastAtLabel}` : ''}`);
+      }
+
+      if (data.online) {
+        badge.className = 'ollama-status-badge online';
+        textEl.textContent = confirmed
+          ? `🧭 TypeSafe (${confirmed}) ✓`
+          : `🧭 TypeSafe (${model})`;
+      } else {
+        badge.className = 'ollama-status-badge offline';
+        textEl.textContent = '🧭 TypeSafe error';
+        if (data.error) titleLines.push(`Error: ${data.error}`);
+      }
+      badge.title = titleLines.join('\n');
+    } catch (err) {
+      badge.className = 'ollama-status-badge disabled';
+      textEl.textContent = '🧭 TypeSafe unavailable';
+      badge.title = 'TypeSafe status is unavailable — the backend did not respond.';
+    }
+  }
+
   setEngineStatus(label: string, color: string): void {
     const el = document.getElementById('statSystemStatus');
     if (!el) return;
@@ -252,6 +311,7 @@ class TriageEventsManager {
       this.app.toast.info('⏳ Launching local Ollama server...');
       setTimeout(() => {
         this.checkOllamaStatus();
+        this.checkTypeSafeStatus();
         if (btn) {
           btn.disabled = false;
           btn.innerHTML = '▶️ Start Ollama';
@@ -632,6 +692,7 @@ class TriageEventsManager {
     // The header badge already flips to "Ollama Disconnected"; refresh it so the user sees
     // the actionable "Start Ollama" button.
     this.checkOllamaStatus();
+    this.checkTypeSafeStatus();
   }
 }
 

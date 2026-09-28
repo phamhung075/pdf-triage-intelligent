@@ -119,6 +119,83 @@ Fallback: plain letters or emails without invoice / tax / contract context.
 
 Technical guides → `category = technical`. Project reports → `category = reports`.
 
+## TypeSafe decision step (optional)
+
+Runs after Step D has produced a classification. TypeSafe (System One / Jev) is wired whenever a
+`typesafe_api_key` / `TYPESAFE_AI_API` (and optional `typesafe_model` / `TYPESAFE_MODEL`) is
+present in Settings; the composition root injects a small adapter that re-reads
+`settingsStore.Config()` on every call and builds or reuses one `typesafe.Client` per key+model, so
+a key or model change takes effect **without a restart**. With an empty key the adapter returns a
+no-key sentinel and the pipeline behaves exactly as before TypeSafe existed: no request, no
+per-file warning. It never touches Steps A/C/D — the title, summary, date, amounts and markdown
+still come from the DeepSeek/Ollama path.
+
+One System One request decides the category and every speculative subcategory from the existing
+taxonomy.
+
+### Confidence policy
+
+The floor is `typesafe_min_confidence` (default `0.6`), raised to `0.85` when Step D's result is a
+priority classification: `bank`, `bulletin_salaire`, `administrative` with subcategory `impot`, or
+any result produced by the Step A entity-priority override (Golden Rules 6/7).
+
+| TypeSafe category answer | Result |
+| --- | --- |
+| agreeing with Step D, or answering `none` | Step D's category is kept |
+| differing, confidence ≥ the floor | TypeSafe's category wins |
+| differing, confidence below the floor | **BLOCK** — the file is moved to `__raws/.blocked_files`, a `blocked_files` row is written with reason `typesafe_disagreement`, `FILE_FAILED` is emitted, and the file stays out of `__archive` with no DB row (same terminal semantics as Golden Rules 3/4) |
+
+When TypeSafe overrides the category it must confidently pick an **existing** subcategory of the new
+category. If it proposes a new one, answers below the floor, or the new category has none, the file
+is blocked for review rather than having Step D's old-category slug carried across. A
+category-only TypeSafe answer (no confident subcategory) does **not** suppress the rule-based rescue
+for an ungrounded `general` subcategory.
+
+A TypeSafe outage is logged and Step D's result is kept — a classification never fails because
+TypeSafe did.
+
+### Pre-creation existence check
+
+Before auto-creating a new category or subcategory (Golden Rule 5), one TypeSafe request compares
+the proposed slug against the existing entries: an entry naming the same organism or document type
+— an old/new name of the same issuer, e.g. Pôle emploi → France Travail — is reused instead of
+creating a second instance, and the mapping is recorded as a taxonomy hint. Subcategory options are
+keyed `<category>/<slug>` and restricted to the proposed category when the taxonomy has more than
+254 entries. A match is reused only when its probability is at or above the confidence floor; a
+below-floor answer or a TypeSafe outage falls back to the deterministic duplicate guard, exactly as
+before TypeSafe existed.
+
+The new taxonomy entry is saved once, after the subcategory existence check. When that check
+re-files the document into another existing category, the tentatively appended new category is
+dropped instead of being persisted as an empty orphan; Golden Rule 5 still holds because whatever
+category/subcategory the document finally lands in is saved before the move.
+
+The threshold is `typesafe_min_confidence` / `TYPESAFE_MIN_CONFIDENCE`
+(see [environment](../knowledge/environment.md#typesafe-system-one--jev)).
+
+### New category naming
+
+When a new top-level category would be auto-created, TypeSafe is configured, and the existence
+check above found no existing match, one further TypeSafe request names it (Golden Rule 5). Jev
+cannot generate text, so the candidate names are built in code: the primary provider's proposed
+slug, Step A's extracted document type (slugified), and the committed generic catalogue
+`newCategoryCatalogue` — `vehicle`, `retirement`, `legal`, `family`, `transport`, `taxes_business`,
+`utilities`. A candidate is dropped before the request when its slug already exists as a category id
+(the tentative proposal is excluded), when the strict guard forbids it (empty / `general` / `other` /
+`divers` / `autre` / a bare year), or when the near-duplicate / entity-as-category guard blocks it.
+
+One `choice` request offers the surviving candidates plus `aucune`. A candidate chosen with
+probability at or above the confidence floor (`typesafe_min_confidence`, default `0.6`) replaces the
+tentative category: a catalogue entry keeps its curated French name and description, a
+provider/Step A slug keeps the auto-created naming convention, and a taxonomy hint records the
+replacement when the chosen id differs from the provider's slug. `aucune`, a below-floor answer or
+an empty candidate set blocks the file for manual review — the same `__raws/.blocked_files` +
+`blocked_files` row + `FILE_FAILED` path as the confidence policy above — and nothing is saved. A
+TypeSafe error or a missing key keeps the pre-TypeSafe behaviour and creates the provider's slug.
+
+The step exists to stop junk auto-created categories — a generic `general` bucket or an organism
+name — from entering the private overlay.
+
 ## Deep semantic reading
 
 Never classify on a single keyword. The prompt enforces:

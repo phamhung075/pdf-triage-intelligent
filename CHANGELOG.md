@@ -10,6 +10,164 @@ set (see [CLAUDE.md](CLAUDE.md) and [docs/README.md](docs/README.md)): every
 future change of any real size gets an entry here, written at the same time
 as the code/doc change, not reconstructed later from `git log`.
 
+## 2026-09-28 — TypeSafe (System One / Jev) integration
+
+Adds TypeSafe (System One / Jev) as an **optional** semantic judge on top of the existing
+DeepSeek/Ollama pipeline: it decides taxonomy placement during classification and search ordering in
+the chat assistant, and nothing else — Steps A/C/D still produce the title, summary, date, amounts
+and Markdown. It is inert without a TypeSafe API key; with no key the pipeline behaves exactly as
+before TypeSafe existed. Landed in the uncommitted `services/pdf-triage-pdf2w` working tree (no
+commit hash yet).
+
+### TypeSafe taxonomy judge (classification)
+
+- `app/classify/typesafe_decision.go` defines the narrow `TaxonomyJudge` seam and the pure policy.
+  After Step D succeeds, one System One request chooses the category and every speculative
+  subcategory from the existing taxonomy (`buildTypeSafeMainQuestions`).
+- Confidence policy (`DecideCategory`): a category at or above `typesafe_min_confidence` wins,
+  overriding Step D when it differs; when it agrees (or answers `none`) Step D's category is kept.
+  Below the floor and disagreeing, `DecideCategory` returns `DisagreementError`; the scan routes it
+  through the same Golden Rules 3/4 block path (`__raws/.blocked_files`, a `blocked_files` row with
+  reason `typesafe_disagreement`, `FILE_FAILED`, no DB row).
+- A subcategory slug is reused only when TypeSafe picked it at or above the floor; otherwise Step
+  D's slug goes to the existence check below. A TypeSafe outage is logged and Step D's result is
+  kept.
+
+### Review fixes
+
+The review round tightened the judge, its block paths and the client:
+
+- The floor is raised to `0.85` for a priority Step D result — `bank`, `bulletin_salaire`,
+  `administrative/impot`, or a Step A entity-priority override (Golden Rules 6/7).
+- When TypeSafe overrides the category it must confidently pick an existing subcategory of the new
+  category — otherwise the file is blocked rather than carrying Step D's old-category slug across.
+  `typeSafeDecided` is true only for a confident subcategory decision, so a category-only answer
+  still reaches the rule-based rescue for an ungrounded `general`.
+- Repair has no blocked-folder path, so it moves the archive file back to `__raws` (its closest
+  "cannot classify" path) and emits `FILE_FAILED`.
+- The tentative new category is saved only after the subcategory existence check: if that check
+  re-files the document into another existing category, the tentative category is dropped before the
+  single Golden Rule 5 save, so no empty orphan is persisted.
+- `cmd/pdf-triage` injects a dynamic adapter instead of a boot-time client. It re-reads
+  `settingsStore.Config()` on every `Evaluate`, builds or reuses one `typesafe.Client` per key+model,
+  and returns a no-key sentinel when the key is empty — which `app/classify` and `app/aichat` treat
+  exactly like a nil client, without a per-file warning. A key or model change therefore needs no
+  restart; the confidence floor is re-read from config per scan.
+- `infra/typesafe` retries `429`/`529` up to three attempts with exponential backoff, caps a
+  `Retry-After` delay at `maxBackoff` (10 s), and makes the backoff sleep context-aware (a cancelled
+  scan returns the context error); every other non-2xx is an `*APIError`.
+
+### Pre-creation existence check
+
+- Before auto-creating a category or subcategory, one TypeSafe request asks whether the proposed
+  slug is the same organism or document type as an existing entry (`findExistingCategory` /
+  `findExistingSubcategory`). Subcategory options are keyed `<category>/<slug>` and restricted to
+  the proposed category when the taxonomy has more than 254 entries (`MaxChoiceOptions - 1`).
+- A match whose probability is at or above the floor is reused instead of creating a second
+  instance, and the mapping is recorded as a taxonomy hint; a below-floor answer or a TypeSafe
+  outage falls back to the deterministic duplicate guard.
+
+### New category naming
+
+- `app/classify/typesafe_new_category.go` adds the "Jev names a new top-level category" step,
+  reached only when a new category would be auto-created, TypeSafe is wired, and the existence check
+  above found no existing match: one `new_category` choice request over code-built candidates. Jev
+  cannot generate names, so the candidates are built in code — the primary provider's proposed slug,
+  Step A's slugified document type, and the generic committed `newCategoryCatalogue` (`vehicle`,
+  `retirement`, `legal`, `family`, `transport`, `taxes_business`, `utilities`).
+- A candidate is dropped before the request when its slug already exists as a category id (the
+  tentative proposal is excluded), when the strict guard forbids it (empty / `general` / `other` /
+  `divers` / `autre` / a bare year), or when the near-duplicate / entity-as-category guard blocks it.
+- One Choice request offers the survivors plus `aucune`; a candidate chosen with probability at or
+  above `typesafe_min_confidence` replaces the tentative category and is what the single Golden
+  Rule 5 save writes into the private overlay (`.categories.private.json`). A catalogue entry keeps
+  its curated French name/description, a provider/Step A slug keeps the auto-created naming
+  convention, and a taxonomy hint records the replacement when the chosen id differs from the
+  provider's slug.
+- `aucune`, a below-floor probability or no surviving candidate blocks the file for manual review
+  (`.blocked_files`, `blocked_files` row, `FILE_FAILED`, no DB row) with the tentative category
+  dropped and nothing saved; a TypeSafe error or no key keeps the pre-TypeSafe behaviour and creates
+  the provider's slug. Prevents junk auto-created categories such as a generic `general` bucket.
+
+### Chat retrieval reranking
+
+- `app/aichat/rerank.go` defines the optional `Reranker` seam; `TypeSafeReranker` scores every
+  candidate with one `noul` in a single System One request. `RetrieveDocuments` over-fetches
+  `max(limit*3, 30)` FTS hits per relaxation rung, drops candidates under `0.15`, sorts by score
+  (ties keep FTS order), then de-dupes and truncates — a rung whose hits are all dropped relaxes to
+  the next rung. A reranker error or a malformed score slice logs a warning and keeps the FTS
+  order; when TypeSafe is not configured the adapter returns one equal score per candidate, so the
+  whole FTS order is kept silently (the nil-`Reranker` behavior). Applies to the chat assistant's
+  retrieval (`POST /api/chat`); `SearchRelevantDocuments` and the MCP `search_documents` tool are
+  unchanged.
+
+### Status endpoint and dashboard badge
+
+- `GET /api/typesafe/status` reports whether TypeSafe is configured, reachable and which
+  versioned model last served a call. `infra/typesafe` gains `ListModels` (the non-evaluation
+  `GET /v1/models` probe, same bearer auth and `*APIError` on non-2xx, no retry) and `LastServed`,
+  recording the echoed `model` of each successful `Evaluate` under a mutex.
+- The `cmd/pdf-triage` dynamic adapter gains `Status(ctx, refresh)`: with no key it answers
+  `configured:false, online:false` without a network call; otherwise it probes `ListModels` on the
+  cached client for the current key+model, caches the result for 60 s (keyed on key+model, so a
+  changed key or model misses the cache and `?refresh=1` bypasses it), and reports the most recent
+  `LastServed` across its clients. The key never appears in the response, the error text or a log
+  line. `httpapi` declares the `TypeSafeStatusReporter` seam on `Deps` (nil reports not configured)
+  and fills `min_confidence` (the configured floor) and `roles`
+  (`["classification","search_rerank"]`); the route always answers 200.
+- The dashboard header now shows a second badge next to the AI provider badge. A new
+  `checkTypeSafeStatus()` in `public/ts/TriageEventsManager.ts` polls `GET /api/typesafe/status`
+  (with `?refresh=1` when the caller passes it) on the same 10 s cadence as the existing badge and
+  renders one of four states: `online` with the versioned `model_confirmed` echoed by the last
+  successful evaluation (falling back to the requested `typesafe_model`), `offline` with the probe
+  error, `disabled`/`🧭 TypeSafe off` when no `typesafe_api_key`/`TYPESAFE_AI_API` is set, and
+  `disabled`/`🧭 TypeSafe unavailable` on a 404, non-200 or fetch/parse failure. The latter keeps a
+  missing or not-yet-deployed endpoint from breaking the existing badge. The tooltip spells out the
+  judge role, the title/summary/date/amount split with the primary provider, the requested and
+  served model with the local `last_call_at`, and the error or the not-configured hint. `setEngineStatus`
+  and the existing AI badge are untouched, so the pipeline still falls back to the primary provider.
+- The Settings modal's AI Engine card now carries an always-visible TypeSafe block, independent of
+  the local/cloud switch. It loads `typesafe_model` / `typesafe_min_confidence` and only the
+  `typesafe_api_key_set` / `typesafe_api_key_source` flags from `GET /api/config` — a key value never
+  reaches the DOM — labels the key input from the saved/not-saved state, appends a saved versioned
+  `jev-x.y.z` model as an option so it is preserved, and explains the effective key source
+  ("Key saved in settings." / "Using TYPESAFE_AI_API…"). Save sends `typesafe_model`,
+  `typesafe_min_confidence` and `typesafe_api_key` only when non-empty, rejects a threshold outside
+  `[0.5, 0.95]` client-side with a Toast, clears the key input after saving and refreshes the source
+  note from the response; `🧪 Test TypeSafe` posts the typed key and selected model to
+  `POST /api/typesafe/test` and renders ok / error / "key OK but model not available" with
+  `textContent` only plus a Toast (`handleTestTypeSafe`, `applyTypeSafeConfig` in
+  `public/ts/ModalsManager.ts`; block in `public/index.html`).
+
+### Config and wiring
+
+- New settings: `typesafe_api_key` / `TYPESAFE_AI_API`, `typesafe_model` / `TYPESAFE_MODEL`
+  (default `jev-latest`) and `typesafe_min_confidence` / `TYPESAFE_MIN_CONFIDENCE` (default `0.6`;
+  a probability outside `[0,1]` falls back to the default).
+- `infra/typesafe` is the only package that talks to `api.typesafe.ai`. The key is never returned to
+  the browser: `GET /api/config` and the `PUT` response report `typesafe_api_key_set` and
+  `typesafe_api_key_source` (`"settings"`, `"env"` or `""`) plus the effective `typesafe_model` and
+  `typesafe_min_confidence`, never the key.
+- The Settings modal can now configure TypeSafe. `PUT /api/config` accepts `typesafe_api_key`
+  (non-empty replaces the stored key; omitted/empty keeps it, and an env-only key is never promoted
+  into `settings.json`), `typesafe_model` (`jev-latest`, `jev-preview` or a versioned `jev-x.y.z` id;
+  anything else `400`) and `typesafe_min_confidence` (a number in `[0.5, 0.95]`; outside `400`).
+  Validation failures save nothing. A saved value takes effect on the next judge call without a
+  restart: the dynamic client re-reads settings per call and its 60 s status cache is keyed on
+  key+model, so a new key misses it.
+- `POST /api/typesafe/test` validates a key against the non-evaluation `GET /v1/models` on a
+  throwaway 10 s, no-retry client. It uses the body `api_key` when non-empty and otherwise the
+  effective saved key, always answers 200 except a malformed body (400), never echoes the key, and
+  reports the listed models plus `model_available` (a listed alias, or a versioned id that the models
+  route does not list). With no key anywhere it answers the exact
+  `No TypeSafe API key — enter one or set TYPESAFE_AI_API` message.
+
+### Measured on the real archive (2026-09-28)
+
+- On 40 real archive documents the top-level category matched the reference labels for 35/40, at
+  roughly 193k input tokens total; the subcategory misses were duplicate slugs. No document names
+  or personal data.
+
 ## Unreleased
 
 ### Cloud model defaults: `deepseek-flash` and `gemini-3.8-flash`

@@ -25,6 +25,10 @@
           <span class="status-dot"></span>
           <span id="ollamaStatusText">Checking Ollama...</span>
         </div>
+        <div id="typesafeStatusBadge" class="ollama-status-badge" title="Checking TypeSafe judge...">
+          <span class="status-dot"></span>
+          <span id="typesafeStatusText">Checking TypeSafe...</span>
+        </div>
         <button id="btnStartOllama" class="btn-secondary" style="display: none;" title="Launch the local Ollama server">▶️ Start Ollama</button>
         <button id="btnRestartServer" class="btn-secondary" style="display: none;" title="Restart the backend server">🔄 Restart Server</button>
         <button id="btnScan" class="btn-primary">⚡ Scan & Triage Files</button>
@@ -594,6 +598,53 @@
                 <span id="testAIStatusMsg" style="font-size: 0.8rem; font-weight: 500;"></span>
                 <button type="button" id="btnTestAIConnection" class="btn-secondary" style="padding: 0.45rem 1rem; font-size: 0.85rem; font-weight: 600;">
                   🧪 Test Connection
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- TypeSafe Judge (optional; independent of Local vs Cloud mode) -->
+          <div id="typesafeConfigSection" style="margin-top: 1.4rem; padding-top: 1.4rem; border-top: 1px dashed var(--border-color);">
+            <h4 style="font-size: 0.95rem; color: var(--accent-blue); margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.5rem;">
+              <span>🧭 TypeSafe Judge (Jev) — optional</span>
+            </h4>
+            <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 1rem;">
+              Picks category/subcategory from your taxonomy, names new categories and re-ranks chat search. Title, summary, date and amounts stay with the AI engine above.
+            </p>
+
+            <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 1.2rem; margin-bottom: 1rem;">
+              <div class="form-group">
+                <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🔑 TypeSafe API Key</label>
+                <div style="display: flex; gap: 0.4rem;">
+                  <input type="password" id="cfgTypeSafeApiKey" placeholder="Enter API key" style="flex: 1; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem; font-family: monospace;">
+                  <button type="button" class="btn-secondary btn-toggle-pwd" data-target="cfgTypeSafeApiKey" style="padding: 0 0.8rem;" title="Show/Hide Key">👁️</button>
+                </div>
+                <span id="typesafeKeySourceNote" style="font-size: 0.78rem; color: #64748b; margin-top: 0.3rem; display: block;"></span>
+              </div>
+              <div class="form-group">
+                <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🧠 Model</label>
+                <select id="cfgTypeSafeModel" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #38bdf8; border: 1px solid var(--border-color); font-size: 0.95rem; font-weight: 600;">
+                  <option value="jev-latest">⚡ Jev latest (recommended)</option>
+                  <option value="jev-preview">Jev preview</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 1rem; max-width: 24rem;">
+              <label style="font-size: 0.85rem; color: #94a3b8; font-weight: 600; display: block; margin-bottom: 0.4rem;">🎚️ Minimum confidence</label>
+              <input type="number" id="cfgTypeSafeMinConfidence" min="0.5" max="0.95" step="0.05" value="0.6" style="width: 100%; padding: 0.65rem 0.8rem; border-radius: 6px; background: #0f172a; color: #fff; border: 1px solid var(--border-color); font-size: 0.95rem;">
+              <span style="font-size: 0.78rem; color: #64748b; margin-top: 0.3rem; display: block;">Below this, TypeSafe defers to the AI engine or sends the file to manual review.</span>
+            </div>
+
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.8rem 1rem; background: rgba(0, 0, 0, 0.25); border: 1px dashed var(--border-color); border-radius: 8px;">
+              <div>
+                <span style="font-size: 0.85rem; color: #cbd5e1; font-weight: 600;">Test TypeSafe Key</span>
+                <span style="display: block; font-size: 0.75rem; color: #64748b;">Calls the TypeSafe models endpoint only — no document data is sent and no evaluation runs.</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.8rem;">
+                <span id="testTypeSafeStatusMsg" style="font-size: 0.8rem; font-weight: 500;"></span>
+                <button type="button" id="btnTestTypeSafe" class="btn-secondary" style="padding: 0.45rem 1rem; font-size: 0.85rem; font-weight: 600;">
+                  🧪 Test TypeSafe
                 </button>
               </div>
             </div>
